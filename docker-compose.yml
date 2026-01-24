@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  # 1. The Brain (API + Simulator + Walker)
+  snmp-backend:
+    build: ./backend
+    container_name: snmp-studio-backend
+    ports:
+      - "8000:8000"      # API Access
+      - "1061:1061/udp"  # Simulator UDP Port
+    volumes:
+      # Mount the data folder for persistence
+      - ./backend/data:/app/data
+      # Mount MIBs specifically to where Net-SNMP expects them (configured in Dockerfile)
+      - ./backend/data/mibs:/usr/share/snmp/mibs/custom
+    environment:
+      - SNMP_PORT=1061
+    restart: always
+
+  # 2. The Face (Web UI)
+  snmp-frontend:
+    build: ./frontend
+    container_name: snmp-studio-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - snmp-backend
+    restart: always

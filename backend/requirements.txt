@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+pysnmp>=5.0.0
+pysmi
+python-multipart
+aiofiles
+requests

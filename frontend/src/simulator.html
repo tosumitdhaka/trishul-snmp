@@ -1,0 +1,63 @@
+<div class="row">
+    <div class="col-md-5">
+        <!-- Status Card -->
+        <div class="card mb-3 shadow-sm">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
+                <span><i class="fas fa-microchip"></i> Status</span>
+                <span id="sim-badge" class="badge bg-secondary">Checking...</span>
+            </div>
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <div id="sim-icon-wrapper" class="me-3 text-secondary">
+                        <i class="fas fa-server fa-2x"></i>
+                    </div>
+                    <div>
+                        <h5 class="mb-0" id="sim-state-text">Offline</h5>
+                        <small class="text-muted" id="sim-detail-text">Process stopped</small>
+                    </div>
+                </div>
+                
+                <div class="btn-group w-100">
+                    <button class="btn btn-success" id="btn-start" onclick="SimulatorModule.start()">
+                        <i class="fas fa-play"></i> Start
+                    </button>
+                    <button class="btn btn-danger" id="btn-stop" onclick="SimulatorModule.stop()" disabled>
+                        <i class="fas fa-stop"></i> Stop
+                    </button>
+                    <button class="btn btn-outline-secondary" id="btn-restart" onclick="SimulatorModule.restart()" disabled>
+                        <i class="fas fa-sync"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Config Card -->
+        <div class="card shadow-sm">
+            <div class="card-header py-2">Configuration</div>
+            <div class="card-body">
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label small">Port</label>
+                        <input type="number" class="form-control form-control-sm" id="sim-config-port" value="1061">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small">Community</label>
+                        <input type="text" class="form-control form-control-sm" id="sim-config-comm" value="public">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Log Column -->
+    <div class="col-md-7">
+        <div class="card h-100 shadow-sm">
+            <div class="card-header py-2 bg-light">Activity Log</div>
+            <div class="card-body p-0">
+                <div class="p-2 font-monospace small bg-white" style="height: 300px; overflow-y: auto;" id="sim-log-area">
+                    <div class="text-muted">Waiting for events...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
