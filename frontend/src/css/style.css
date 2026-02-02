@@ -192,3 +192,23 @@ pre {
     top: 0;
     z-index: 10;
 }
+
+/* MIB Manager Trap Table */
+#trap-table-body tr {
+    vertical-align: middle;
+}
+
+#trap-table-body td {
+    padding: 0.5rem 0.75rem;
+}
+
+#trap-table-body .btn-group-sm .btn {
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
+/* Compact badges */
+.badge {
+    font-weight: 500;
+    padding: 0.25em 0.6em;
+}

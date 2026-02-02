@@ -31,12 +31,16 @@ window.SimulatorModule = {
         }
     },
 
+    // FIX: Updated API path
     loadCustomData: async function() {
         const editor = document.getElementById('custom-data-editor');
         if (!editor) return;
 
         try {
-            const res = await fetch('/api/files/data');
+            const res = await fetch('/api/simulator/data');
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
             const data = await res.json();
             editor.value = JSON.stringify(data, null, 2);
         } catch (e) {
@@ -45,23 +49,32 @@ window.SimulatorModule = {
         }
     },
 
+    // FIX: Updated API path and response handling
     saveCustomData: async function() {
         const editor = document.getElementById('custom-data-editor');
         const content = editor.value;
 
         try {
+            // Validate JSON
             const json = JSON.parse(content);
 
-            const res = await fetch('/api/files/data', {
+            // Save
+            const res = await fetch('/api/simulator/data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(json)
             });
 
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+
             const data = await res.json();
 
+            // Log success
             this.log(`<span class="text-success">Custom data saved: ${data.message}</span>`);
             
+            // Show notification
             const banner = document.createElement('div');
             banner.className = 'alert alert-success alert-dismissible fade show position-fixed';
             banner.style.cssText = 'top: 80px; right: 20px; z-index: 9999;';
@@ -73,7 +86,8 @@ window.SimulatorModule = {
             setTimeout(() => banner.remove(), 3000);
 
         } catch (e) {
-            alert('Invalid JSON format!\n\n' + e.message);
+            console.error('Save error:', e);
+            alert('Failed to save custom data:\n\n' + e.message);
         }
     },
 

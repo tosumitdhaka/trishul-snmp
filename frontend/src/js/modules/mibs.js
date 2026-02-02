@@ -112,22 +112,43 @@ window.MibsModule = {
         tbody.innerHTML = traps.map(trap => `
             <tr>
                 <td>
-                    <strong>${trap.name}</strong>
-                    <div class="small text-muted">${trap.description.substring(0, 50)}${trap.description.length > 50 ? '...' : ''}</div>
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-bell text-warning me-2"></i>
+                        <strong>${trap.name}</strong>
+                    </div>
                 </td>
-                <td><code class="small">${trap.oid}</code></td>
-                <td><span class="badge bg-secondary">${trap.module}</span></td>
+                <td><code style="font-size: 0.75rem;">${trap.oid}</code></td>
                 <td class="text-center">
-                    <span class="badge bg-info">${trap.objects.length}</span>
+                    <span class="badge bg-secondary" style="font-size: 0.7rem;">${trap.module}</span>
                 </td>
-                <td>
-                    <button class="btn btn-sm btn-outline-primary" onclick='MibsModule.showTrapDetails(${JSON.stringify(trap).replace(/'/g, "&apos;")})'>
-                        <i class="fas fa-info-circle"></i>
-                    </button>
+                <td class="text-center">
+                    <span class="badge bg-info" style="font-size: 0.7rem;">${trap.objects.length}</span>
+                </td>
+                <td class="text-center">
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button class="btn btn-outline-primary btn-sm py-0 px-2" 
+                                onclick='MibsModule.showTrapDetails(${JSON.stringify(trap).replace(/'/g, "&apos;")})' 
+                                title="View Details">
+                            <i class="fas fa-info-circle"></i>
+                        </button>
+                        <button class="btn btn-success btn-sm py-0 px-2" 
+                                onclick='MibsModule.useTrapDirectly(${JSON.stringify(trap).replace(/'/g, "&apos;")})' 
+                                title="Send Trap">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
                 </td>
             </tr>
         `).join('');
     },
+
+
+    // NEW: Send trap directly without modal
+    useTrapDirectly: function(trap) {
+        sessionStorage.setItem('selectedTrap', JSON.stringify(trap));
+        window.location.hash = '#traps';
+    },
+
 
     filterTraps: function(query) {
         if (!this.allTraps) return;
