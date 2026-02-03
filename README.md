@@ -64,7 +64,27 @@ A modern web-based SNMP toolkit for network engineers and administrators. Manage
 
 ### Installation
 
-#### Option 1: Docker Compose
+#### Option 1: One shot installation and management
+```
+# Direct installation
+curl -s  https://raw.githubusercontent.com/tosumitdhaka/trishul-snmp-studio/refs/heads/main/install-trishul-snmp-docker.sh | bash
+
+# Managing app
+# Download it first
+curl -fsSL https://raw.githubusercontent.com/tosumitdhaka/snmp-studio/main/install-trishul-snmp-docker.sh -o install-trishul.sh
+chmod +x install-trishul.sh
+
+# Management commands:
+./install-trishul-snmp-docker.sh up
+./install-trishul-snmp-docker.sh status
+./install-trishul-snmp-docker.sh logs
+./install-trishul-snmp-docker.sh restart
+./install-trishul-snmp-docker.sh down
+./install-trishul-snmp-docker.sh backup
+./install-trishul-snmp-docker.sh restore <backup file path>
+```
+
+#### Option 2: Docker Compose
 ```bash
 # Clone repository
 git clone <repository-url>
@@ -75,27 +95,6 @@ docker-compose up -d
 
 # Access Web UI
 open http://localhost:8080
-```
-
-#### Option 2: Single shot script to run docker containers
-```
-# Set GitHub token (one-time)
-export GHCR_TOKEN="ghp_xxxxxxxxxxxx"
-
-# Deploy
-./install-trishul-snmp-docker.sh up
-
-# Check status
-./install-trishul-snmp-docker.sh status
-
-# View logs
-./install-trishul-snmp-docker.sh logs
-
-# Restart
-./install-trishul-snmp-docker.sh restart
-
-# Stop
-./install-trishul-snmp-docker.sh down
 ```
 
 ### Default Credentials
