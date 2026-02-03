@@ -1,2 +1,3 @@
-backend/data/*
-backend/data
+backend/data*
+.venv*
+.vscode*
