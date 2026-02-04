@@ -385,7 +385,7 @@ MIT License - See [LICENSE](LICENSE) file for details.
 - **[Render.com](https://render.com)** - Free tier with 750 hours/month
 - **[Fly.io](https://fly.io)** - Global edge deployment
 - **[Oracle Cloud](https://cloud.oracle.com)** - Always free tier (2 VMs, 200GB)
-- **[DigitalOcean](https://m.do.co/c/your-ref)** - $200 credit for new users
+- **[DigitalOcean](https://m.do.co/c/cc2178d50ce7)** - $200 credit for new users
 
 ### Self-Hosted
 
