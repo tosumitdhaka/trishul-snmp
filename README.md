@@ -19,7 +19,7 @@ A web-based SNMP toolkit for network engineers and administrators. Simulate SNMP
 - 🖥️ **SNMP Simulator** - Run configurable SNMP agent with custom OID values
 - 🚶 **Walk & Parse** - Execute SNMP walks with MIB resolution, export to JSON/CSV
 - 📡 **Trap Manager** - Send/receive SNMP traps with real-time monitoring
-- 📚 **MIB Manager** - Upload, validate, and browse MIB files with dependency detection
+- 📚 **MIB Manager** - Upload, validate MIBs, browse traps, auto-resolve OIDs with dependency detection
 - 🔐 **Secure** - Session-based authentication with credential management
 - 🐳 **Containerized** - One-command Docker deployment with host network support
 - 🌐 **Modern UI** - Clean, responsive interface built with Bootstrap 5
@@ -403,7 +403,9 @@ Deploy on your own infrastructure using the one-command installer or Docker Comp
 
 ## 🎯 Roadmap
 
-- [ ] Multi-language support (i18n)
+- [ ] Full MIB tree browser
+- [ ] View OID descriptions and syntax
+- [ ] Search OIDs across MIBs
 - [ ] SNMPv3 authentication support
 - [ ] Scheduled SNMP walks
 - [ ] Email/Slack/Webhook notifications
