@@ -638,6 +638,12 @@ MIT License - See [LICENSE](LICENSE) file for details.
 
 ---
 
+## 📰 Featured Article
+
+- 📝 **Dev.to:** [Building Trishul-SNMP: A Modern Web-Based SNMP Toolkit to Replace $500 Commercial Tools]((https://dev.to/tosumitdhaka/building-trishul-snmp-a-modern-web-based-snmp-toolkit-to-replace-500-commercial-tools-3d53))
+
+---
+
 ## 🚀 Deployment Options
 
 ### Recommended Hosting
