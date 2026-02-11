@@ -31,12 +31,16 @@ A web-based SNMP toolkit for network engineers and administrators. Simulate SNMP
 
 ## 🎯 What Trishul-SNMP Replaces
 
-✅ **Net-SNMP CLI tools** → Web UI with no command memorization  
-✅ **snmpsim** → Test SNMP agent responses with web interface  
-✅ **iReasoning MIB Browser ($500)** → Free MIB browser with tree navigation  
-✅ **snmptrapd** → Real-time trap receiver for testing  
-✅ **Custom scripts** → Built-in JSON/CSV export functionality  
-✅ **Multiple scattered tools** → One unified platform
+| Tool | Cost | Trishul-SNMP |
+|------|------|--------------|
+| **Net-SNMP CLI tools** | Free | ✅ Web UI with no command memorization |
+| **snmpsim** | Free | ✅ Test SNMP agent responses with web interface |
+| **iReasoning MIB Browser** | $500+ | ✅ Free MIB browser with tree navigation |
+| **snmptrapd** | Free | ✅ Real-time trap receiver for testing |
+| **Custom scripts** | Time | ✅ Built-in JSON/CSV export functionality |
+| **Multiple scattered tools** | Complexity | ✅ One unified platform |
+
+**Save $500+ and consolidate your SNMP workflow.**
 
 ---
 
@@ -48,368 +52,197 @@ A web-based SNMP toolkit for network engineers and administrators. Simulate SNMP
 curl -fsSL https://raw.githubusercontent.com/tosumitdhaka/trishul-snmp/main/install-trishul-snmp.sh | bash
 ```
 
-### Manual Install
-
-```
-# Download installer
-curl -fsSL https://raw.githubusercontent.com/tosumitdhaka/trishul-snmp/main/install-trishul-snmp.sh -o install-trishul-snmp.sh
-chmod +x install-trishul-snmp.sh
-
-# Deploy (default ports: 8000, 8080)
-./install-trishul-snmp.sh up
-
-# Custom ports
-BACKEND_PORT=9000 FRONTEND_PORT=3000 ./install-trishul-snmp.sh up
-```
-
 ### Access
 
 - **Frontend:** http://localhost:8080
-- **Backend API:** http://localhost:8000
+- **Backend API:** http://localhost:8000/docs
 - **Default login:** `admin` / `admin123`
+
+⚠️ **Change password immediately in Settings!**
+
+### Custom Ports
+
+```
+BACKEND_PORT=9000 FRONTEND_PORT=3000 ./install-trishul-snmp.sh up
+```
+
+**[📖 Detailed Installation Guide →](https://github.com/tosumitdhaka/trishul-snmp/wiki/Installation-Guide)**
 
 ---
 
-## 📖 Commands
+## 🧩 Component Overview
 
-```
-./install-trishul-snmp.sh up              # Start containers
-./install-trishul-snmp.sh down            # Stop containers
-./install-trishul-snmp.sh restart         # Restart containers
-./install-trishul-snmp.sh logs            # View backend logs
-./install-trishul-snmp.sh status          # Check status
-./install-trishul-snmp.sh backup          # Backup data to tar.gz
-./install-trishul-snmp.sh restore <file>  # Restore from backup
-```
+### 🖥️ SNMP Simulator (Server Mode)
+Run a configurable SNMP agent on UDP 1061 with custom OID values. Perfect for testing SNMP clients without real hardware.
+
+**Key features:**
+- Custom OIDs with any value and type
+- SNMPv1/v2c support
+- Persistent configuration
+- Web-based control
+
+**Use case:** Simulate devices for NMS development and testing.
+
+**[📖 Full Simulator Guide →](https://github.com/tosumitdhaka/trishul-snmp/wiki/SNMP-Simulator-Guide)**
+
+---
+
+### 🚶 Walk & Parse (Client Mode)
+Execute SNMP walks against any device with automatic MIB resolution and data export.
+
+**Key features:**
+- Automatic OID → name resolution
+- Bulk operations (GETBULK)
+- JSON/CSV export
+- Walk history
+
+**Use case:** Test SNMP agent responses, validate walk implementations.
+
+**[📖 Full Walker Guide →](https://github.com/tosumitdhaka/trishul-snmp/wiki/Walker-Guide)**
+
+---
+
+### 📡 Trap Manager (Client + Server)
+Send and receive SNMP traps with real-time monitoring and MIB-based trap browsing.
+
+**Key features:**
+- **Trap Sender (Client):** Send v1/v2c traps with custom varbinds
+- **Trap Receiver (Server):** Real-time trap display on UDP 1162
+- **Trap Library:** Browse 24+ available traps from loaded MIBs
+- Auto-populate varbinds from library
+
+**Use case:** Validate trap format/syntax for NMS development.
+
+**[📖 Full Trap Manager Guide →](https://github.com/tosumitdhaka/trishul-snmp/wiki/Trap-Manager-Guide)**
+
+---
+
+### 📚 MIB Manager
+Upload, validate, and manage MIB files with automatic dependency resolution.
+
+**Key features:**
+- Drag-and-drop upload
+- Syntax validation
+- Dependency resolution
+- Trap enumeration
+- Statistics (objects, imports, traps)
+
+**Use case:** Validate MIBs before deployment, centralized MIB library.
+
+**[📖 Full MIB Manager Guide →](https://github.com/tosumitdhaka/trishul-snmp/wiki/MIB-Manager-Guide)**
+
+---
+
+### 🌳 MIB Browser
+Interactive tree explorer for navigating OID hierarchies and understanding MIB structures.
+
+**Key features:**
+- **Dual views:** By module or standard OID hierarchy
+- **Real-time search:** Find OIDs by name, numeric OID, or description
+- **Smart filtering:** By module and type (scalars, tables, notifications)
+- **Tree navigation:** Expandable with configurable depth (1-5 levels)
+- **Details panel:** Full metadata, descriptions, varbinds
+- **Integration:** Jump to Walker/Trap Sender with pre-filled data
+- **State persistence:** Remembers your position
+
+**Use case:** Explore MIB structures, understand OID relationships, find traps.
+
+**[📖 Full MIB Browser Guide →](https://github.com/tosumitdhaka/trishul-snmp/wiki/MIB-Browser-Guide)**
+
+---
+
+### 🔐 Settings
+Manage authentication and system preferences.
+
+**Key features:**
+- Change admin password
+- Session management
+- System information
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      Web Browser (Port 8080)                        │
-│                                                                     │
-│  ┌──────────┐ ┌──────────┐ ┌───────┐ ┌──────┐ ┌────────┐ ┌─────┐    │
-│  │Dashboard │ │Simulator │ │Walker │ │Traps │ │Browser │ │MIBs │    │
-│  └──────────┘ └──────────┘ └───────┘ └──────┘ └────────┘ └─────┘    │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │ HTTP
-                             │
-              ┌──────────────▼──────────────┐
-              │   Nginx (Frontend)          │
-              │   • Serves static files     │
-              │   • Reverse proxy to API    │
-              └──────────────┬──────────────┘
-                             │ REST API
-                             │
-┌────────────────────────────▼────────────────────────────────────────┐
-│                  FastAPI Backend (Port 8000)                        │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                      API Endpoints                            │  │
-│  │  /api/simulator/*  /api/walker/*   /api/traps/*               │  │
-│  │  /api/mibs/*       /api/browser/*  /api/settings/*            │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                    Service Layer                              │  │
-│  │                                                               │  │
-│  │  ┌─────────────────────────────────────────────────────────┐  │  │
-│  │  │              MIB Service (pysmi/pysnmp)                 │  │  │
-│  │  │  • Parse & validate MIB files                           │  │  │
-│  │  │  • Check syntax & dependencies                          │  │  │
-│  │  │  • Build OID tree (module/hierarchy views)              │  │  │
-│  │  │  • Resolve OID names ↔ numeric OIDs                     │  │  │
-│  │  │  • Enumerate traps (24: 19 loaded + 5 system)           │  │  │
-│  │  │  • Search & filter (name, OID, type, module)            │  │  │
-│  │  └─────────────────────────────────────────────────────────┘  │  │
-│  │                                                               │  │
-│  │  ┌─────────────────────────────────────────────────────────┐  │  │
-│  │  │              SNMP Service (pysnmp)                      │  │  │
-│  │  │  • Simulator: Test SNMP agent responses                 │  │  │
-│  │  │  • Walker: Test SNMP client queries                     │  │  │
-│  │  │  • Trap Sender: Send test traps (client)                │  │  │
-│  │  │  • Trap Receiver: Receive test traps (server)           │  │  │
-│  │  └─────────────────────────────────────────────────────────┘  │  │
-│  │                                                               │  │
-│  │  ┌─────────────────────────────────────────────────────────┐  │  │
-│  │  │              Auth Service                               │  │  │
-│  │  │  • Session management (token-based)                     │  │  │
-│  │  │  • User authentication                                  │  │  │
-│  │  └─────────────────────────────────────────────────────────┘  │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                    SNMP Network Layer                         │  │
-│  │                                                               │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │  │
-│  │  │Simulator │  │  Sender  │  │ Receiver │  │  Walker  │       │  │
-│  │  │  (SVR)   │  │  (CLI)   │  │  (SVR)   │  │  (CLI)   │       │  │
-│  │  │UDP: 1061 │  │ Dynamic  │  │UDP: 1162 │  │ Dynamic  │       │  │
-│  │  │          │  │          │  │          │  │          │       │  │
-│  │  │Test SNMP │  │Send test │  │Receive   │  │Test SNMP │       │  │
-│  │  │agent     │  │traps to  │  │test traps│  │queries   │       │  │
-│  │  │responses │  │dev/test  │  │from dev/ │  │to dev/   │       │  │
-│  │  │          │  │targets   │  │test env  │  │test env  │       │  │
-│  │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘       │  │
-│  │       │             │             │             │             │  │
-│  └───────┼─────────────┼─────────────┼─────────────┼─────────────┘  │
-│          │             │             │             │                │
-│  ┌───────▼─────────────▼─────────────▼─────────────▼─────────────┐  │
-│  │              Data Storage (Docker Volume)                     │  │
-│  │  /app/data/                                                   │  │
-│  │    ├── mibs/           (MIB files for validation)             │  │
-│  │    ├── sessions.json   (Auth tokens)                          │  │
-│  │    └── settings.json   (User config)                          │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-│                                                                     │
-└───────────────────────────┬─────────────────────────────────────────┘
-                            │ SNMP Protocol (UDP)
-                            │ Host Network Mode
-                            │
-             ┌──────────────┴──────────────┐
-             │                             │
-     ┌───────▼────────┐           ┌────────▼────────┐
-     │ Test SNMP      │           │  Test Trap      │
-     │ Clients/Agents │           │  Receivers      │
-     │ (Dev/Test Env) │           │  (Dev/Test Env) │
-     │                │           │                 │
-     │ • Your NMS     │           │ • Your NMS      │
-     │ • Custom apps  │           │ • Trap parsers  │
-     │ • Test devices │           │ • Log servers   │
-     │ • Simulators   │           │ • Test apps     │
-     └────────────────┘           └─────────────────┘
+┌───────────────────────────────────────────────────┐
+│           Web Browser (Port 8080)                 │
+│  Dashboard │ Simulator │ Walker │ Traps │ MIBs    │
+└─────────────────────┬─────────────────────────────┘
+                      │ HTTP/HTTPS
+                      │
+         ┌────────────▼────────────┐
+         │   Nginx (Frontend)      │
+         │   Static Files + Proxy  │
+         └────────────┬────────────┘
+                      │ REST API
+                      │
+         ┌────────────▼─────────────────────────┐
+         │   FastAPI Backend (Port 8000)        │
+         │                                      │
+         │  ┌────────────────────────────────┐  │
+         │  │  MIB Service                   │  │
+         │  │  • Parse & validate MIBs       │  │
+         │  │  • Build OID trees             │  │
+         │  │  • Search & filter             │  │
+         │  └────────────────────────────────┘  │
+         │                                      │
+         │  ┌────────────────────────────────┐  │
+         │  │  SNMP Services                 │  │
+         │  │  • Simulator (SVR - UDP 1061)  │  │
+         │  │  • Trap Sender (CLI)           │  │
+         │  │  • Trap Receiver (SVR - 1162)  │  │
+         │  │  • Walker (CLI)                │  │
+         │  └────────────────────────────────┘  │
+         │                                      │
+         │  ┌────────────────────────────────┐  │
+         │  │  Data Storage (Volume)         │  │
+         │  │  /app/data/mibs/               │  │
+         │  └────────────────────────────────┘  │
+         └──────────────┬───────────────────────┘
+                        │ SNMP (UDP)
+                        │
+         ┌──────────────┴──────────────┐
+         │                             │
+    ┌────▼─────┐               ┌───────▼────┐
+    │  Test    │               │   Test     │
+    │ Devices  │               │  Receivers │
+    │(Dev/Test)│               │ (Dev/Test) │
+    └──────────┘               └────────────┘
 ```
 
-**Stack:** Python 3.11 • FastAPI • pysnmp • pysmi • Nginx • Docker
+**Stack:** Python 3.11 • FastAPI • pysnmp • pysmi • Bootstrap 5 • Docker
 
-### Key Components
-
-#### **Frontend (Nginx - Port 8080)**
-- **Dashboard** - System overview with real-time stats
-- **Simulator** - Test SNMP agent responses (server mode)
-- **Walker** - Test SNMP client queries (client mode)
-- **Traps** - Send/receive test traps for dev/test environments
-- **MIB Manager** - Upload and validate MIB files
-- **MIB Browser** - Explore MIB structures interactively
-
-#### **Backend (FastAPI - Port 8000)**
-
-**Service Layer:**
-- **MIB Service** - Parse, validate, explore MIBs with syntax checking
-- **SNMP Service** - Client/server components for testing
-- **Auth Service** - Session management
-
-**SNMP Network Layer:**
-- **Simulator (Server - UDP 1061)** - Test SNMP agent responses
-  - Simulate device behavior for client testing
-  - Custom OID values for test scenarios
-  
-- **Trap Sender (Client)** - Send test traps
-  - Test trap receivers in dev/test environments
-  - Validate trap format and syntax
-  - Custom varbinds for integration testing
-  
-- **Trap Receiver (Server - UDP 1162)** - Receive test traps
-  - Test trap senders in dev/test environments
-  - Validate trap parsing logic
-  - Real-time display with OID resolution
-  
-- **Walker (Client)** - Test SNMP queries
-  - Test SNMP agent responses
-  - Validate walk implementations
-  - Export results for analysis (JSON/CSV)
-
-#### **Data Layer**
-- **Docker Volume** - Persistent storage
-  - `mibs/` - MIB files for validation and exploration
-  - `sessions.json` - Authentication tokens
-  - `settings.json` - User preferences
-
-### SNMP Components Overview
-
-| Component | Mode | Port | Use Case |
-|-----------|------|------|----------|
-| **Simulator** | Server | UDP 1061 | Test SNMP agent responses, simulate devices |
-| **Trap Sender** | Client | Dynamic | Send test traps to dev/test NMS systems |
-| **Trap Receiver** | Server | UDP 1162 | Receive test traps, validate sender logic |
-| **Walker** | Client | Dynamic | Test SNMP queries, validate agent responses |
-| **MIB Browser** | N/A | N/A | Explore MIBs, validate syntax, search OIDs |
-| **MIB Manager** | N/A | N/A | Upload, validate, manage MIB files |
-
----
-
-## 🧩 Component Overview
-
-### 🖥️ **SNMP Simulator**
-Run a configurable SNMP agent on UDP port 1061 with custom OID values. Perfect for testing SNMP clients without real hardware.
-- **Custom OIDs** - Define any OID with custom values and types
-- **SNMPv1/v2c** - Support for community-based authentication
-- **Persistent data** - OID values survive restarts
-- **Web control** - Start/stop agent from dashboard
-
-### 🚶 **Walk & Parse**
-Execute SNMP walks against any device with automatic MIB resolution and data export.
-- **MIB resolution** - Converts numeric OIDs to human-readable names
-- **Bulk operations** - Walk entire MIB trees efficiently
-- **Export formats** - JSON and CSV export for analysis
-- **History** - View previous walk results
-
-### 📡 **Trap Manager**
-Send and receive SNMP traps with real-time monitoring and MIB-based trap browsing.
-- **Trap sender** - Send v1/v2c traps with custom varbinds
-- **Trap receiver** - Real-time trap display on UDP port 1162
-- **Trap library** - Browse 24+ available traps from loaded MIBs
-- **Auto-populate** - Select trap from library to auto-fill varbinds
-
-### 🌳 **MIB Browser**
-Interactive tree explorer for navigating OID hierarchies and understanding MIB structures.
-- **Dual views** - Browse by module or standard OID hierarchy
-- **Real-time search** - Find OIDs by name, numeric OID, or description
-- **Smart filtering** - Filter by module and type (scalars, tables, notifications)
-- **Tree navigation** - Expandable hierarchy with configurable depth (1-5 levels)
-- **Details panel** - View full metadata, descriptions, and varbinds
-- **Integration** - Jump to Walker or Trap Sender with pre-filled data
-
-### 📚 **MIB Manager**
-Upload, validate, and manage MIB files with automatic dependency resolution.
-- **Upload MIBs** - Drag-and-drop or file selection
-- **Validation** - Automatic syntax checking and dependency detection
-- **Trap enumeration** - Lists all notification types per MIB
-- **Statistics** - View object counts, imports, and trap counts
-- **Delete/Reload** - Manage MIB lifecycle with hot-reload
-
-### 🔐 **Settings**
-Manage authentication and system preferences.
-- **Credentials** - Change admin password
-- **Session management** - Secure token-based authentication
-- **System info** - View version and configuration
+**[📖 Detailed Architecture →](https://github.com/tosumitdhaka/trishul-snmp/wiki/Architecture-Overview)**
 
 ---
 
 ## 🎯 Use Cases
 
-### **For NMS Development**
+### For NMS Development
 - ✅ Send test traps to validate receiver format/syntax
 - ✅ Receive test traps to validate sender implementation
 - ✅ Simulate SNMP agents for client testing
 - ✅ Test SNMP walk responses
 
-### **For MIB Management**
+### For MIB Management
 - ✅ Validate MIB syntax and dependencies
 - ✅ Explore MIB structures interactively
 - ✅ Search OIDs across multiple MIBs
 - ✅ Resolve OID names ↔ numeric OIDs
 
-### **For Integration Testing**
+### For Integration Testing
 - ✅ Test SNMP integrations without production devices
 - ✅ Validate trap handling in dev environments
 - ✅ Simulate device responses for QA
 - ✅ Export walk data for automated testing
 
-### **For Learning & Training**
+### For Learning & Training
 - ✅ Understand SNMP protocol behavior
 - ✅ Explore standard MIB structures
 - ✅ Practice SNMP operations safely
 - ✅ Learn OID hierarchies visually
 
----
-
-## 🔄 Data Flow Examples
-
-**1. Test SNMP Walk (Client Mode):**
-```
-Walker (Client) → Your Test Device → MIB Service (resolve) → Export JSON/CSV
-```
-
-**2. Simulate SNMP Agent (Server Mode):**
-```
-Your SNMP Client → Simulator (Server) → Custom OID Response
-```
-
-**3. Send Test Trap (Client Mode):**
-```
-Trap Sender (Client) → Your NMS/Parser → Validate Format/Syntax
-```
-
-**4. Receive Test Trap (Server Mode):**
-```
-Your App/Device → Trap Receiver (Server) → Real-time Display
-```
-
-**5. Validate MIB:**
-```
-Upload MIB → MIB Service → Syntax Check → Dependency Resolution
-```
-
-**6. Explore MIB Structure:**
-```
-MIB Browser → Tree Builder → Interactive Navigation → OID Details
-```
-
----
-
-## 🔧 Configuration
-
-### Environment Variables
-
-```
-BACKEND_PORT=8000    # Backend API port (default: 8000)
-FRONTEND_PORT=8080   # Frontend web port (default: 8080)
-GHCR_TOKEN=xxx       # GitHub PAT (optional for public images)
-```
-
-### Examples
-
-```
-# Default ports
-./install-trishul-snmp.sh up
-
-# Custom ports
-BACKEND_PORT=9000 FRONTEND_PORT=3000 ./install-trishul-snmp.sh up
-
-# With authentication token
-GHCR_TOKEN=ghp_xxx ./install-trishul-snmp.sh up
-```
-
----
-
-## 📦 Docker Images
-
-- **Backend:** `ghcr.io/tosumitdhaka/trishul-snmp-backend:latest`
-- **Frontend:** `ghcr.io/tosumitdhaka/trishul-snmp-frontend:latest`
-
----
-
-## 🛠️ Development
-
-### Local Development
-
-```
-# Clone repository
-git clone https://github.com/tosumitdhaka/trishul-snmp.git
-cd trishul-snmp
-
-# Start with docker-compose
-docker-compose up -d
-
-# Access
-open http://localhost:8080
-```
-
-### Build Images
-
-```
-# Build backend
-docker build -t trishul-snmp-backend ./backend
-
-# Build frontend
-docker build -t trishul-snmp-frontend ./frontend
-
-# Build both with docker-compose
-docker-compose build
-```
+**[📖 More Use Cases & Examples →](https://github.com/tosumitdhaka/trishul-snmp/wiki)**
 
 ---
 
@@ -422,9 +255,7 @@ docker-compose build
 - 👥 **Small teams** needing trap monitoring and MIB browsing
 - 🧪 **Developers** building SNMP-enabled applications
 
----
-
-## ⚠️ Not For
+### ⚠️ Not For
 
 - ❌ Production 24/7 monitoring (use Zabbix, PRTG, LibreNMS)
 - ❌ Enterprise-scale NMS (use SolarWinds, Cisco Prime)
@@ -432,215 +263,33 @@ docker-compose build
 
 ---
 
-## 💖 Support This Project
+## 📚 Documentation
 
-Trishul-SNMP is **100% free and open-source**. If it helps you, consider:
+**Complete guides available in [Wiki](https://github.com/tosumitdhaka/trishul-snmp/wiki):**
 
-- ⭐ **Star this repo** - Helps others discover it
-- 💰 **[Sponsor on GitHub](https://github.com/sponsors/tosumitdhaka)** - Support development
-- ☕ **[Buy me a coffee](https://buymeacoffee.com/tosumitdhaka)** - One-time donation
-- 🐦 **[Share on Twitter](https://twitter.com/intent/tweet?text=Check%20out%20Trishul-SNMP%20-%20Modern%20SNMP%20Management%20Platform%20%F0%9F%94%B1%20https%3A%2F%2Fgithub.com%2Ftosumitdhaka%2Ftrishul-snmp)** - Spread the word
-- 📝 **Write a blog post** - Share your experience
-- 🤝 **Contribute code** - See [CONTRIBUTING.md](CONTRIBUTING.md)
+### Getting Started
+- 📖 [Installation Guide](https://github.com/tosumitdhaka/trishul-snmp/wiki/Installation-Guide) - Detailed setup instructions
+- 🚀 [First Steps](https://github.com/tosumitdhaka/trishul-snmp/wiki/First-Steps) - 15-minute walkthrough
+- ❓ [FAQ](https://github.com/tosumitdhaka/trishul-snmp/wiki/FAQ) - Frequently asked questions
 
-[![GitHub Sponsors](https://img.shields.io/github/sponsors/tosumitdhaka?style=for-the-badge&logo=github)](https://github.com/sponsors/tosumitdhaka)
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-yellow?style=for-the-badge&logo=buy-me-a-coffee)](https://buymeacoffee.com/tosumitdhaka)
+### User Guides
+- 🖥️ [SNMP Simulator Guide](https://github.com/tosumitdhaka/trishul-snmp/wiki/SNMP-Simulator-Guide)
+- 🚶 [Walker Guide](https://github.com/tosumitdhaka/trishul-snmp/wiki/Walker-Guide)
+- 📡 [Trap Manager Guide](https://github.com/tosumitdhaka/trishul-snmp/wiki/Trap-Manager-Guide)
+- 📚 [MIB Manager Guide](https://github.com/tosumitdhaka/trishul-snmp/wiki/MIB-Manager-Guide)
+- 🌳 [MIB Browser Guide](https://github.com/tosumitdhaka/trishul-snmp/wiki/MIB-Browser-Guide)
 
----
-
-## 🤝 Contributing
-
-We welcome contributions from the community! 🎉
-
-[![Contributors](https://img.shields.io/github/contributors/tosumitdhaka/trishul-snmp?style=for-the-badge)](https://github.com/tosumitdhaka/trishul-snmp/graphs/contributors)
-
-### Ways to Contribute
-
-- 🐛 **Report bugs** - Open an issue
-- 💡 **Suggest features** - Share your ideas
-- 📝 **Improve documentation** - Fix typos, add examples
-- 🔧 **Submit pull requests** - Add features, fix bugs
-- 🌍 **Translate** - Help localize the interface
-- 🎨 **Design** - Improve UI/UX
-- 📹 **Create content** - Tutorials, videos, blog posts
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
-
-### Code of Conduct
-
-Please note that this project is released with a [Contributor Code of Conduct](CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
-
-### Recognition
-
-All contributors are recognized in [CONTRIBUTORS.md](CONTRIBUTORS.md) and release notes! 🌟
-
----
-
-## 💼 Need Professional Help?
-
-I offer consulting services for:
-
-- 🔧 **SNMP implementation & troubleshooting**
-- 🔗 **Custom integrations** with monitoring systems
-- 📊 **MIB development** and customization
-- 🏗️ **Architecture consulting** for network monitoring
-
-📧 **Contact:** [sumitdhaka@zohomail.in](mailto:sumitdhaka@zohomail.in)  
-💼 **LinkedIn:** [Sumit Dhaka](https://www.linkedin.com/in/sumit-dhaka-a5a796b3/)
-
----
-
-## 🌟 Sponsors
-
-### Gold Sponsors 💎
-
-*[Become a Gold Sponsor](https://github.com/sponsors/tosumitdhaka) - $500/month*
-
-### Silver Sponsors 🚀
-
-*[Become a Silver Sponsor](https://github.com/sponsors/tosumitdhaka) - $100/month*
-
-### Bronze Sponsors 🌟
-
-*[Become a Bronze Sponsor](https://github.com/sponsors/tosumitdhaka) - $25/month*
-
-### Community Supporters ☕
-
-Thank you to all our supporters! Your contributions help maintain and improve Trishul-SNMP. 🙏
-
----
-
-## 📝 Changelog
-
-### v1.2.0 (Current) - MIB Browser Release 🌳
-- ✨ **NEW: MIB Browser** - Interactive tree explorer with dual view modes
-- ✨ **Tree Navigation** - Expandable OID hierarchy with configurable depth (1-5 levels)
-- ✨ **Smart Search** - Real-time search by name, OID, or description
-- ✨ **Advanced Filtering** - Filter by module and object type (scalars, tables, notifications)
-- ✨ **Detailed Panel** - Compact metadata display with breadcrumb navigation
-- ✨ **Seamless Integration** - Jump to Walker/Trap Sender with pre-filled data
-- ✨ **System MIB Detection** - Visual distinction between loaded and built-in MIBs
-- ✨ **Trap Library** - Enhanced trap manager
-- 🐛 **Fixed** - MIB delete function error handling
-- 🐛 **Fixed** - Trap count consistency across dashboard, manager, and browser
-- 🎨 **Dashboard** - Added MIB Browser card
-
-### v1.1.7
-- ✅ Rebranded to Trishul-SNMP
-- ✅ Improved documentation and contributing guidelines
-
-### v1.1.6
-- ✅ Docker volume support for data persistence
-- ✅ Backup/restore functionality
-- ✅ Smart GHCR authentication (public/private images)
-
-### v1.1.5
-- ✅ One-command installer script
-- ✅ Customizable backend and frontend ports
-- ✅ Host network mode for dynamic SNMP ports
-- ✅ Improved UI
-- ✅ App icon updated
-
-### v1.1.4
-- ✅ Updated UI visuals and fixes
-
-### v1.1.3
-- ✅ Enhanced trap management with real-time display
-- ✅ JSON/CSV export for walk results
-- ✅ Improved error handling and logging
-
-### v1.1.2
-- ✅ MIB browser with trap enumeration
-- ✅ Trap sender fixes
-- ✅ SNMP walker fixes
-
-### v1.1.1
-- ✅ SNMP walk simulator fixes
-
-### v1.0.0
-- 🎉 Initial release
-- ✅ SNMP simulator with custom OIDs
-- ✅ Walk & parse functionality
-- ✅ Trap sender and receiver
-- ✅ MIB manager with validation
-
----
-
-## 🏷️ Keywords
-
-`snmp` `snmp-simulator` `snmp-trap` `mib-browser` `mib-tree` `oid-explorer` `network-management` `network-monitoring` `snmpwalk` `snmptrap` `docker` `fastapi` `python` `devops` `sysadmin` `netops` `open-source` `self-hosted` `monitoring` `observability` `infrastructure` `network-tools`
-
----
-
-## 🔗 Related Projects
-
-- [Net-SNMP](http://www.net-snmp.org/) - Industry-standard SNMP CLI tools
-- [snmpsim](https://github.com/etingof/snmpsim) - SNMP agent simulator
-- [Zabbix](https://www.zabbix.com/) - Enterprise monitoring solution
-- [LibreNMS](https://www.librenms.org/) - Open-source network monitoring
-- [Prometheus](https://prometheus.io/) - Monitoring and alerting toolkit
-
----
-
-## 📊 Comparison
-
-| Feature | Net-SNMP | iReasoning | Trishul-SNMP |
-|---------|----------|------------|--------------|
-| **SNMP Simulator** | ✅ CLI | ❌ | ✅ Web UI |
-| **Walk Devices** | ✅ CLI | ✅ GUI | ✅ Web + Export |
-| **Send Traps** | ✅ CLI | ✅ GUI | ✅ Web + MIB Browse |
-| **Receive Traps** | ✅ CLI | ❌ | ✅ Web + Real-time |
-| **MIB Manager** | ✅ CLI | ✅ GUI | ✅ Web + Validate |
-| **MIB Browser** | ❌ | ✅ GUI | ✅ Web + Tree Nav |
-| **OID Search** | ❌ | ✅ | ✅ Real-time |
-| **Export JSON/CSV** | ❌ | ✅ | ✅ |
-| **Web-Based** | ❌ | ❌ | ✅ |
-| **Docker Deploy** | ❌ | ❌ | ✅ |
-| **Free** | ✅ | ❌ ($500+) | ✅ |
-| **Open Source** | ✅ | ❌ | ✅ |
-
----
-
-## 🎓 Learning Resources
-
-- 📖 [SNMP Basics Tutorial](https://github.com/tosumitdhaka/trishul-snmp/wiki/SNMP-Basics) *(coming soon)*
-- 📖 [MIB Browser Guide](https://github.com/tosumitdhaka/trishul-snmp/wiki/MIB-Browser-Guide) *(coming soon)*
-- 🎥 [Video Tutorials](https://www.youtube.com/@tosumitdhaka) *(coming soon)*
-- 📝 [Blog Posts](https://dev.to/tosumitdhaka) *(coming soon)*
-- 💬 [Community Discord](https://discord.gg/tosumitdhaka) *(coming soon)*
-
----
-
-## 📄 License
-
-MIT License - See [LICENSE](LICENSE) file for details.
-
-**Free forever. No hidden costs. No feature paywalls.**
-
----
-
-## 🙏 Acknowledgments
-
-- Built with [FastAPI](https://fastapi.tiangolo.com/)
-- SNMP implementation by [pysnmp](https://github.com/etingof/pysnmp)
-- MIB parsing by [pysmi](https://github.com/etingof/pysmi)
-- UI powered by [Bootstrap 5](https://getbootstrap.com/)
-- Icons by [Font Awesome](https://fontawesome.com/) & [Bootstrap Icons](https://icons.getbootstrap.com/)
-
----
-
-## 📞 Community & Support
-
-- 💬 **GitHub Discussions:** [Ask questions, share ideas](https://github.com/tosumitdhaka/trishul-snmp/discussions)
-- 🐛 **Issues:** [Report bugs, request features](https://github.com/tosumitdhaka/trishul-snmp/issues)
-- 📧 **Email:** [sumitdhaka@zohomail.in](mailto:sumitdhaka@zohomail.in)
-- 💼 **LinkedIn:** [Sumit Dhaka](https://www.linkedin.com/in/sumit-dhaka-a5a796b3/)
+### Technical
+- 🏗️ [Architecture Overview](https://github.com/tosumitdhaka/trishul-snmp/wiki/Architecture-Overview)
+- 🔧 [API Reference](https://github.com/tosumitdhaka/trishul-snmp/wiki/API-Reference)
+- 🛠️ [Development Setup](https://github.com/tosumitdhaka/trishul-snmp/wiki/Development-Setup)
+- 🐛 [Troubleshooting](https://github.com/tosumitdhaka/trishul-snmp/wiki/Troubleshooting)
 
 ---
 
 ## 📰 Featured Article
 
-[![Dev.to Article](https://img.shields.io/badge/Dev.to-Featured%20Article-0A0A0A?style=for-the-badge&logo=dev.to)](https://dev.to/tosumitdhaka/building-trishul-snmp-a-modern-web-based-snmp-toolkit-to-replace-500-commercial-tools-3d53)
+[![Dev.to Article](https://img.shields.io/badge/Dev.to-Read%20Article-0A0A0A?style=for-the-badge&logo=dev.to)](https://dev.to/tosumitdhaka/building-trishul-snmp-a-modern-web-based-snmp-toolkit-to-replace-500-commercial-tools-3d53)
 
 ### 📝 [Building Trishul-SNMP: A Modern Web-Based SNMP Toolkit](https://dev.to/tosumitdhaka/building-trishul-snmp-a-modern-web-based-snmp-toolkit-to-replace-500-commercial-tools-3d53)
 
@@ -653,28 +302,67 @@ Read about:
 - 📊 **Lessons learned** - 8 months of development insights
 - 🎯 **Results** - 150+ stars, 500+ pulls, 3 companies in production
 
-**[Read the full article on Dev.to →](https://dev.to/tosumitdhaka/building-trishul-snmp-a-modern-web-based-snmp-toolkit-to-replace-500-commercial-tools-3d53)**
+---
 
+## 🤝 Contributing
+
+We welcome contributions! 🎉
+
+[![Contributors](https://img.shields.io/github/contributors/tosumitdhaka/trishul-snmp?style=for-the-badge)](https://github.com/tosumitdhaka/trishul-snmp/graphs/contributors)
+
+**Ways to contribute:**
+- 🐛 [Report bugs](https://github.com/tosumitdhaka/trishul-snmp/issues)
+- 💡 [Suggest features](https://github.com/tosumitdhaka/trishul-snmp/issues)
+- 🔧 [Submit pull requests](https://github.com/tosumitdhaka/trishul-snmp/pulls)
+- 📝 [Improve documentation](https://github.com/tosumitdhaka/trishul-snmp/wiki)
+- 🌍 Translate the interface
+- 🎨 Improve UI/UX
+- ⭐ [Star the repo](https://github.com/tosumitdhaka/trishul-snmp)
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [Development Setup](https://github.com/tosumitdhaka/trishul-snmp/wiki/Development-Setup) for details.
 
 ---
 
-## 🚀 Deployment Options
+## 💖 Support This Project
 
-### Recommended Hosting
+Trishul-SNMP is **100% free and open-source** (MIT License).
 
-- **[Railway.app](https://railway.app)** - Easy deployment with $5/month free credit
-- **[Render.com](https://render.com)** - Free tier with 750 hours/month
-- **[Fly.io](https://fly.io)** - Global edge deployment
-- **[Oracle Cloud](https://cloud.oracle.com)** - Always free tier (2 VMs, 200GB)
-- **[DigitalOcean](https://m.do.co/c/cc2178d50ce7)** - $200 credit for new users
+**If it helps you:**
+- ⭐ [Star the repo](https://github.com/tosumitdhaka/trishul-snmp) - Helps others discover it
+- 💰 [Sponsor on GitHub](https://github.com/sponsors/tosumitdhaka) - Support development
+- ☕ [Buy me a coffee](https://buymeacoffee.com/tosumitdhaka) - One-time donation
+- 🐦 [Share on Twitter](https://twitter.com/intent/tweet?text=Check%20out%20Trishul-SNMP) - Spread the word
+- 📝 Write a blog post about your experience
 
-### Self-Hosted
-
-Deploy on your own infrastructure using the one-command installer or Docker Compose.
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/tosumitdhaka?style=for-the-badge&logo=github)](https://github.com/sponsors/tosumitdhaka)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-yellow?style=for-the-badge&logo=buy-me-a-coffee)](https://buymeacoffee.com/tosumitdhaka)
 
 ---
 
-## 📈 Project Stats
+## 🚀 Roadmap
+
+### ✅ v1.2.0 (Current)
+- [x] MIB Browser with tree navigation
+- [x] Search and filter OIDs
+- [x] State persistence
+- [x] Trap library (24+ traps)
+
+### 🚧 v1.3.0 (In Progress)
+- [ ] SNMPv3 authentication (MD5, SHA, AES)
+- [ ] Scheduled SNMP walks
+- [ ] Device/Agent management
+
+### 📋 Planned
+- [ ] Custom dashboard widgets
+- [ ] Dark mode
+- [ ] Multi-language support
+- [ ] Email/Slack/Webhook notifications
+
+[Vote on features →](https://github.com/tosumitdhaka/trishul-snmp/issues)
+
+---
+
+## 📊 Project Stats
 
 ![GitHub commit activity](https://img.shields.io/github/commit-activity/m/tosumitdhaka/trishul-snmp?style=flat-square)
 ![GitHub last commit](https://img.shields.io/github/last-commit/tosumitdhaka/trishul-snmp?style=flat-square)
@@ -682,39 +370,43 @@ Deploy on your own infrastructure using the one-command installer or Docker Comp
 
 ---
 
-## 🎯 Roadmap
+### Code of Conduct
 
-### ✅ Completed (v1.2.0)
-- [x] Full MIB tree browser with dual view modes
-- [x] Interactive OID navigation with expandable tree
-- [x] Search OIDs across MIBs with real-time results
-- [x] View OID descriptions, syntax, and metadata
-- [x] Filter by module and object type
-- [x] Seamless integration with Walker and Trap Sender
-- [x] State persistence across page switches
-- [x] Configurable expansion depth (1-5 levels)
+Please note that this project is released with a [Contributor Code of Conduct](CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
 
-### 🚧 In Progress
-- [ ] SNMPv3 authentication support (MD5, SHA, AES)
-- [ ] Scheduled SNMP walks with cron-like syntax
-- [ ] Email/Slack/Webhook notifications for traps
+### Recognition
 
-### 📋 Planned
-- [ ] API rate limiting and authentication keys
-- [ ] Bulk device management (import/export CSV)
-- [ ] Enhanced file exports
-- [ ] Advanced trap filtering with regex support
-- [ ] Mobile-responsive improvements for tablets
-- [ ] Dark mode theme
-- [ ] Multi-language support (i18n)
-- [ ] SNMP SET operations in Walker
-- [ ] MIB compiler for custom MIBs
-- [ ] Export MIB tree to PDF/PNG
-
-See [Issues](https://github.com/tosumitdhaka/trishul-snmp/issues) for detailed roadmap and vote on features!
+All contributors are recognized in [CONTRIBUTORS.md](CONTRIBUTORS.md) and release notes! 🌟
 
 ---
 
+## 📄 License
+
+MIT License - See [LICENSE](LICENSE) file for details.
+
+**Free forever. No hidden costs. No feature paywalls.**
+
+---
+
+## 📞 Community & Support
+
+- 💬 [GitHub Discussions](https://github.com/tosumitdhaka/trishul-snmp/discussions) - Ask questions, share ideas
+- 🐛 [Issues](https://github.com/tosumitdhaka/trishul-snmp/issues) - Report bugs, request features
+- 📧 Email: [sumitdhaka@zohomail.in](mailto:sumitdhaka@zohomail.in)
+- 💼 LinkedIn: [Sumit Dhaka](https://www.linkedin.com/in/sumit-dhaka-a5a796b3/)
+
+---
+
+## 🙏 Acknowledgments
+
+Built with:
+- [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
+- [pysnmp](https://github.com/etingof/pysnmp) - SNMP library for Python
+- [pysmi](https://github.com/etingof/pysmi) - MIB parser and compiler
+- [Bootstrap 5](https://getbootstrap.com/) - UI framework
+- [Font Awesome](https://fontawesome.com/) - Icons
+
+---
 
 <div align="center">
 
@@ -723,8 +415,6 @@ See [Issues](https://github.com/tosumitdhaka/trishul-snmp/issues) for detailed r
 *Trishul-SNMP - Modern SNMP Management Made Simple*
 
 If this project helps you, please consider [⭐ starring it](https://github.com/tosumitdhaka/trishul-snmp) and [💰 sponsoring](https://github.com/sponsors/tosumitdhaka)!
-
----
 
 [![GitHub](https://img.shields.io/badge/GitHub-tosumitdhaka-181717?style=for-the-badge&logo=github)](https://github.com/tosumitdhaka)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/in/sumit-dhaka-a5a796b3/)
