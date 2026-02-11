@@ -271,6 +271,7 @@ Manage authentication and system preferences.
 - 📖 [Installation Guide](https://github.com/tosumitdhaka/trishul-snmp/wiki/Installation-Guide) - Detailed setup instructions
 - 🚀 [First Steps](https://github.com/tosumitdhaka/trishul-snmp/wiki/First-Steps) - 15-minute walkthrough
 - ❓ [FAQ](https://github.com/tosumitdhaka/trishul-snmp/wiki/FAQ) - Frequently asked questions
+- 📋 [Changelog](https://github.com/tosumitdhaka/trishul-snmp/wiki/Changelog) - Version history 
 
 ### User Guides
 - 🖥️ [SNMP Simulator Guide](https://github.com/tosumitdhaka/trishul-snmp/wiki/SNMP-Simulator-Guide)
