@@ -3,11 +3,17 @@ window.TrapsModule = {
     vbCount: 0,
     allTraps: [],
     allObjects: [],
+    receivedTraps: [],
+    filteredTraps: [],
 
     init: function() {
+        this.loadPersistedTraps();
         this.checkStatus();
         this.loadTraps();
-        this.pollInterval = setInterval(() => { this.checkStatus(); this.loadTraps(); }, 3000);
+        this.pollInterval = setInterval(() => { 
+            this.checkStatus(); 
+            this.loadTraps(); 
+        }, 3000);
         
         this.loadTrapList();
         
@@ -20,17 +26,12 @@ window.TrapsModule = {
                 const trap = JSON.parse(browserTrapData);
                 sessionStorage.removeItem('selectedTrap');
                 
-                // Set trap OID
                 document.getElementById('ts-oid').value = trap.full_name || trap.oid;
-                
-                // Clear existing varbinds
                 document.getElementById('vb-container').innerHTML = 
                     '<div class="text-center text-muted small py-2" id="vb-empty" style="display:none;"></div>';
                 
-                // Add sysUpTime
                 this.addVarbind("SNMPv2-MIB::sysUpTime.0", "TimeTicks", "12345");
                 
-                // Add trap objects as varbinds
                 if (trap.objects && trap.objects.length > 0) {
                     trap.objects.forEach(obj => {
                         const type = this.guessVarBindType(obj.name);
@@ -45,13 +46,57 @@ window.TrapsModule = {
         } else if (browserTrapOid) {
             document.getElementById('ts-oid').value = browserTrapOid;
             sessionStorage.removeItem('trapOid');
-            
-            // Auto-populate with sysUpTime
             this.addVarbind("SNMPv2-MIB::sysUpTime.0", "TimeTicks", "12345");
-            
             this.showNotification(`Trap OID loaded from browser: ${browserTrapOid}`, 'info');
         } else {
             this.loadSelectedTrap();
+        }
+    },
+
+    destroy: function() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        this.persistTraps();
+    },
+
+    // ==================== Persistence ====================
+
+    loadPersistedTraps: function() {
+        try {
+            const stored = localStorage.getItem('trishul_received_traps');
+            if (stored) {
+                this.receivedTraps = JSON.parse(stored);
+                this.renderTraps();
+            }
+        } catch (e) {
+            console.error('Failed to load persisted traps:', e);
+        }
+    },
+
+    persistTraps: function() {
+        try {
+            // Keep only last 100 traps
+            const toStore = this.receivedTraps.slice(0, 100);
+            localStorage.setItem('trishul_received_traps', JSON.stringify(toStore));
+        } catch (e) {
+            console.error('Failed to persist traps:', e);
+        }
+    },
+
+    // ==================== Trap Sender Validation ====================
+
+    showSenderError: function(message) {
+        const errorEl = document.getElementById('ts-error');
+        const errorText = document.getElementById('ts-error-text');
+        if (errorEl && errorText) {
+            errorText.textContent = message;
+            errorEl.classList.remove('d-none');
+        }
+    },
+
+    hideSenderError: function() {
+        const errorEl = document.getElementById('ts-error');
+        if (errorEl) {
+            errorEl.classList.add('d-none');
         }
     },
 
@@ -62,11 +107,6 @@ window.TrapsModule = {
         }
         sessionStorage.setItem('browserFilterType', 'NotificationType');
         window.location.hash = '#browser';
-    },
-
-
-    destroy: function() {
-        if (this.pollInterval) clearInterval(this.pollInterval);
     },
 
     // ==================== Trap List Management ====================
@@ -158,7 +198,7 @@ window.TrapsModule = {
                 const data = await res.json();
                 this.allObjects = data.objects;
             } catch (e) {
-                alert('Failed to load MIB objects');
+                this.showSenderError('Failed to load MIB objects');
                 return;
             }
         }
@@ -322,24 +362,24 @@ window.TrapsModule = {
         if (select) select.value = "";
         
         this.addVarbind("SNMPv2-MIB::sysUpTime.0", "TimeTicks", "0");
+        this.hideSenderError();
     },
 
     // ==================== Trap Sending ====================
 
     sendTrap: async function(e) {
         e.preventDefault();
+        this.hideSenderError();
         
-        // Validate trap OID
         const trapOid = document.getElementById("ts-oid").value.trim();
         if (!trapOid) {
-            alert('Please enter a Trap OID or select a trap from the dropdown');
+            this.showSenderError('Please enter a Trap OID or select a trap from the dropdown');
             return;
         }
         
-        // Validate VarBinds
         const varbindRows = document.querySelectorAll("#vb-container .card");
         if (varbindRows.length === 0) {
-            alert('Please add at least one VarBind');
+            this.showSenderError('Please add at least one VarBind');
             return;
         }
         
@@ -354,28 +394,24 @@ window.TrapsModule = {
         }
         
         if (!hasValidVarbind) {
-            alert('Please provide OID and value for at least one VarBind');
+            this.showSenderError('Please provide OID and value for at least one VarBind');
             return;
         }
         
-        const btn = e.target.querySelector("button[type='submit']");
+        const btn = document.getElementById('btn-send-trap');
         const originalText = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
 
         try {
-            // 1. Resolve trap OID first
             let resolvedTrapOid = trapOid;
             
             if (trapOid.includes("::")) {
-                console.log(`[TRAP] Resolving trap OID: ${trapOid}`);
                 const trapRes = await fetch(`/api/mibs/resolve?oid=${encodeURIComponent(trapOid)}&mode=numeric`);
                 const trapData = await trapRes.json();
                 resolvedTrapOid = trapData.output;
-                console.log(`[TRAP] Resolved to: ${resolvedTrapOid}`);
             }
 
-            // 2. Collect and resolve VarBinds
             const varbinds = [];
             
             for (const row of varbindRows) {
@@ -387,17 +423,14 @@ window.TrapsModule = {
                 
                 let numericOid = oid;
                 if (oid.includes("::")) {
-                    console.log(`[VARBIND] Resolving: ${oid}`);
                     const vbRes = await fetch(`/api/mibs/resolve?oid=${encodeURIComponent(oid)}&mode=numeric`);
                     const vbData = await vbRes.json();
                     numericOid = vbData.output;
-                    console.log(`[VARBIND] Resolved to: ${numericOid}`);
                 }
                 
                 varbinds.push({ oid: numericOid, type, value });
             }
 
-            // 3. Send trap with ALL numeric OIDs
             const payload = {
                 target: document.getElementById("ts-target").value,
                 port: parseInt(document.getElementById("ts-port").value),
@@ -405,8 +438,6 @@ window.TrapsModule = {
                 oid: resolvedTrapOid,
                 varbinds: varbinds
             };
-
-            console.log('[TRAP] Sending payload:', JSON.stringify(payload, null, 2));
 
             const res = await fetch('/api/traps/send', {
                 method: 'POST',
@@ -424,11 +455,11 @@ window.TrapsModule = {
             } else {
                 const errorData = await res.json();
                 const errorMsg = errorData.detail || 'Unknown error';
-                alert(`Trap Send Failed\n\n${errorMsg}`);
+                this.showSenderError(`Trap send failed: ${errorMsg}`);
             }
         } catch (e) {
             console.error('[TRAP] Send error:', e);
-            alert(`Connection Failed\n\n${e.message}`);
+            this.showSenderError(`Connection failed: ${e.message}`);
         } finally {
             btn.disabled = false;
             btn.innerHTML = originalText;
@@ -449,19 +480,27 @@ window.TrapsModule = {
 
     updateStatusUI: function(status) {
         const badge = document.getElementById("tr-status-badge");
+        const detail = document.getElementById("tr-status-detail");
         const btnStart = document.getElementById("btn-tr-start");
         const btnStop = document.getElementById("btn-tr-stop");
+        const metricsPanel = document.getElementById("tr-metrics");
         
         if (!badge) return;
         
         if (status.running) {
             badge.className = "badge bg-success";
-            badge.innerHTML = `RUNNING <span class="small">(${status.resolve_mibs ? 'Resolved' : 'Raw'})</span>`;
+            badge.textContent = "RUNNING";
+            if (detail) {
+                detail.textContent = `Port ${status.port || '--'} | ${status.resolve_mibs ? 'Resolved' : 'Raw'}`;
+            }
+            if (metricsPanel) metricsPanel.style.display = 'block';
             btnStart.disabled = true;
             btnStop.disabled = false;
         } else {
             badge.className = "badge bg-secondary";
             badge.textContent = "STOPPED";
+            if (detail) detail.textContent = "";
+            if (metricsPanel) metricsPanel.style.display = 'none';
             btnStart.disabled = false;
             btnStop.disabled = true;
         }
@@ -483,98 +522,185 @@ window.TrapsModule = {
         });
         
         this.checkStatus();
+        this.showNotification('Trap receiver started', 'success');
     },
 
     stopReceiver: async function() {
         await fetch('/api/traps/stop', {method:'POST'});
         this.checkStatus();
+        this.showNotification('Trap receiver stopped', 'info');
+    },
+
+    // ==================== Metrics ====================
+
+    updateMetrics: function() {
+        const totalEl = document.getElementById('tr-metric-total');
+        const lastEl = document.getElementById('tr-metric-last');
+        const sourceEl = document.getElementById('tr-metric-source');
+        const portEl = document.getElementById('tr-metric-port');
+        
+        if (!totalEl) return;
+        
+        totalEl.textContent = this.receivedTraps.length;
+        
+        if (this.receivedTraps.length > 0) {
+            const latest = this.receivedTraps[0];
+            lastEl.textContent = this.formatRelativeTime(latest.timestamp);
+            
+            // Calculate top source
+            const sourceCounts = {};
+            this.receivedTraps.forEach(t => {
+                sourceCounts[t.source] = (sourceCounts[t.source] || 0) + 1;
+            });
+            const topSource = Object.keys(sourceCounts).reduce((a, b) => 
+                sourceCounts[a] > sourceCounts[b] ? a : b
+            , '--');
+            sourceEl.textContent = topSource;
+            sourceEl.title = `${sourceCounts[topSource]} traps`;
+        } else {
+            lastEl.textContent = '--';
+            sourceEl.textContent = '--';
+        }
+        
+        // Port from status
+        const port = document.getElementById('tr-port').value;
+        portEl.textContent = `:${port}`;
+    },
+
+    formatRelativeTime: function(isoTimestamp) {
+        if (!isoTimestamp) return '--';
+        try {
+            const date = new Date(isoTimestamp);
+            const now = new Date();
+            const diffSec = Math.floor((now - date) / 1000);
+            
+            if (diffSec < 5) return 'just now';
+            if (diffSec < 60) return `${diffSec}s ago`;
+            if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+            if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+            return `${Math.floor(diffSec / 86400)}d ago`;
+        } catch (e) {
+            return '--';
+        }
     },
 
     // ==================== Received Traps Display ====================
 
     loadTraps: async function() {
-        const tbody = document.getElementById("tr-table-body");
-        const countBadge = document.getElementById("tr-count-badge");
-        
-        if (!tbody) return;
-        
         try {
             const res = await fetch('/api/traps/');
             const json = await res.json();
             
-            if (json.data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted p-3">No traps received.</td></tr>';
-                if (countBadge) countBadge.textContent = '0';
-                return;
-            }
+            // Merge with persisted, keep unique by timestamp
+            const newTraps = json.data || [];
+            const existing = this.receivedTraps;
+            const merged = [...newTraps];
             
-            if (countBadge) countBadge.textContent = json.data.length;
-            
-            tbody.innerHTML = json.data.map((t, idx) => {
-                let trapBadgeClass = 'bg-secondary';
-                const trapType = t.trap_type || 'Unknown';
-                
-                if (trapType.toLowerCase().includes('up') || trapType.toLowerCase().includes('start')) {
-                    trapBadgeClass = 'bg-success';
-                } else if (trapType.toLowerCase().includes('down')) {
-                    trapBadgeClass = 'bg-danger';
-                } else if (trapType.toLowerCase().includes('auth') || trapType.toLowerCase().includes('fail')) {
-                    trapBadgeClass = 'bg-warning text-dark';
+            existing.forEach(old => {
+                if (!merged.find(t => t.timestamp === old.timestamp)) {
+                    merged.push(old);
                 }
-                
-                // Transform varbinds to simple key-value format
-                const simplifiedVarbinds = this.simplifyVarbinds(t.varbinds, t.resolved);
-                const varbindsJson = JSON.stringify(simplifiedVarbinds, null, 2);
-                
-                // Truncate for preview (will be handled by CSS ellipsis)
-                const varbindsPreview = varbindsJson.length > 100 
-                    ? varbindsJson.substring(0, 100) + '...' 
-                    : varbindsJson;
-                
-                return `
-                    <tr>
-                        <td class="small text-muted">${t.time_str}</td>
-                        <td><code class="small">${t.source}</code></td>
-                        <td>
-                            <span class="badge ${trapBadgeClass}">${trapType}</span>
-                        </td>
-                        <td>
-                            <code class="small" style="cursor: pointer;" onclick="TrapsModule.showTrapDetails(${idx})" title="Click to view full JSON">
-                                ${varbindsPreview}
-                            </code>
-                        </td>
-                        <td class="text-center">
-                            <button class="btn btn-sm btn-outline-primary py-0 px-1 me-1" onclick="TrapsModule.copyTrap(${idx})" title="Copy JSON">
-                                <i class="fas fa-copy"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-success py-0 px-1" onclick="TrapsModule.downloadTrap(${idx})" title="Download">
-                                <i class="fas fa-download"></i>
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
+            });
             
-            // Store traps for actions
-            this.receivedTraps = json.data;
+            // Sort by timestamp desc, keep last 100
+            this.receivedTraps = merged
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                .slice(0, 100);
+            
+            this.persistTraps();
+            this.renderTraps();
+            this.updateMetrics();
             
         } catch(e) {
             console.error('Failed to load traps:', e);
         }
     },
 
+    filterTraps: function() {
+        const searchInput = document.getElementById('tr-search');
+        const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+        
+        if (!searchTerm) {
+            this.filteredTraps = [];
+            this.renderTraps();
+            return;
+        }
+        
+        this.filteredTraps = this.receivedTraps.filter(trap => {
+            const trapJson = JSON.stringify(trap).toLowerCase();
+            return trapJson.includes(searchTerm);
+        });
+        
+        this.renderTraps();
+    },
+
+    renderTraps: function() {
+        const tbody = document.getElementById("tr-table-body");
+        const countBadge = document.getElementById("tr-count-badge");
+        
+        if (!tbody) return;
+        
+        const trapsToShow = this.filteredTraps.length > 0 ? this.filteredTraps : this.receivedTraps;
+        
+        if (trapsToShow.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted p-3">No traps received.</td></tr>';
+            if (countBadge) countBadge.textContent = '0';
+            return;
+        }
+        
+        if (countBadge) countBadge.textContent = trapsToShow.length;
+        
+        tbody.innerHTML = trapsToShow.map((t, idx) => {
+            let trapBadgeClass = 'bg-secondary';
+            const trapType = t.trap_type || 'Unknown';
+            
+            if (trapType.toLowerCase().includes('up') || trapType.toLowerCase().includes('start')) {
+                trapBadgeClass = 'bg-success';
+            } else if (trapType.toLowerCase().includes('down')) {
+                trapBadgeClass = 'bg-danger';
+            } else if (trapType.toLowerCase().includes('auth') || trapType.toLowerCase().includes('fail')) {
+                trapBadgeClass = 'bg-warning text-dark';
+            }
+            
+            const simplifiedVarbinds = this.simplifyVarbinds(t.varbinds, t.resolved);
+            const varbindsJson = JSON.stringify(simplifiedVarbinds, null, 2);
+            const varbindsPreview = varbindsJson.length > 100 
+                ? varbindsJson.substring(0, 100) + '...' 
+                : varbindsJson;
+            
+            return `
+                <tr>
+                    <td class="small text-muted">${t.time_str}</td>
+                    <td><code class="small">${t.source}</code></td>
+                    <td>
+                        <span class="badge ${trapBadgeClass}">${trapType}</span>
+                    </td>
+                    <td>
+                        <code class="small" style="cursor: pointer;" onclick="TrapsModule.showTrapDetails(${idx})" title="Click to view full JSON">
+                            ${varbindsPreview}
+                        </code>
+                    </td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-primary py-0 px-1 me-1" onclick="TrapsModule.copyTrap(${idx})" title="Copy JSON">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-success py-0 px-1" onclick="TrapsModule.downloadTrap(${idx})" title="Download">
+                            <i class="fas fa-download"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    },
 
     simplifyVarbinds: function(varbinds, resolved) {
         const simplified = {};
         
         if (Array.isArray(varbinds)) {
-            // Backend returns array format: [{oid, name, value, resolved}, ...]
             varbinds.forEach(vb => {
-                // Skip snmpTrapOID
                 if (vb.oid && vb.oid.includes('1.3.6.1.6.3.1.1.4.1.0')) return;
                 if (vb.name && vb.name.includes('snmpTrapOID')) return;
                 
-                // Use resolved name if available, otherwise use OID
                 let key = vb.oid;
                 if (resolved && vb.resolved && vb.name && vb.name !== vb.oid) {
                     key = vb.name;
@@ -583,7 +709,6 @@ window.TrapsModule = {
                 simplified[key] = vb.value;
             });
         } else if (typeof varbinds === 'object') {
-            // Already in object format
             return varbinds;
         }
         
@@ -591,12 +716,11 @@ window.TrapsModule = {
     },
 
     showTrapDetails: function(idx) {
-        const trap = this.receivedTraps[idx];
+        const trapsToShow = this.filteredTraps.length > 0 ? this.filteredTraps : this.receivedTraps;
+        const trap = trapsToShow[idx];
         
-        // Simplify varbinds for display
         const simplifiedVarbinds = this.simplifyVarbinds(trap.varbinds, trap.resolved);
         
-        // Create display object with simplified varbinds
         const displayTrap = {
             timestamp: trap.timestamp,
             time: trap.time_str,
@@ -637,7 +761,8 @@ window.TrapsModule = {
     },
 
     copyTrap: function(idx) {
-        const trap = this.receivedTraps[idx];
+        const trapsToShow = this.filteredTraps.length > 0 ? this.filteredTraps : this.receivedTraps;
+        const trap = trapsToShow[idx];
         const simplifiedVarbinds = this.simplifyVarbinds(trap.varbinds, trap.resolved);
         
         const displayTrap = {
@@ -655,7 +780,8 @@ window.TrapsModule = {
     },
 
     downloadTrap: function(idx) {
-        const trap = this.receivedTraps[idx];
+        const trapsToShow = this.filteredTraps.length > 0 ? this.filteredTraps : this.receivedTraps;
+        const trap = trapsToShow[idx];
         const simplifiedVarbinds = this.simplifyVarbinds(trap.varbinds, trap.resolved);
         
         const displayTrap = {
@@ -679,11 +805,10 @@ window.TrapsModule = {
 
     downloadAllTraps: function() {
         if (!this.receivedTraps || this.receivedTraps.length === 0) {
-            alert('No traps to download');
+            this.showNotification('No traps to download', 'warning');
             return;
         }
         
-        // Simplify all traps
         const simplifiedTraps = this.receivedTraps.map(trap => ({
             timestamp: trap.timestamp,
             time: trap.time_str,
@@ -704,26 +829,43 @@ window.TrapsModule = {
     },
 
     clearTraps: async function() {
-        if (!confirm('Clear all received traps?')) return;
+        if (!confirm('Clear all received traps? This will also clear persisted data.')) return;
         
         await fetch('/api/traps/', {method:'DELETE'});
-        this.loadTraps();
+        this.receivedTraps = [];
+        this.filteredTraps = [];
+        this.persistTraps();
+        this.renderTraps();
+        this.updateMetrics();
+        this.showNotification('All traps cleared', 'info');
     },
 
     // ==================== Utilities ====================
 
     showNotification: function(message, type = 'info') {
         const banner = document.createElement('div');
-        banner.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+        let icon = 'fa-info-circle';
+        let cls = 'alert-info';
+
+        if (type === 'success') {
+            icon = 'fa-check-circle';
+            cls = 'alert-success';
+        } else if (type === 'error') {
+            icon = 'fa-exclamation-circle';
+            cls = 'alert-danger';
+        } else if (type === 'warning') {
+            icon = 'fa-exclamation-triangle';
+            cls = 'alert-warning';
+        }
+
+        banner.className = `alert ${cls} alert-dismissible fade show position-fixed`;
         banner.style.cssText = 'top: 80px; right: 20px; z-index: 9999; min-width: 300px;';
         banner.innerHTML = `
-            ${message}
+            <i class="fas ${icon} me-2"></i> ${message}
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         `;
         document.body.appendChild(banner);
         
-        setTimeout(() => {
-            banner.remove();
-        }, 3000);
+        setTimeout(() => banner.remove(), 3000);
     }
 };
