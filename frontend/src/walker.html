@@ -1,6 +1,6 @@
 <div class="row h-100">
     <!-- LEFT: Config + History (40%) -->
-    <div class="col-lg-4 col-md-5 d-flex flex-column" style="height: calc(100vh - 120px);">
+    <div class="col-lg-4 col-md-5 d-flex flex-column">
         <!-- TOP: Configuration (~40%, auto height) -->
         <div class="card shadow-sm mb-3" style="flex: 0 0 auto;">
             <div class="card-header py-2">
@@ -91,25 +91,36 @@
             </div>
         </div>
         
-        <!-- BOTTOM: History (flex-fill for remaining space, scrollable) -->
-        <div class="card shadow-sm flex-fill" style="min-height: 0; overflow: hidden;">
-            <div class="card-header py-2 d-flex justify-content-between align-items-center">
-                <span><i class="fas fa-history me-2 text-info"></i> Walk History</span>
-                <div>
+        <!-- BOTTOM: History (fills remaining left space, scrollable) -->
+        <div class="card shadow-sm" style="flex: 1 1 auto; min-height: 200px; overflow: hidden;">
+            <div class="card-header py-1 d-flex justify-content-between align-items-center"
+                style="min-height: 32px;">
+                <span class="small">
+                    <i class="fas fa-history me-2 text-info"></i> Walk History
+                </span>
+                <div class="d-flex align-items-center gap-2">
                     <span class="badge bg-secondary" id="walk-history-count">0 saved</span>
-                    <button class="btn btn-sm btn-outline-danger ms-2 py-0 px-1" onclick="WalkerModule.clearHistory()" 
+                    <button class="btn btn-sm btn-outline-danger py-0 px-1"
+                            onclick="WalkerModule.clearHistory()"
                             title="Clear History" aria-label="Clear history">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
             </div>
+
             <div class="card-body p-0 h-100 overflow-auto">
                 <div id="walk-history-empty" class="text-center text-muted p-3">
                     <i class="fas fa-history fa-2x mb-2 opacity-25"></i>
-                    <div class="small">No walk history yet.<br>Recent walks will appear here.</div>
+                    <div class="small">
+                        No walk history yet.<br>
+                        Recent walks will appear here.
+                    </div>
                 </div>
-                <div id="walk-history-list" class="list-group list-group-flush" style="display: none;">
-                    <!-- History items injected here -->
+
+                <div id="walk-history-list"
+                    class="list-group list-group-flush"
+                    style="display: none;">
+                    <!-- History items injected here by WalkerModule.renderHistory() -->
                 </div>
             </div>
         </div>
