@@ -7,8 +7,8 @@ import { Router } from './core/router.js';
 import { AuthManager } from './core/auth.js';
 import { ApiClient } from './core/api.js';
 import { createAppStore } from './core/store.js';
-import { ThemeManager } from './core/theme.js';
-import { toast } from './components/Toast.js';
+import { ThemeManager, createThemeToggle } from './core/theme.js';
+import { Toast } from './components/Toast.js';
 
 // ==================== Fetch Interceptor (Backward Compatibility) ====================
 // This interceptor automatically injects auth tokens into ALL fetch requests
@@ -98,40 +98,32 @@ class App {
         this.store.subscribe('backendOnline', (online) => {
             this.updateBackendStatus(online);
         });
-        
-        // React to theme changes
-        this.store.subscribe('theme', (theme) => {
-            this.updateThemeIcon(theme);
-        });
 
         console.log('[App] State subscriptions setup');
     }
 
     /**
      * Render appropriate view based on state
-     * Using cssText to force styles with !important equivalent
      */
     renderView(view) {
         const loginScreen = document.getElementById('login-screen');
-        const wrapper = document.getElementById('wrapper');
+        const appWrapper = document.getElementById('app-wrapper');
         
-        if (!loginScreen || !wrapper) {
-            console.error('[App] Missing DOM elements:', { loginScreen: !!loginScreen, wrapper: !!wrapper });
+        if (!loginScreen || !appWrapper) {
+            console.error('[App] Missing DOM elements');
             return;
         }
         
         if (view === 'login') {
-            // Show login screen
-            loginScreen.style.cssText = 'display: flex !important; z-index: 9999;';
-            wrapper.style.cssText = 'display: none !important;';
-            console.log('[App] ✅ Login screen shown, app hidden');
+            loginScreen.classList.remove('d-none');
+            appWrapper.classList.add('d-none');
+            console.log('[App] ✅ Login screen shown');
         } else if (view === 'app') {
-            // Hide login screen, show app
-            loginScreen.style.cssText = 'display: none !important;';
-            wrapper.style.cssText = 'display: flex !important;';
-            console.log('[App] ✅ Application shown, login hidden');
+            loginScreen.classList.add('d-none');
+            appWrapper.classList.remove('d-none');
+            console.log('[App] ✅ Application shown');
             
-            // Load app metadata when showing app
+            // Load app metadata
             this.loadAppMetadata();
             
             // Start health check
@@ -148,11 +140,18 @@ class App {
     async init() {
         console.log('[App] Starting initialization...');
         
-        // Initialize theme FIRST (before anything renders)
+        // Remove no-transition class after a brief delay
+        setTimeout(() => {
+            document.body.classList.remove('no-transition');
+        }, 100);
+        
+        // Initialize theme FIRST
         this.theme.init();
         
-        // IMPORTANT: Show login screen FIRST, before any async operations
-        console.log('[App] Showing initial login screen');
+        // Create and mount theme toggle
+        this.createThemeToggle();
+        
+        // Show login screen initially
         this.renderView('login');
         
         // Setup routes
@@ -169,8 +168,7 @@ class App {
             if (verification.valid) {
                 console.log('[App] Token valid, user:', verification.user);
                 this.updateUserUI(verification.user);
-                // Show welcome toast
-                toast.success(`Welcome back, ${verification.user}!`, { duration: 2000 });
+                Toast.success(`Welcome back, ${verification.user}!`, { duration: 2000 });
             } else {
                 console.log('[App] Token invalid');
                 this.renderView('login');
@@ -178,15 +176,29 @@ class App {
         } else {
             console.log('[App] No existing token');
         }
+        
+        console.log('[App] ✅ Initialization complete');
     }
 
     /**
-     * Register routes with their module classes
+     * Create theme toggle button
+     */
+    createThemeToggle() {
+        const container = document.getElementById('theme-toggle-container');
+        if (container) {
+            const toggle = createThemeToggle(this.theme);
+            container.appendChild(toggle);
+            console.log('[App] Theme toggle created');
+        }
+    }
+
+    /**
+     * Register routes
      */
     setupRoutes() {
         const container = document.getElementById('main-content');
         
-        // Temporary route handler that loads HTML and initializes old modules
+        // Temporary wrapper for old modules
         const createModuleWrapper = (moduleName) => {
             return class {
                 constructor(container) {
@@ -195,7 +207,6 @@ class App {
                 }
                 
                 async init() {
-                    // Load HTML
                     const response = await fetch(`${this.moduleName}.html`);
                     if (!response.ok) throw new Error('Module not found');
                     const html = await response.text();
@@ -245,7 +256,7 @@ class App {
         window.addEventListener('auth:unauthorized', () => {
             console.log('[App] Unauthorized event received');
             this.logout();
-        }, { once: false });
+        });
 
         // Sidebar toggle
         const sidebarToggle = document.getElementById('sidebarToggle');
@@ -256,33 +267,23 @@ class App {
                 this.store.set('sidebarCollapsed', !collapsed);
             });
         }
-        
-        // Theme toggle
-        const themeToggle = document.getElementById('theme-toggle');
-        if (themeToggle) {
-            themeToggle.addEventListener('click', () => {
-                const newTheme = this.theme.toggle();
-                const emoji = newTheme === 'dark' ? '🌙' : '☀️';
-                toast.info(`${emoji} ${newTheme === 'dark' ? 'Dark' : 'Light'} mode activated`, { 
-                    duration: 2000 
-                });
+
+        // Logout button
+        const logoutBtn = document.getElementById('logout-btn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.logout();
             });
         }
 
         // Login form
         const loginForm = document.getElementById('login-form');
         if (loginForm) {
-            loginForm.removeAttribute('onsubmit');
-            
-            if (!loginForm.dataset.listenerAttached) {
-                loginForm.addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    this.handleLogin(e);
-                });
-                loginForm.dataset.listenerAttached = 'true';
-                console.log('[App] Login form listener attached');
-            }
+            loginForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.handleLogin();
+            });
         }
 
         console.log('[App] Event listeners setup');
@@ -304,19 +305,16 @@ class App {
      */
     updatePageTitle(route) {
         const titles = {
-            'dashboard': 'Trishul SNMP',
-            'simulator': 'SNMP Simulator',
-            'walker': 'Walk & Parse',
-            'traps': 'Trap Manager',
-            'browser': 'MIB Browser',
-            'mibs': 'MIB Manager',
-            'settings': 'Settings'
+            'dashboard': 'Dashboard - Trishul SNMP',
+            'simulator': 'Simulator - Trishul SNMP',
+            'walker': 'Walker - Trishul SNMP',
+            'traps': 'Traps - Trishul SNMP',
+            'browser': 'Browser - Trishul SNMP',
+            'mibs': 'MIBs - Trishul SNMP',
+            'settings': 'Settings - Trishul SNMP'
         };
-
-        const titleEl = document.getElementById('page-title');
-        if (titleEl) {
-            titleEl.textContent = titles[route] || 'Trishul SNMP';
-        }
+        
+        document.title = titles[route] || 'Trishul SNMP';
     }
 
     /**
@@ -324,49 +322,28 @@ class App {
      */
     updateActiveNavItem(route) {
         document.querySelectorAll('.list-group-item').forEach(el => {
-            const href = el.getAttribute('href');
-            el.classList.toggle('active', href === `#${route}`);
+            const dataRoute = el.getAttribute('data-route');
+            el.classList.toggle('active', dataRoute === route);
         });
-    }
-    
-    /**
-     * Update theme icon
-     */
-    updateThemeIcon(theme) {
-        const icon = document.getElementById('theme-icon');
-        if (icon) {
-            icon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
-        }
     }
 
     /**
-     * Handle login form submission
+     * Handle login
      */
-    async handleLogin(event) {
-        if (event) {
-            event.preventDefault();
-            event.stopPropagation();
-        }
-        
-        const submitBtn = document.getElementById('login-btn');
+    async handleLogin() {
+        const username = document.getElementById('username')?.value;
+        const password = document.getElementById('password')?.value;
         const errorDiv = document.getElementById('login-error');
         
-        // Prevent double submission
-        if (submitBtn && submitBtn.disabled) {
-            console.log('[App] Login already in progress, ignoring');
-            return;
-        }
-        
-        const username = document.getElementById('login-user')?.value;
-        const password = document.getElementById('login-pass')?.value;
-        
         if (!username || !password) {
-            console.error('[App] Missing username or password');
+            if (errorDiv) {
+                errorDiv.textContent = 'Please enter username and password';
+                errorDiv.classList.remove('d-none');
+            }
             return;
         }
         
-        // Disable form
-        if (submitBtn) submitBtn.disabled = true;
+        // Hide error
         if (errorDiv) errorDiv.classList.add('d-none');
         
         try {
@@ -375,14 +352,13 @@ class App {
             if (result.success) {
                 console.log('[App] Login successful');
                 this.updateUserUI(result.user);
-                toast.success(`Welcome, ${result.user}!`, { duration: 2000 });
+                Toast.success(`Welcome, ${result.user}!`, { duration: 2000 });
             } else {
                 console.error('[App] Login failed:', result.error);
                 if (errorDiv) {
                     errorDiv.textContent = result.error;
                     errorDiv.classList.remove('d-none');
                 }
-                toast.error(result.error || 'Login failed', { duration: 3000 });
             }
         } catch (error) {
             console.error('[App] Login error:', error);
@@ -390,37 +366,25 @@ class App {
                 errorDiv.textContent = 'An unexpected error occurred';
                 errorDiv.classList.remove('d-none');
             }
-            toast.error('An unexpected error occurred', { duration: 3000 });
-        } finally {
-            if (submitBtn) submitBtn.disabled = false;
         }
     }
 
     /**
-     * Update user info in UI
+     * Update user UI
      */
     updateUserUI(username) {
-        const userNameEl = document.getElementById('nav-user-name');
-        if (userNameEl) {
-            userNameEl.textContent = username || 'User';
+        const userDisplay = document.getElementById('username-display');
+        if (userDisplay) {
+            userDisplay.textContent = username || 'User';
         }
     }
 
     /**
-     * Load application metadata
+     * Load app metadata
      */
     async loadAppMetadata() {
-        const versionEl = document.getElementById('app-version');
-        
         try {
             const data = await this.api.get('/meta');
-            
-            if (versionEl) {
-                versionEl.textContent = `v${data.version}`;
-                versionEl.title = `${data.name} v${data.version}`;
-            }
-            
-            document.title = data.name;
             
             this.store.update({
                 appMetadata: data,
@@ -431,19 +395,13 @@ class App {
             
         } catch (error) {
             console.error('[App] Failed to load metadata:', error);
-            
-            if (versionEl) {
-                versionEl.textContent = 'Offline';
-                versionEl.style.color = '#ef4444';
-            }
-            
             this.store.set('backendOnline', false);
-            toast.warning('Backend is offline', { duration: 3000 });
+            Toast.warning('Backend is offline', { duration: 3000 });
         }
     }
 
     /**
-     * Start periodic backend health check
+     * Start health check
      */
     startHealthCheck() {
         if (this.healthCheckInterval) {
@@ -465,7 +423,7 @@ class App {
             const wasOffline = !this.store.get('backendOnline');
             if (wasOffline) {
                 console.log('[App] Backend is back online');
-                toast.success('Backend connection restored', { duration: 2000 });
+                Toast.success('Backend connection restored', { duration: 2000 });
             }
             
             this.store.set('backendOnline', true);
@@ -474,7 +432,7 @@ class App {
             const wasOnline = this.store.get('backendOnline');
             if (wasOnline) {
                 console.error('[App] Backend went offline');
-                toast.error('Lost connection to backend', { duration: 3000 });
+                Toast.error('Lost connection to backend', { duration: 3000 });
             }
             
             this.store.set('backendOnline', false);
@@ -488,16 +446,19 @@ class App {
         const badge = document.getElementById('backend-status');
         if (badge) {
             badge.className = online ? 'badge bg-success' : 'badge bg-danger';
-            badge.textContent = online ? 'Online' : 'Offline';
+            const icon = badge.querySelector('i');
+            const text = badge.querySelector('span');
+            if (icon) icon.className = `fas fa-circle`;
+            if (text) text.textContent = online ? 'Online' : 'Offline';
         }
     }
 
     /**
-     * Logout user
+     * Logout
      */
     async logout() {
         if (this.isLoggingOut) {
-            console.log('[App] Logout already in progress, skipping');
+            console.log('[App] Logout already in progress');
             return;
         }
         
@@ -509,7 +470,7 @@ class App {
         }
         
         await this.auth.logout();
-        toast.info('Logged out successfully', { duration: 2000 });
+        Toast.info('Logged out successfully', { duration: 2000 });
         
         setTimeout(() => {
             this.isLoggingOut = false;
@@ -518,25 +479,18 @@ class App {
 }
 
 // Initialize app when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('[App] DOM loaded, initializing...');
-    
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log('[App] DOM loaded, initializing...');
+        const app = new App();
+        app.init().catch(error => {
+            console.error('[App] Initialization failed:', error);
+        });
+    });
+} else {
+    console.log('[App] DOM already loaded, initializing immediately...');
     const app = new App();
     app.init().catch(error => {
         console.error('[App] Initialization failed:', error);
     });
-});
-
-// Make logout function global for HTML onclick handlers
-window.logout = () => {
-    if (window.app) {
-        window.app.logout();
-    }
-};
-
-// Make handleLogin global for HTML inline handler (backward compatibility)
-window.handleLogin = (e) => {
-    if (window.app) {
-        window.app.handleLogin(e);
-    }
-};
+}
