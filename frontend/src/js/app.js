@@ -31,10 +31,13 @@ window.fetch = async function(url, options = {}) {
 
     const response = await originalFetch(url, options);
     
-    // Trigger logout on 401 (except for login endpoint)
-    if (response.status === 401 && !url.includes('/login')) {
+    // Trigger logout on 401 (except for login/logout endpoints)
+    if (response.status === 401 && !url.includes('/login') && !url.includes('/logout')) {
         console.warn('[Fetch Interceptor] 401 Unauthorized - triggering logout');
-        window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+        // Only trigger if we're currently authenticated
+        if (window.app && window.app.store.get('isAuthenticated')) {
+            window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+        }
     }
 
     return response;
@@ -54,6 +57,9 @@ class App {
         this.router = new Router();
         this.auth = new AuthManager(this.store);
         this.api = new ApiClient();
+        
+        // Track if we're already logging out to prevent loops
+        this.isLoggingOut = false;
         
         // Subscribe to state changes for reactive UI
         this.setupStateSubscriptions();
@@ -134,6 +140,7 @@ class App {
         
         // Check authentication
         if (this.auth.isAuthenticated()) {
+            console.log('[App] Found existing token, verifying...');
             const verification = await this.auth.verify();
             
             if (verification.valid) {
@@ -141,12 +148,19 @@ class App {
                 this.updateUserUI(verification.user);
                 // State store will trigger view change to 'app'
             } else {
-                console.log('[App] Token invalid, showing login');
+                console.log('[App] Token invalid, clearing and showing login');
+                // Clear invalid token
+                sessionStorage.removeItem('snmp_token');
+                sessionStorage.removeItem('snmp_user');
                 this.store.set('currentView', 'login');
+                // Explicitly render since state might not change
+                this.renderView('login');
             }
         } else {
-            console.log('[App] Not authenticated, showing login');
+            console.log('[App] No existing token, showing login');
             this.store.set('currentView', 'login');
+            // Explicitly render initial view
+            this.renderView('login');
         }
     }
 
@@ -215,7 +229,7 @@ class App {
         window.addEventListener('auth:unauthorized', () => {
             console.log('[App] Unauthorized event received');
             this.logout();
-        });
+        }, { once: false }); // Allow multiple but we'll handle duplicates
 
         // Sidebar toggle
         const sidebarToggle = document.getElementById('sidebarToggle');
@@ -227,10 +241,12 @@ class App {
             });
         }
 
-        // Login form
+        // Login form - attach ONCE
         const loginForm = document.getElementById('login-form');
-        if (loginForm) {
+        if (loginForm && !loginForm.dataset.listenerAttached) {
             loginForm.addEventListener('submit', (e) => this.handleLogin(e));
+            loginForm.dataset.listenerAttached = 'true';
+            console.log('[App] Login form listener attached');
         }
 
         console.log('[App] Event listeners setup');
@@ -283,10 +299,17 @@ class App {
     async handleLogin(event) {
         event.preventDefault();
         
-        const username = document.getElementById('login-user').value;
-        const password = document.getElementById('login-pass').value;
         const submitBtn = document.getElementById('login-btn');
         const errorDiv = document.getElementById('login-error');
+        
+        // Prevent double submission
+        if (submitBtn.disabled) {
+            console.log('[App] Login already in progress, ignoring');
+            return;
+        }
+        
+        const username = document.getElementById('login-user').value;
+        const password = document.getElementById('login-pass').value;
         
         // Disable form
         submitBtn.disabled = true;
@@ -413,6 +436,13 @@ class App {
      * Logout user
      */
     async logout() {
+        // Prevent logout loop
+        if (this.isLoggingOut) {
+            console.log('[App] Logout already in progress, skipping');
+            return;
+        }
+        
+        this.isLoggingOut = true;
         console.log('[App] Logging out...');
         
         // Stop health check
@@ -422,6 +452,11 @@ class App {
         
         await this.auth.logout();
         // AuthManager will update store, triggering view change to 'login'
+        
+        // Reset flag after a delay
+        setTimeout(() => {
+            this.isLoggingOut = false;
+        }, 1000);
     }
 }
 
