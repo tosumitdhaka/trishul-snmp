@@ -1,0 +1,312 @@
+/**
+ * Component Styles - Loading States, Skeletons, Animations
+ */
+
+/* ==================== Loading Spinner ==================== */
+.spinner-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 200px;
+    padding: 2rem;
+}
+
+.spinner-border-lg {
+    width: 3rem;
+    height: 3rem;
+    border-width: 0.3rem;
+}
+
+/* Inline spinner (small) */
+.spinner-inline {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border-width: 0.15rem;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
+
+/* ==================== Skeleton Screens ==================== */
+.skeleton {
+    background: linear-gradient(
+        90deg,
+        var(--bg-tertiary) 0%,
+        var(--border-light) 50%,
+        var(--bg-tertiary) 100%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-loading 1.5s ease-in-out infinite;
+    border-radius: 0.25rem;
+}
+
+@keyframes skeleton-loading {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Skeleton text */
+.skeleton-text {
+    height: 1rem;
+    margin-bottom: 0.5rem;
+    border-radius: 0.25rem;
+}
+
+.skeleton-text:last-child {
+    margin-bottom: 0;
+    width: 80%; /* Last line is typically shorter */
+}
+
+/* Skeleton heading */
+.skeleton-heading {
+    height: 1.5rem;
+    width: 60%;
+    margin-bottom: 1rem;
+}
+
+/* Skeleton avatar/icon */
+.skeleton-circle {
+    border-radius: 50%;
+}
+
+.skeleton-avatar-sm {
+    width: 2rem;
+    height: 2rem;
+}
+
+.skeleton-avatar {
+    width: 3rem;
+    height: 3rem;
+}
+
+.skeleton-avatar-lg {
+    width: 4rem;
+    height: 4rem;
+}
+
+/* Skeleton button */
+.skeleton-button {
+    height: 2.375rem;
+    width: 100px;
+}
+
+/* Skeleton card */
+.skeleton-card {
+    padding: 1.5rem;
+}
+
+.skeleton-card-header {
+    height: 3rem;
+    margin-bottom: 1rem;
+}
+
+.skeleton-card-body {
+    height: 150px;
+}
+
+/* Skeleton table row */
+.skeleton-table-row {
+    display: flex;
+    gap: 1rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.skeleton-table-cell {
+    height: 1.25rem;
+    flex: 1;
+}
+
+/* Skeleton chart/graph */
+.skeleton-chart {
+    height: 300px;
+    width: 100%;
+}
+
+/* ==================== Loading Overlay ==================== */
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    border-radius: inherit;
+}
+
+[data-theme="dark"] .loading-overlay {
+    background-color: rgba(26, 29, 35, 0.8);
+}
+
+.loading-overlay-message {
+    text-align: center;
+}
+
+.loading-overlay-message .spinner-border {
+    margin-bottom: 1rem;
+}
+
+/* ==================== Progress Bar ==================== */
+.progress-bar-wrapper {
+    position: relative;
+    margin-bottom: 1rem;
+}
+
+.progress {
+    height: 0.5rem;
+    background-color: var(--bg-tertiary);
+}
+
+.progress-bar {
+    transition: width 0.3s ease;
+}
+
+.progress-label {
+    font-size: 0.875rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-secondary);
+}
+
+/* ==================== Pulse Animation ==================== */
+.pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+/* ==================== Fade Animations ==================== */
+.fade-in {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.fade-out {
+    animation: fadeOut 0.3s ease-out;
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
+/* ==================== Slide Animations ==================== */
+.slide-in-right {
+    animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.slide-out-right {
+    animation: slideOutRight 0.3s ease-in;
+}
+
+@keyframes slideOutRight {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+/* ==================== Empty State ==================== */
+.empty-state {
+    text-align: center;
+    padding: 3rem 1.5rem;
+    color: var(--text-secondary);
+}
+
+.empty-state-icon {
+    font-size: 3rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+
+.empty-state-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.empty-state-message {
+    font-size: 0.9375rem;
+    margin-bottom: 1.5rem;
+}
+
+/* ==================== Utility Classes ==================== */
+.loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.clickable {
+    cursor: pointer;
+}
+
+.no-select {
+    user-select: none;
+}
+
+/* ==================== Responsive Helpers ==================== */
+@media (max-width: 768px) {
+    .skeleton-heading {
+        width: 80%;
+    }
+    
+    .skeleton-card-body {
+        height: 100px;
+    }
+    
+    .empty-state {
+        padding: 2rem 1rem;
+    }
+    
+    .empty-state-icon {
+        font-size: 2rem;
+    }
+}
