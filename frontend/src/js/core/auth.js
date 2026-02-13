@@ -8,14 +8,8 @@ export class AuthManager {
         this.token = sessionStorage.getItem('snmp_token');
         this.user = sessionStorage.getItem('snmp_user');
         
-        // Initialize store with current auth state
-        if (this.token && this.user) {
-            this.store.update({
-                isAuthenticated: true,
-                user: this.user,
-                token: this.token
-            });
-        }
+        // DON'T set store state here - wait for verification in app.init()
+        // This prevents premature view switching before token validation
         
         console.log('[Auth] AuthManager initialized');
     }
@@ -151,15 +145,17 @@ export class AuthManager {
                 this.user = data.user;
                 sessionStorage.setItem('snmp_user', data.user);
                 
-                // Update store
+                // Update store ONLY on successful verification
                 this.store.update({
                     isAuthenticated: true,
                     user: data.user,
+                    token: this.token,
                     currentView: 'app'
                 });
                 
                 return { valid: true, user: data.user };
             } else {
+                // Token invalid - logout without calling API (already got 401)
                 await this.logout(false);
                 return { valid: false };
             }
