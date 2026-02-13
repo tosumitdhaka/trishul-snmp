@@ -32,7 +32,7 @@ Updated `app.js` to ES6 module with:
 - Import statements for core modules
 - Single `App` class managing entire application
 - Event-driven architecture
-- Backward compatibility with existing module pattern
+- **Fetch interceptor for backward compatibility** ✨
 - Health check system for backend status
 - Metadata loading and display
 
@@ -86,9 +86,35 @@ frontend/src/js/
 - ✅ Single routing implementation
 - ✅ Clear upgrade path for remaining modules
 
+## Backward Compatibility Strategy
+
+### Fetch Interceptor
+To maintain compatibility with existing modules that make direct `fetch()` calls, we've implemented a global fetch interceptor that:
+
+```javascript
+// Automatically injects auth token into ALL fetch requests
+const originalFetch = window.fetch;
+window.fetch = async function(url, options = {}) {
+    const token = sessionStorage.getItem('snmp_token');
+    if (token) {
+        options.headers['X-Auth-Token'] = token;
+    }
+    return await originalFetch(url, options);
+};
+```
+
+This allows:
+- ✅ Existing modules work without modification
+- ✅ Old `window.XxxModule` pattern maintained
+- ✅ HTML onclick handlers still functional
+- ✅ Zero breaking changes for users
+
+**Note:** The fetch interceptor will be removed once all modules are migrated to use the new `ApiClient` class.
+
 ## Console Output Example
 
 ```javascript
+[App] Fetch interceptor installed for backward compatibility
 [App] DOM loaded, initializing...
 [App] Trishul SNMP initializing...
 [App] Starting initialization...
@@ -97,23 +123,28 @@ frontend/src/js/
 [Auth] Login successful: admin
 [App] Token valid, showing app
 [App] Application shown
-[App] 🔱 Trishul SNMP Studio v1.2.0 loaded
+[App] 🔱 Trishul SNMP Studio v1.2.1 loaded
 [App] Route changed: dashboard
 [Router] Navigating to: dashboard
 ```
 
-## Backward Compatibility
+## Issues Fixed
 
-- ✅ Existing modules still work without modification
-- ✅ Old `window.XxxModule` pattern maintained
-- ✅ HTML onclick handlers still functional
-- ✅ Zero breaking changes for users
+### Authentication Token Not Injecting (Fixed)
+**Issue:** Dashboard API calls were receiving 401 errors after login because the auth token wasn't being injected into fetch requests.
+
+**Root Cause:** The old app.js had a fetch interceptor that we removed during the refactor. Existing module scripts rely on this for auth token injection.
+
+**Solution:** Restored the fetch interceptor with clear documentation that it's temporary for backward compatibility.
+
+**Commit:** `fix: Restore fetch interceptor for backward compatibility with legacy modules`
 
 ## Testing Checklist
 
 - [x] Login page loads correctly
 - [x] Authentication works (admin/admin123)
 - [x] Dashboard loads after login
+- [x] Dashboard API calls succeed (simulator/traps/mibs status)
 - [x] Navigation between modules works
 - [x] Sidebar toggle functions
 - [x] Backend status indicator updates
@@ -165,6 +196,7 @@ To:
 export class Dashboard {
     constructor(container) {
         this.container = container;
+        this.api = new ApiClient();  // Use ApiClient instead of fetch
     }
     
     async init() { ... }
@@ -177,7 +209,7 @@ export class Dashboard {
 - ✅ `frontend/src/js/core/router.js` (NEW)
 - ✅ `frontend/src/js/core/auth.js` (NEW)
 - ✅ `frontend/src/js/core/api.js` (NEW)
-- ✅ `frontend/src/js/app.js` (REFACTORED)
+- ✅ `frontend/src/js/app.js` (REFACTORED + FIX)
 - ✅ `frontend/src/index.html` (UPDATED)
 
 ## Commits
@@ -187,13 +219,15 @@ export class Dashboard {
 3. `feat(core): Add ApiClient for centralized API communication`
 4. `refactor(app): Convert to ES6 module architecture with Router, Auth, and API classes`
 5. `refactor(html): Update to use ES6 module system with single script tag`
+6. `docs: Add Phase 1.1 migration documentation`
+7. `fix: Restore fetch interceptor for backward compatibility with legacy modules` ✨
 
-## Status: ✅ COMPLETE
+## Status: ✅ COMPLETE & TESTED
 
 **Date:** February 13, 2026  
 **Branch:** `frontend-enhancements`  
-**Ready for:** Testing and Phase 1.2
+**Ready for:** Phase 1.2 (State Management)
 
 ---
 
-*Phase 1.1 successfully establishes the foundation for modern JavaScript architecture in Trishul SNMP.*
+*Phase 1.1 successfully establishes the foundation for modern JavaScript architecture in Trishul SNMP while maintaining full backward compatibility.*
