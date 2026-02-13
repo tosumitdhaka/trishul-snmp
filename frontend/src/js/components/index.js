@@ -1,10 +1,10 @@
 /**
- * Components - Central Export File
- * Import all components from here for convenience
+ * Component exports
  */
 
 export { Card } from './Card.js';
 export { Table } from './Table.js';
 export { Alert } from './Alert.js';
 export { Modal } from './Modal.js';
-export { Toast, ToastContainer, toast } from './Toast.js';
+export { Toast } from './Toast.js';
+export { Skeleton } from './Skeleton.js';
