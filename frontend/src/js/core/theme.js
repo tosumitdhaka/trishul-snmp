@@ -1,121 +1,111 @@
 /**
  * Theme Manager
- * Handles dark/light mode switching with persistence
+ * Handles dark/light mode with persistence
  */
 
 export class ThemeManager {
     constructor(store) {
         this.store = store;
-        this.currentTheme = this.getStoredTheme() || 'light';
+        this.themes = ['light', 'dark', 'auto'];
+        this.currentTheme = this.loadTheme();
         
         console.log('[Theme] ThemeManager initialized');
     }
 
     /**
-     * Initialize theme manager
+     * Initialize theme system
      */
     init() {
-        // Apply stored theme
+        // Set initial theme
         this.applyTheme(this.currentTheme);
         
         // Listen for system theme changes
-        this.watchSystemTheme();
-        
-        // Update store
-        if (this.store) {
-            this.store.set('theme', this.currentTheme);
+        if (window.matchMedia) {
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+                if (this.currentTheme === 'auto') {
+                    this.applyTheme('auto');
+                }
+            });
         }
         
-        console.log(`[Theme] Applied theme: ${this.currentTheme}`);
+        console.log('[Theme] Theme system initialized:', this.currentTheme);
     }
 
     /**
-     * Get stored theme from localStorage
+     * Load theme from storage
      */
-    getStoredTheme() {
-        return localStorage.getItem('theme');
+    loadTheme() {
+        const stored = localStorage.getItem('theme');
+        return stored && this.themes.includes(stored) ? stored : 'light';
     }
 
     /**
-     * Store theme in localStorage
+     * Save theme to storage
      */
-    storeTheme(theme) {
+    saveTheme(theme) {
         localStorage.setItem('theme', theme);
     }
 
     /**
-     * Get system preferred theme
+     * Get effective theme (resolve 'auto' to actual theme)
      */
-    getSystemTheme() {
-        if (window.matchMedia) {
-            return window.matchMedia('(prefers-color-scheme: dark)').matches 
-                ? 'dark' 
-                : 'light';
-        }
-        return 'light';
-    }
-
-    /**
-     * Watch for system theme changes
-     */
-    watchSystemTheme() {
-        if (!window.matchMedia) return;
-        
-        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-        
-        mediaQuery.addEventListener('change', (e) => {
-            // Only auto-switch if user hasn't manually set a preference
-            if (!this.getStoredTheme()) {
-                const newTheme = e.matches ? 'dark' : 'light';
-                this.setTheme(newTheme);
-                console.log(`[Theme] System theme changed to: ${newTheme}`);
+    getEffectiveTheme() {
+        if (this.currentTheme === 'auto') {
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                return 'dark';
             }
-        });
+            return 'light';
+        }
+        return this.currentTheme;
     }
 
     /**
      * Apply theme to document
      */
     applyTheme(theme) {
-        document.documentElement.setAttribute('data-theme', theme);
         this.currentTheme = theme;
+        const effectiveTheme = this.getEffectiveTheme();
         
-        // Update meta theme-color for mobile browsers
-        const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-        if (metaThemeColor) {
-            metaThemeColor.setAttribute(
-                'content', 
-                theme === 'dark' ? '#1a1d23' : '#ffffff'
-            );
-        }
-    }
-
-    /**
-     * Set theme and persist
-     */
-    setTheme(theme) {
-        this.applyTheme(theme);
-        this.storeTheme(theme);
+        // Update document
+        document.documentElement.setAttribute('data-theme', effectiveTheme);
+        document.body.classList.remove('light-theme', 'dark-theme');
+        document.body.classList.add(`${effectiveTheme}-theme`);
         
+        // Update store
         if (this.store) {
             this.store.set('theme', theme);
+            this.store.set('effectiveTheme', effectiveTheme);
         }
         
-        console.log(`[Theme] Theme changed to: ${theme}`);
+        // Save to storage
+        this.saveTheme(theme);
         
-        // Emit event for other components
-        window.dispatchEvent(new CustomEvent('theme:changed', { 
-            detail: { theme } 
+        // Emit event
+        window.dispatchEvent(new CustomEvent('theme:changed', {
+            detail: { theme, effectiveTheme }
         }));
+        
+        console.log('[Theme] Applied:', theme, '->', effectiveTheme);
     }
 
     /**
      * Toggle between light and dark
      */
     toggle() {
-        const newTheme = this.currentTheme === 'light' ? 'dark' : 'light';
-        this.setTheme(newTheme);
-        return newTheme;
+        const current = this.getEffectiveTheme();
+        const next = current === 'light' ? 'dark' : 'light';
+        this.applyTheme(next);
+    }
+
+    /**
+     * Set specific theme
+     */
+    setTheme(theme) {
+        if (!this.themes.includes(theme)) {
+            console.warn('[Theme] Invalid theme:', theme);
+            return;
+        }
+        this.applyTheme(theme);
     }
 
     /**
@@ -124,21 +114,31 @@ export class ThemeManager {
     getTheme() {
         return this.currentTheme;
     }
-
-    /**
-     * Check if dark mode is active
-     */
-    isDark() {
-        return this.currentTheme === 'dark';
-    }
-
-    /**
-     * Check if light mode is active
-     */
-    isLight() {
-        return this.currentTheme === 'light';
-    }
 }
 
-// Make available globally
-window.ThemeManager = ThemeManager;
+/**
+ * Theme toggle component
+ */
+export function createThemeToggle(themeManager) {
+    const toggle = document.createElement('button');
+    toggle.className = 'btn btn-link text-decoration-none theme-toggle';
+    toggle.setAttribute('aria-label', 'Toggle theme');
+    toggle.title = 'Toggle dark mode';
+    
+    const updateIcon = () => {
+        const theme = themeManager.getEffectiveTheme();
+        const icon = theme === 'dark' ? 'fa-sun' : 'fa-moon';
+        toggle.innerHTML = `<i class="fas ${icon}"></i>`;
+    };
+    
+    updateIcon();
+    
+    toggle.addEventListener('click', () => {
+        themeManager.toggle();
+        updateIcon();
+    });
+    
+    window.addEventListener('theme:changed', updateIcon);
+    
+    return toggle;
+}

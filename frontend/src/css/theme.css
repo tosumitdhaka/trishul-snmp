@@ -1,0 +1,241 @@
+/**
+ * Theme System - Dark & Light Mode
+ */
+
+/* CSS Variables - Light Theme (Default) */
+:root,
+[data-theme="light"],
+.light-theme {
+    /* Colors */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --bg-tertiary: #e9ecef;
+    
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --text-muted: #adb5bd;
+    
+    --border-color: #dee2e6;
+    --border-light: #e9ecef;
+    
+    /* Components */
+    --card-bg: #ffffff;
+    --card-border: #dee2e6;
+    --card-shadow: rgba(0, 0, 0, 0.1);
+    
+    --sidebar-bg: #212529;
+    --sidebar-text: #ffffff;
+    --sidebar-hover: rgba(255, 255, 255, 0.1);
+    
+    --navbar-bg: #f8f9fa;
+    --navbar-border: #dee2e6;
+    
+    --input-bg: #ffffff;
+    --input-border: #ced4da;
+    --input-focus: #86b7fe;
+    
+    --table-hover: rgba(0, 0, 0, 0.075);
+    --table-stripe: rgba(0, 0, 0, 0.05);
+    
+    /* Status colors remain the same */
+    --success: #198754;
+    --danger: #dc3545;
+    --warning: #ffc107;
+    --info: #0dcaf0;
+}
+
+/* Dark Theme */
+[data-theme="dark"],
+.dark-theme {
+    /* Colors */
+    --bg-primary: #1a1d24;
+    --bg-secondary: #252830;
+    --bg-tertiary: #2d3139;
+    
+    --text-primary: #e9ecef;
+    --text-secondary: #adb5bd;
+    --text-muted: #6c757d;
+    
+    --border-color: #3d4149;
+    --border-light: #2d3139;
+    
+    /* Components */
+    --card-bg: #252830;
+    --card-border: #3d4149;
+    --card-shadow: rgba(0, 0, 0, 0.3);
+    
+    --sidebar-bg: #1a1d24;
+    --sidebar-text: #e9ecef;
+    --sidebar-hover: rgba(255, 255, 255, 0.1);
+    
+    --navbar-bg: #252830;
+    --navbar-border: #3d4149;
+    
+    --input-bg: #2d3139;
+    --input-border: #3d4149;
+    --input-focus: #4d90fe;
+    
+    --table-hover: rgba(255, 255, 255, 0.075);
+    --table-stripe: rgba(255, 255, 255, 0.05);
+}
+
+/* Apply theme variables to elements */
+body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Cards */
+.card {
+    background-color: var(--card-bg);
+    border-color: var(--card-border);
+    box-shadow: 0 0.125rem 0.25rem var(--card-shadow);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.card-header,
+.card-footer {
+    background-color: var(--bg-secondary);
+    border-color: var(--border-color);
+}
+
+/* Sidebar */
+#sidebar-wrapper {
+    background-color: var(--sidebar-bg) !important;
+}
+
+.list-group-item {
+    background-color: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    border-color: var(--border-light);
+}
+
+.list-group-item:hover {
+    background-color: var(--sidebar-hover);
+}
+
+.list-group-item.active {
+    background-color: var(--info) !important;
+    border-color: var(--info) !important;
+}
+
+/* Navbar */
+.navbar {
+    background-color: var(--navbar-bg) !important;
+    border-color: var(--navbar-border);
+}
+
+/* Forms */
+.form-control,
+.form-select {
+    background-color: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--text-primary);
+}
+
+.form-control:focus,
+.form-select:focus {
+    background-color: var(--input-bg);
+    border-color: var(--input-focus);
+    color: var(--text-primary);
+}
+
+/* Tables */
+.table {
+    color: var(--text-primary);
+}
+
+.table-striped > tbody > tr:nth-of-type(odd) > * {
+    background-color: var(--table-stripe);
+}
+
+.table-hover > tbody > tr:hover > * {
+    background-color: var(--table-hover);
+}
+
+/* Modals */
+.modal-content {
+    background-color: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+.modal-header,
+.modal-footer {
+    border-color: var(--border-color);
+}
+
+/* Dropdowns */
+.dropdown-menu {
+    background-color: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+.dropdown-item {
+    color: var(--text-primary);
+}
+
+.dropdown-item:hover {
+    background-color: var(--bg-secondary);
+}
+
+.dropdown-divider {
+    border-color: var(--border-color);
+}
+
+/* Alerts */
+.alert {
+    border-color: var(--border-color);
+}
+
+/* Text colors */
+.text-muted {
+    color: var(--text-muted) !important;
+}
+
+.text-secondary {
+    color: var(--text-secondary) !important;
+}
+
+/* Borders */
+.border,
+.border-top,
+.border-bottom,
+.border-start,
+.border-end {
+    border-color: var(--border-color) !important;
+}
+
+/* Theme toggle button */
+.theme-toggle {
+    font-size: 1.2rem;
+    padding: 0.5rem;
+    color: var(--text-primary);
+    transition: color 0.3s ease;
+}
+
+.theme-toggle:hover {
+    color: var(--info);
+}
+
+/* Login screen dark mode */
+.dark-theme #login-screen {
+    background: linear-gradient(135deg, #1a1d24 0%, #252830 100%);
+}
+
+.dark-theme #login-screen .card {
+    background-color: var(--card-bg);
+    border-color: var(--card-border);
+}
+
+/* Smooth transitions for theme changes */
+* {
+    transition: background-color 0.3s ease, 
+                border-color 0.3s ease, 
+                color 0.3s ease;
+}
+
+/* Prevent transition on page load */
+.no-transition * {
+    transition: none !important;
+}
