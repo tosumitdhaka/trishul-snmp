@@ -1,0 +1,308 @@
+/**
+ * Theme System - Dark Mode Support
+ * Uses CSS custom properties for easy theme switching
+ */
+
+/* ==================== Light Theme (Default) ==================== */
+:root {
+    /* Background colors */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --bg-tertiary: #e9ecef;
+    --bg-dark: #212529;
+    
+    /* Text colors */
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --text-muted: #adb5bd;
+    --text-inverse: #ffffff;
+    
+    /* Border colors */
+    --border-color: #dee2e6;
+    --border-light: #e9ecef;
+    --border-dark: #ced4da;
+    
+    /* Shadow */
+    --shadow-sm: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    --shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    --shadow-lg: 0 1rem 3rem rgba(0, 0, 0, 0.175);
+    
+    /* Card */
+    --card-bg: #ffffff;
+    --card-border: #dee2e6;
+    --card-cap-bg: #f8f9fa;
+    
+    /* Sidebar */
+    --sidebar-bg: #212529;
+    --sidebar-text: #ffffff;
+    --sidebar-hover: rgba(255, 255, 255, 0.1);
+    
+    /* Navbar */
+    --navbar-bg: #f8f9fa;
+    --navbar-border: #dee2e6;
+    
+    /* Form */
+    --input-bg: #ffffff;
+    --input-border: #ced4da;
+    --input-focus-border: #86b7fe;
+    --input-disabled-bg: #e9ecef;
+    
+    /* Table */
+    --table-bg: transparent;
+    --table-striped-bg: rgba(0, 0, 0, 0.05);
+    --table-hover-bg: rgba(0, 0, 0, 0.075);
+    --table-border: #dee2e6;
+    
+    /* Brand colors */
+    --brand-primary: #0d6efd;
+    --brand-success: #198754;
+    --brand-danger: #dc3545;
+    --brand-warning: #ffc107;
+    --brand-info: #0dcaf0;
+}
+
+/* ==================== Dark Theme ==================== */
+[data-theme="dark"] {
+    /* Background colors */
+    --bg-primary: #1a1d23;
+    --bg-secondary: #212529;
+    --bg-tertiary: #2c3034;
+    --bg-dark: #0d0f12;
+    
+    /* Text colors */
+    --text-primary: #e9ecef;
+    --text-secondary: #adb5bd;
+    --text-muted: #6c757d;
+    --text-inverse: #212529;
+    
+    /* Border colors */
+    --border-color: #3d4248;
+    --border-light: #2c3034;
+    --border-dark: #495057;
+    
+    /* Shadow - more subtle in dark mode */
+    --shadow-sm: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.3);
+    --shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 1rem 3rem rgba(0, 0, 0, 0.7);
+    
+    /* Card */
+    --card-bg: #212529;
+    --card-border: #3d4248;
+    --card-cap-bg: #2c3034;
+    
+    /* Sidebar */
+    --sidebar-bg: #0d0f12;
+    --sidebar-text: #e9ecef;
+    --sidebar-hover: rgba(255, 255, 255, 0.1);
+    
+    /* Navbar */
+    --navbar-bg: #212529;
+    --navbar-border: #3d4248;
+    
+    /* Form */
+    --input-bg: #2c3034;
+    --input-border: #495057;
+    --input-focus-border: #4a9eff;
+    --input-disabled-bg: #212529;
+    
+    /* Table */
+    --table-bg: transparent;
+    --table-striped-bg: rgba(255, 255, 255, 0.05);
+    --table-hover-bg: rgba(255, 255, 255, 0.075);
+    --table-border: #3d4248;
+    
+    /* Brand colors - slightly adjusted for dark mode */
+    --brand-primary: #4a9eff;
+    --brand-success: #2fb978;
+    --brand-danger: #ef5350;
+    --brand-warning: #ffca28;
+    --brand-info: #26c6da;
+}
+
+/* ==================== Apply Theme Colors ==================== */
+
+body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Cards */
+.card {
+    background-color: var(--card-bg);
+    border-color: var(--card-border);
+    color: var(--text-primary);
+}
+
+.card-header {
+    background-color: var(--card-cap-bg);
+    border-bottom-color: var(--card-border);
+}
+
+.card-footer {
+    background-color: var(--card-cap-bg);
+    border-top-color: var(--card-border);
+}
+
+/* Sidebar */
+#sidebar-wrapper {
+    background-color: var(--sidebar-bg) !important;
+}
+
+#sidebar-wrapper .list-group-item {
+    background-color: var(--sidebar-bg) !important;
+    color: var(--sidebar-text) !important;
+    border-color: var(--border-dark);
+}
+
+#sidebar-wrapper .list-group-item:hover {
+    background-color: var(--sidebar-hover) !important;
+}
+
+#sidebar-wrapper .list-group-item.active {
+    background-color: var(--brand-primary) !important;
+}
+
+/* Navbar */
+.navbar {
+    background-color: var(--navbar-bg) !important;
+    border-bottom-color: var(--navbar-border) !important;
+}
+
+/* Forms */
+.form-control,
+.form-select {
+    background-color: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--text-primary);
+}
+
+.form-control:focus,
+.form-select:focus {
+    background-color: var(--input-bg);
+    border-color: var(--input-focus-border);
+    color: var(--text-primary);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+    background-color: var(--input-disabled-bg);
+}
+
+.form-label {
+    color: var(--text-primary);
+}
+
+/* Tables */
+.table {
+    --bs-table-bg: var(--table-bg);
+    --bs-table-striped-bg: var(--table-striped-bg);
+    --bs-table-hover-bg: var(--table-hover-bg);
+    --bs-table-border-color: var(--table-border);
+    color: var(--text-primary);
+}
+
+/* Modals */
+.modal-content {
+    background-color: var(--card-bg);
+    border-color: var(--card-border);
+    color: var(--text-primary);
+}
+
+.modal-header,
+.modal-footer {
+    border-color: var(--border-color);
+}
+
+/* Dropdowns */
+.dropdown-menu {
+    background-color: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+.dropdown-item {
+    color: var(--text-primary);
+}
+
+.dropdown-item:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.dropdown-divider {
+    border-top-color: var(--border-color);
+}
+
+/* Alerts */
+.alert {
+    border-color: var(--border-color);
+}
+
+/* Text utilities */
+.text-muted {
+    color: var(--text-muted) !important;
+}
+
+.text-secondary {
+    color: var(--text-secondary) !important;
+}
+
+/* Background utilities */
+.bg-light {
+    background-color: var(--bg-secondary) !important;
+}
+
+.bg-dark {
+    background-color: var(--bg-dark) !important;
+}
+
+/* Border utilities */
+.border {
+    border-color: var(--border-color) !important;
+}
+
+/* Login Screen Dark Mode */
+#login-screen {
+    background-color: var(--bg-secondary);
+}
+
+#login-screen .card {
+    box-shadow: var(--shadow-lg);
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 1.25rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.25rem;
+    transition: background-color 0.15s ease;
+}
+
+.theme-toggle:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.theme-toggle i {
+    transition: transform 0.3s ease;
+}
+
+.theme-toggle:active i {
+    transform: rotate(180deg);
+}
+
+/* Smooth transitions for theme changes */
+* {
+    transition: background-color 0.3s ease, 
+                border-color 0.3s ease, 
+                color 0.3s ease;
+}
+
+/* Don't transition transforms and shadows */
+transform,
+box-shadow,
+opacity {
+    transition: none;
+}

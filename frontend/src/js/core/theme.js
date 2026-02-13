@@ -1,34 +1,121 @@
 /**
  * Theme Manager
- * Handles dark/light mode with persistence
+ * Handles dark/light mode switching with persistence
  */
 
 export class ThemeManager {
     constructor(store) {
         this.store = store;
-        this.themes = ['light', 'dark', 'auto'];
-        this.currentTheme = this.store.get('theme') || 'auto';
+        this.currentTheme = this.getStoredTheme() || 'light';
         
         console.log('[Theme] ThemeManager initialized');
     }
 
     /**
-     * Initialize theme system
+     * Initialize theme manager
      */
     init() {
-        // Apply saved theme
+        // Apply stored theme
         this.applyTheme(this.currentTheme);
         
         // Listen for system theme changes
-        if (window.matchMedia) {
-            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-                if (this.currentTheme === 'auto') {
-                    this.applySystemTheme();
-                }
-            });
+        this.watchSystemTheme();
+        
+        // Update store
+        if (this.store) {
+            this.store.set('theme', this.currentTheme);
         }
         
-        console.log('[Theme] Theme system initialized with:', this.currentTheme);
+        console.log(`[Theme] Applied theme: ${this.currentTheme}`);
+    }
+
+    /**
+     * Get stored theme from localStorage
+     */
+    getStoredTheme() {
+        return localStorage.getItem('theme');
+    }
+
+    /**
+     * Store theme in localStorage
+     */
+    storeTheme(theme) {
+        localStorage.setItem('theme', theme);
+    }
+
+    /**
+     * Get system preferred theme
+     */
+    getSystemTheme() {
+        if (window.matchMedia) {
+            return window.matchMedia('(prefers-color-scheme: dark)').matches 
+                ? 'dark' 
+                : 'light';
+        }
+        return 'light';
+    }
+
+    /**
+     * Watch for system theme changes
+     */
+    watchSystemTheme() {
+        if (!window.matchMedia) return;
+        
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        
+        mediaQuery.addEventListener('change', (e) => {
+            // Only auto-switch if user hasn't manually set a preference
+            if (!this.getStoredTheme()) {
+                const newTheme = e.matches ? 'dark' : 'light';
+                this.setTheme(newTheme);
+                console.log(`[Theme] System theme changed to: ${newTheme}`);
+            }
+        });
+    }
+
+    /**
+     * Apply theme to document
+     */
+    applyTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        this.currentTheme = theme;
+        
+        // Update meta theme-color for mobile browsers
+        const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+        if (metaThemeColor) {
+            metaThemeColor.setAttribute(
+                'content', 
+                theme === 'dark' ? '#1a1d23' : '#ffffff'
+            );
+        }
+    }
+
+    /**
+     * Set theme and persist
+     */
+    setTheme(theme) {
+        this.applyTheme(theme);
+        this.storeTheme(theme);
+        
+        if (this.store) {
+            this.store.set('theme', theme);
+        }
+        
+        console.log(`[Theme] Theme changed to: ${theme}`);
+        
+        // Emit event for other components
+        window.dispatchEvent(new CustomEvent('theme:changed', { 
+            detail: { theme } 
+        }));
+    }
+
+    /**
+     * Toggle between light and dark
+     */
+    toggle() {
+        const newTheme = this.currentTheme === 'light' ? 'dark' : 'light';
+        this.setTheme(newTheme);
+        return newTheme;
     }
 
     /**
@@ -39,81 +126,19 @@ export class ThemeManager {
     }
 
     /**
-     * Get effective theme (resolves 'auto' to light/dark)
+     * Check if dark mode is active
      */
-    getEffectiveTheme() {
-        if (this.currentTheme === 'auto') {
-            return this.getSystemTheme();
-        }
-        return this.currentTheme;
+    isDark() {
+        return this.currentTheme === 'dark';
     }
 
     /**
-     * Get system theme preference
+     * Check if light mode is active
      */
-    getSystemTheme() {
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-            return 'dark';
-        }
-        return 'light';
-    }
-
-    /**
-     * Set theme
-     */
-    setTheme(theme) {
-        if (!this.themes.includes(theme)) {
-            console.error('[Theme] Invalid theme:', theme);
-            return;
-        }
-        
-        this.currentTheme = theme;
-        this.store.set('theme', theme);
-        this.applyTheme(theme);
-        
-        console.log('[Theme] Theme changed to:', theme);
-    }
-
-    /**
-     * Toggle between light and dark
-     */
-    toggle() {
-        const effective = this.getEffectiveTheme();
-        const newTheme = effective === 'dark' ? 'light' : 'dark';
-        this.setTheme(newTheme);
-    }
-
-    /**
-     * Apply theme to document
-     */
-    applyTheme(theme) {
-        const effectiveTheme = theme === 'auto' ? this.getSystemTheme() : theme;
-        
-        // Remove all theme classes
-        document.documentElement.classList.remove('theme-light', 'theme-dark');
-        
-        // Add new theme class
-        document.documentElement.classList.add(`theme-${effectiveTheme}`);
-        
-        // Set data attribute for CSS targeting
-        document.documentElement.setAttribute('data-theme', effectiveTheme);
-        
-        // Update Bootstrap color mode (if supported)
-        if (document.documentElement.hasAttribute('data-bs-theme')) {
-            document.documentElement.setAttribute('data-bs-theme', effectiveTheme);
-        }
-        
-        // Emit event
-        window.dispatchEvent(new CustomEvent('theme:changed', {
-            detail: { theme: effectiveTheme }
-        }));
-    }
-
-    /**
-     * Apply system theme
-     */
-    applySystemTheme() {
-        const systemTheme = this.getSystemTheme();
-        this.applyTheme(systemTheme);
+    isLight() {
+        return this.currentTheme === 'light';
     }
 }
+
+// Make available globally
+window.ThemeManager = ThemeManager;
