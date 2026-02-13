@@ -1,0 +1,14 @@
+{
+  "name": "trishul-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./src/css/main.css -o ./src/css/main.css --minify",
+    "watch:css": "tailwindcss -i ./src/css/main.css -o ./src/css/main.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0"
+  }
+}

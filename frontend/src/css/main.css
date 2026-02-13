@@ -1,0 +1,376 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens - Dark theme by default */
+:root {
+  /* Dark theme (default for SNMP monitoring) */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --bg-elevated: #1e293b;
+  --bg-hover: #334155;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+  --text-muted: #64748b;
+
+  --border-default: #334155;
+  --border-subtle: #334155;
+  --border-strong: #475569;
+
+  --status-online: #22c55e;
+  --status-offline: #ef4444;
+  --status-warning: #f59e0b;
+
+  --accent-primary: #3b82f6;
+  --accent-primary-hover: #2563eb;
+  --accent-secondary: #6366f1;
+  --accent-danger: #ef4444;
+
+  --snmp-get: #3b82f6;
+  --snmp-set: #f59e0b;
+  --snmp-trap: #8b5cf6;
+  --snmp-walk: #10b981;
+}
+
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #e2e8f0;
+  --bg-elevated: #ffffff;
+  --bg-hover: #f1f5f9;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #64748b;
+  --text-muted: #94a3b8;
+
+  --border-default: #e2e8f0;
+  --border-subtle: #f1f5f9;
+  --border-strong: #cbd5e1;
+
+  --status-online: #16a34a;
+  --status-offline: #dc2626;
+  --status-warning: #d97706;
+
+  --accent-primary: #2563eb;
+  --accent-primary-hover: #1d4ed8;
+  --accent-secondary: #4f46e5;
+  --accent-danger: #dc2626;
+
+  --snmp-get: #2563eb;
+  --snmp-set: #d97706;
+  --snmp-trap: #7c3aed;
+  --snmp-walk: #059669;
+}
+
+@layer base {
+  * {
+    border-color: var(--border-default);
+  }
+
+  html {
+    @apply antialiased;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-bg-primary text-text-primary font-sans;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  code, pre, .font-mono, .oid, .mib-value {
+    font-family: "JetBrains Mono", "Fira Code", "ui-monospace", "SFMono-Regular", "Menlo", "monospace";
+    @apply text-sm;
+  }
+
+  input, select, textarea {
+    @apply bg-bg-elevated border border-border-subtle text-text-primary rounded-lg 
+           px-3 py-2 text-sm transition-colors duration-200;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+  }
+
+  input::placeholder, textarea::placeholder {
+    @apply text-text-muted;
+  }
+
+  button {
+    @apply transition-all duration-200 ease-out;
+  }
+
+  table {
+    @apply w-full text-sm;
+  }
+
+  th {
+    @apply text-left font-semibold text-text-secondary py-3 px-4;
+  }
+
+  td {
+    @apply py-3 px-4 border-t border-border-subtle;
+  }
+}
+
+@layer components {
+  /* Cards */
+  .card {
+    @apply bg-bg-elevated rounded-lg border border-border-subtle shadow-sm;
+  }
+
+  .card-header {
+    @apply px-4 py-3 border-b border-border-subtle font-semibold text-text-primary;
+  }
+
+  .card-body {
+    @apply p-4;
+  }
+
+  .card-footer {
+    @apply px-4 py-3 border-t border-border-subtle;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg
+           font-medium text-sm transition-all duration-200 cursor-pointer;
+    min-height: 36px;
+  }
+
+  .btn:disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+
+  .btn-primary {
+    background-color: var(--accent-primary);
+    color: white;
+    border: 1px solid var(--accent-primary);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--accent-primary-hover);
+  }
+
+  .btn-secondary {
+    background-color: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--bg-hover);
+  }
+
+  .btn-ghost {
+    background-color: transparent;
+    color: var(--text-secondary);
+    border: 1px solid transparent;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    color: var(--text-primary);
+    background-color: var(--bg-hover);
+  }
+
+  .btn-danger {
+    background-color: var(--accent-danger);
+    color: white;
+    border: 1px solid var(--accent-danger);
+  }
+  .btn-danger:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+    min-height: 28px;
+  }
+
+  .btn-lg {
+    @apply px-6 py-3 text-base;
+    min-height: 48px;
+  }
+
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold;
+  }
+
+  .badge-online {
+    background-color: rgba(34, 197, 94, 0.2);
+    color: var(--status-online);
+  }
+
+  .badge-offline {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: var(--status-offline);
+  }
+
+  .badge-warning {
+    background-color: rgba(245, 158, 11, 0.2);
+    color: var(--status-warning);
+  }
+
+  .badge-primary {
+    background-color: rgba(59, 130, 246, 0.2);
+    color: var(--accent-primary);
+  }
+
+  .badge-unknown {
+    background-color: rgba(100, 116, 139, 0.2);
+    color: var(--text-muted);
+  }
+
+  /* Forms */
+  .form-group {
+    @apply space-y-1.5;
+  }
+
+  .form-label {
+    @apply block text-sm font-medium text-text-secondary mb-1;
+  }
+
+  .form-input {
+    @apply w-full px-3 py-2 bg-bg-elevated border border-border-subtle rounded-lg text-text-primary;
+    @apply focus:border-accent-primary focus:outline-none focus:ring-2 focus:ring-accent-primary/30;
+  }
+
+  .form-select {
+    @apply w-full px-3 py-2 bg-bg-elevated border border-border-subtle rounded-lg text-text-primary;
+  }
+
+  .form-checkbox {
+    @apply w-4 h-4 text-accent-primary bg-bg-elevated border-border-subtle rounded;
+    @apply focus:ring-accent-primary;
+  }
+
+  .form-error {
+    @apply text-xs text-accent-danger mt-1;
+  }
+
+  /* Alerts */
+  .alert {
+    @apply px-4 py-3 rounded-lg border;
+  }
+
+  .alert-success {
+    background-color: rgba(34, 197, 94, 0.1);
+    color: var(--status-online);
+    border-color: rgba(34, 197, 94, 0.3);
+  }
+
+  .alert-danger {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: var(--accent-danger);
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+
+  .alert-warning {
+    background-color: rgba(245, 158, 11, 0.1);
+    color: var(--status-warning);
+    border-color: rgba(245, 158, 11, 0.3);
+  }
+
+  .alert-info {
+    background-color: rgba(59, 130, 246, 0.1);
+    color: var(--accent-primary);
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+
+  /* Tables */
+  .data-table {
+    @apply w-full border-collapse;
+  }
+
+  .data-table th {
+    @apply text-xs font-semibold uppercase tracking-wider bg-bg-elevated;
+    color: var(--text-muted);
+  }
+
+  .data-table tbody tr {
+    @apply transition-colors;
+  }
+
+  .data-table tbody tr:hover {
+    background-color: var(--bg-hover);
+  }
+
+  /* Empty states */
+  .empty-state {
+    @apply flex flex-col items-center justify-center py-16 text-center;
+  }
+
+  .empty-state-icon {
+    @apply w-16 h-16 mb-4;
+    color: var(--text-muted);
+  }
+
+  .empty-state-title {
+    @apply text-lg font-semibold mb-1 text-text-primary;
+  }
+
+  .empty-state-description {
+    @apply text-sm max-w-sm text-text-secondary;
+  }
+
+  /* MIB Tree */
+  .mib-tree-node {
+    @apply flex items-center gap-2 py-2 px-3 rounded-lg cursor-pointer transition-colors;
+  }
+
+  .mib-tree-node:hover {
+    background-color: rgba(59, 130, 246, 0.1);
+  }
+
+  .mib-tree-children {
+    @apply ml-6 pl-3 space-y-1;
+    border-left: 1px solid var(--border-subtle);
+  }
+
+  /* OID Display */
+  .oid-display {
+    font-family: "JetBrains Mono", "Fira Code", "ui-monospace", "SFMono-Regular", "Menlo", "monospace";
+    @apply text-xs px-2 py-1 rounded inline-block;
+    color: var(--text-muted);
+    background-color: var(--bg-tertiary);
+  }
+
+  /* SNMP Type Colors */
+  .snmp-get { color: var(--snmp-get); }
+  .snmp-set { color: var(--snmp-set); }
+  .snmp-trap { color: var(--snmp-trap); }
+  .snmp-walk { color: var(--snmp-walk); }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--border-strong);
+    border-radius: 3px;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
