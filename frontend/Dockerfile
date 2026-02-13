@@ -6,8 +6,10 @@ FROM node:20-alpine AS development
 WORKDIR /app
 
 # Install dependencies
-COPY package.json package-lock.json* ./
-RUN npm ci
+COPY package.json ./
+
+# Use npm install (generates lock file if missing)
+RUN npm install
 
 # Copy source code
 COPY . .
@@ -24,8 +26,8 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 # Install dependencies
-COPY package.json package-lock.json* ./
-RUN npm ci
+COPY package.json ./
+RUN npm install
 
 # Copy source code
 COPY . .
