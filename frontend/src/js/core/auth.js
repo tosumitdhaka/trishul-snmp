@@ -1,10 +1,23 @@
 /**
  * AuthManager - Handles authentication and session management
+ * Integrated with centralized state store for reactive updates
  */
 export class AuthManager {
-    constructor() {
+    constructor(store) {
+        this.store = store;
         this.token = sessionStorage.getItem('snmp_token');
         this.user = sessionStorage.getItem('snmp_user');
+        
+        // Initialize store with current auth state
+        if (this.token && this.user) {
+            this.store.update({
+                isAuthenticated: true,
+                user: this.user,
+                token: this.token
+            });
+        }
+        
+        console.log('[Auth] AuthManager initialized');
     }
 
     /**
@@ -47,8 +60,17 @@ export class AuthManager {
                 this.token = data.token;
                 this.user = data.username;
                 
+                // Save to sessionStorage
                 sessionStorage.setItem('snmp_token', data.token);
                 sessionStorage.setItem('snmp_user', data.username);
+                
+                // Update store (this will trigger subscribers)
+                this.store.update({
+                    isAuthenticated: true,
+                    user: data.username,
+                    token: data.token,
+                    currentView: 'app'
+                });
                 
                 console.log('[Auth] Login successful:', data.username);
                 
@@ -78,7 +100,7 @@ export class AuthManager {
      * Logout and clear session
      */
     async logout(callApi = true) {
-        if (callApi) {
+        if (callApi && this.token) {
             try {
                 await fetch('/api/settings/logout', {
                     method: 'POST',
@@ -94,8 +116,17 @@ export class AuthManager {
         this.token = null;
         this.user = null;
         
+        // Clear sessionStorage
         sessionStorage.removeItem('snmp_token');
         sessionStorage.removeItem('snmp_user');
+        
+        // Update store
+        this.store.update({
+            isAuthenticated: false,
+            user: null,
+            token: null,
+            currentView: 'login'
+        });
         
         console.log('[Auth] Logged out');
     }
@@ -120,9 +151,16 @@ export class AuthManager {
                 this.user = data.user;
                 sessionStorage.setItem('snmp_user', data.user);
                 
+                // Update store
+                this.store.update({
+                    isAuthenticated: true,
+                    user: data.user,
+                    currentView: 'app'
+                });
+                
                 return { valid: true, user: data.user };
             } else {
-                this.logout(false);
+                await this.logout(false);
                 return { valid: false };
             }
         } catch (error) {
