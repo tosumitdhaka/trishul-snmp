@@ -9,36 +9,51 @@
     <link rel="icon" type="image/svg+xml" href="img/trishul-icon.svg">
     <link rel="alternate icon" href="favicon.ico">
     
-    <!-- Stylesheets -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <link rel="stylesheet" href="css/main.css">
+    
+    <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="css/style.css">
 </head>
-<body>
+<body class="bg-bg-primary text-text-primary">
 
 <!-- Login Screen -->
-<div id="login-screen" class="position-fixed top-0 start-0 w-100 h-100 bg-light d-flex flex-column justify-content-center align-items-center" style="z-index: 9999;">
-    <div class="card shadow-lg border-0" style="width: 380px;">
-        <div class="card-body p-4 text-center">
+<div id="login-screen" class="fixed inset-0 w-full h-full bg-bg-primary flex flex-col justify-center items-center z-50">
+    <div class="card w-96 shadow-xl">
+        <div class="card-body p-6 text-center">
             <!-- Trishul Icon -->
-            <div class="mb-3">
-                <img src="img/trishul-icon.svg" alt="Trishul" style="width: 64px; height: 64px;">
+            <div class="mb-4">
+                <img src="img/trishul-icon.svg" alt="Trishul" class="w-16 h-16 mx-auto">
             </div>
-            <h4 class="mb-1 fw-bold" style="color: #1e293b;">Trishul SNMP Studio</h4>
-            <p class="text-muted small mb-4">Network Management & Monitoring</p>
+            <h4 class="mb-1 text-2xl font-bold text-text-primary">Trishul SNMP Studio</h4>
+            <p class="text-text-muted text-sm mb-6">Network Management & Monitoring</p>
             
             <form id="login-form" onsubmit="handleLogin(event)">
-                <div class="mb-3 text-start">
-                    <label class="form-label small fw-bold">Username</label>
-                    <input type="text" id="login-user" class="form-control" placeholder="admin" required autocomplete="username">
+                <div class="mb-4 text-left">
+                    <label class="form-label">Username</label>
+                    <input 
+                        type="text" 
+                        id="login-user" 
+                        class="form-input w-full" 
+                        placeholder="admin" 
+                        required 
+                        autocomplete="username"
+                    >
                 </div>
-                <div class="mb-3 text-start">
-                    <label class="form-label small fw-bold">Password</label>
-                    <input type="password" id="login-pass" class="form-control" placeholder="••••••" required autocomplete="current-password">
+                <div class="mb-4 text-left">
+                    <label class="form-label">Password</label>
+                    <input 
+                        type="password" 
+                        id="login-pass" 
+                        class="form-input w-full" 
+                        placeholder="••••••" 
+                        required 
+                        autocomplete="current-password"
+                    >
                 </div>
-                <div id="login-error" class="alert alert-danger py-2 small d-none"></div>
-                <button type="submit" class="btn btn-primary w-100" id="login-btn">
-                    <i class="fas fa-sign-in-alt me-2"></i> Log In
+                <div id="login-error" class="alert alert-danger py-2 text-sm hidden mb-4"></div>
+                <button type="submit" class="btn btn-primary w-full" id="login-btn">
+                    <i class="fas fa-sign-in-alt mr-2"></i> Log In
                 </button>
             </form>
         </div>
@@ -46,86 +61,158 @@
 </div>
 
 <!-- Main Application Wrapper -->
-<div id="wrapper" style="display: none;">
+<div id="wrapper" class="flex h-screen hidden">
+    
     <!-- Sidebar -->
-    <div class="bg-dark text-white border-end" id="sidebar-wrapper">
-        <div class="sidebar-heading border-bottom bg-dark fw-bold text-truncate">
-            <img src="img/trishul-icon.svg" alt="Trishul" style="width: 28px; height: 28px; vertical-align: middle;">
-            <span class="ms-2">Trishul SNMP</span>
+    <aside id="sidebar-wrapper" class="sidebar w-64 bg-bg-elevated border-r border-border-subtle transition-all duration-300 flex flex-col">
+        
+        <!-- Sidebar Header -->
+        <div class="sidebar-heading border-b border-border-subtle p-4 flex items-center justify-center font-bold">
+            <img src="img/trishul-icon.svg" alt="Trishul" class="w-7 h-7">
+            <span class="sidebar-text ml-2">Trishul SNMP</span>
         </div>
         
-        <div class="list-group list-group-flush flex-grow-1">
-            <a class="list-group-item list-group-item-action bg-dark text-white" href="#dashboard">
-                <i class="fas fa-tachometer-alt"></i> <span class="ms-2">Dashboard</span>
+        <!-- Navigation Links -->
+        <nav class="list-group flex-grow overflow-y-auto">
+            <a 
+                class="nav-item flex items-center gap-3 px-4 py-3 text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer" 
+                href="#dashboard"
+                title="Dashboard"
+            >
+                <i class="fas fa-tachometer-alt w-5 text-center"></i>
+                <span class="sidebar-text">Dashboard</span>
             </a>
-            <a class="list-group-item list-group-item-action bg-dark text-white" href="#simulator">
-                <i class="fas fa-server"></i> <span class="ms-2">Simulator</span>
+            
+            <a 
+                class="nav-item flex items-center gap-3 px-4 py-3 text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer" 
+                href="#simulator"
+                title="Simulator"
+            >
+                <i class="fas fa-server w-5 text-center"></i>
+                <span class="sidebar-text">Simulator</span>
             </a>
-            <a class="list-group-item list-group-item-action bg-dark text-white" href="#walker">
-                <i class="fas fa-walking"></i> <span class="ms-2">Walk & Parse</span>
+            
+            <a 
+                class="nav-item flex items-center gap-3 px-4 py-3 text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer" 
+                href="#walker"
+                title="Walk & Parse"
+            >
+                <i class="fas fa-walking w-5 text-center"></i>
+                <span class="sidebar-text">Walk & Parse</span>
             </a>
-            <a class="list-group-item list-group-item-action bg-dark text-white" href="#traps">
-                <i class="fas fa-bell"></i> <span class="ms-2">Traps</span>
+            
+            <a 
+                class="nav-item flex items-center gap-3 px-4 py-3 text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer" 
+                href="#traps"
+                title="Traps"
+            >
+                <i class="fas fa-bell w-5 text-center"></i>
+                <span class="sidebar-text">Traps</span>
             </a>
-            <a class="list-group-item list-group-item-action bg-dark text-white" href="#browser">
-                <i class="fas fa-sitemap"></i> <span class="ms-2">MIB Browser</span>
+            
+            <a 
+                class="nav-item flex items-center gap-3 px-4 py-3 text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer" 
+                href="#browser"
+                title="MIB Browser"
+            >
+                <i class="fas fa-sitemap w-5 text-center"></i>
+                <span class="sidebar-text">MIB Browser</span>
             </a>
-            <a class="list-group-item list-group-item-action bg-dark text-white" href="#mibs">
-                <i class="fas fa-database"></i> <span class="ms-2">MIB Manager</span>
+            
+            <a 
+                class="nav-item flex items-center gap-3 px-4 py-3 text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer" 
+                href="#mibs"
+                title="MIB Manager"
+            >
+                <i class="fas fa-database w-5 text-center"></i>
+                <span class="sidebar-text">MIB Manager</span>
             </a>
-            <a class="list-group-item list-group-item-action bg-dark text-white" href="#settings">
-                <i class="fas fa-cog"></i> <span class="ms-2">Settings</span>
+            
+            <a 
+                class="nav-item flex items-center gap-3 px-4 py-3 text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer" 
+                href="#settings"
+                title="Settings"
+            >
+                <i class="fas fa-cog w-5 text-center"></i>
+                <span class="sidebar-text">Settings</span>
             </a>
-        </div>
+        </nav>
         
-        <div class="p-3 text-center text-secondary small border-top border-secondary bg-dark">
+        <!-- Sidebar Footer -->
+        <div class="p-3 text-center text-text-muted text-xs border-t border-border-subtle">
             <span id="app-version">Loading...</span>
         </div>
-    </div>
+    </aside>
 
-    <!-- Page Content -->
-    <div id="page-content-wrapper" class="w-100">
-        <nav class="navbar navbar-expand-lg navbar-light bg-light border-bottom px-3">
-            <button class="btn btn-outline-secondary btn-sm" id="sidebarToggle">
-                <i class="fas fa-bars"></i>
-            </button>
-            <span class="navbar-brand ms-3 fw-bold text-secondary d-flex align-items-center">
-                <img src="img/trishul-icon.svg" alt="Trishul" style="width: 24px; height: 24px; margin-right: 8px;">
-                <span id="page-title">Dashboard</span>
-            </span>
+    <!-- Page Content Wrapper -->
+    <div id="page-content-wrapper" class="flex-1 flex flex-col overflow-hidden">
+        
+        <!-- Top Navigation Bar -->
+        <nav class="navbar bg-bg-elevated border-b border-border-subtle px-4 py-3 flex items-center justify-between">
             
-            <div class="ms-auto d-flex align-items-center gap-3">
-                <span class="badge bg-secondary" id="backend-status">Connecting...</span>
+            <!-- Left: Toggle + Page Title -->
+            <div class="flex items-center gap-3">
+                <button class="btn btn-secondary btn-sm" id="sidebarToggle" title="Toggle Sidebar">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="flex items-center gap-2">
+                    <img src="img/trishul-icon.svg" alt="Trishul" class="w-6 h-6">
+                    <span id="page-title" class="text-lg font-semibold text-text-primary">Dashboard</span>
+                </div>
+            </div>
+            
+            <!-- Right: Status + User Menu -->
+            <div class="flex items-center gap-4">
+                <span class="badge badge-unknown" id="backend-status">Connecting...</span>
                 
-                <div class="dropdown">
-                    <a class="nav-link dropdown-toggle text-dark fw-bold" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer;">
-                        <i class="fas fa-user-circle text-primary fa-lg me-1"></i> 
+                <!-- User Dropdown -->
+                <div class="relative" id="user-dropdown">
+                    <button 
+                        class="flex items-center gap-2 text-text-primary font-medium hover:text-accent-primary transition-colors cursor-pointer"
+                        id="user-dropdown-btn"
+                        onclick="toggleUserDropdown()"
+                    >
+                        <i class="fas fa-user-circle text-accent-primary text-xl"></i>
                         <span id="nav-user-name">User</span>
-                    </a>
-                    <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 mt-2">
-                        <li>
-                            <a class="dropdown-item" href="#settings">
-                                <i class="fas fa-cog me-2 text-muted"></i> Settings
-                            </a>
-                        </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li>
-                            <a class="dropdown-item text-danger" href="#" onclick="logout()">
-                                <i class="fas fa-sign-out-alt me-2"></i> Logout
-                            </a>
-                        </li>
-                    </ul>
+                        <i class="fas fa-chevron-down text-xs"></i>
+                    </button>
+                    
+                    <!-- Dropdown Menu -->
+                    <div 
+                        id="user-dropdown-menu" 
+                        class="absolute right-0 mt-2 w-48 bg-bg-elevated border border-border-subtle rounded-lg shadow-lg hidden z-50"
+                    >
+                        <a 
+                            class="flex items-center gap-2 px-4 py-2 text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors cursor-pointer"
+                            href="#settings"
+                            onclick="toggleUserDropdown()"
+                        >
+                            <i class="fas fa-cog w-4"></i>
+                            <span>Settings</span>
+                        </a>
+                        <div class="border-t border-border-subtle"></div>
+                        <a 
+                            class="flex items-center gap-2 px-4 py-2 text-accent-danger hover:bg-bg-hover transition-colors cursor-pointer"
+                            href="#"
+                            onclick="logout(); return false;"
+                        >
+                            <i class="fas fa-sign-out-alt w-4"></i>
+                            <span>Logout</span>
+                        </a>
+                    </div>
                 </div>
             </div>
         </nav>
 
-        <div class="container-fluid p-4" id="main-content">
-            <!-- Dynamic Content -->
-        </div>
+        <!-- Main Content Area -->
+        <main class="flex-1 overflow-auto p-6 bg-bg-primary" id="main-content">
+            <!-- Dynamic Content Loads Here -->
+        </main>
+        
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Scripts -->
 <script src="js/app.js"></script>
 <script src="js/modules/dashboard.js"></script>
 <script src="js/modules/simulator.js"></script>
@@ -134,5 +221,63 @@
 <script src="js/modules/browser.js"></script>
 <script src="js/modules/mibs.js"></script>
 <script src="js/modules/settings.js"></script>
+
+<!-- Sidebar & Dropdown Toggle Script -->
+<script>
+// Sidebar Toggle
+document.getElementById('sidebarToggle').addEventListener('click', function() {
+    const sidebar = document.getElementById('sidebar-wrapper');
+    const sidebarTexts = document.querySelectorAll('.sidebar-text');
+    
+    if (sidebar.classList.contains('w-64')) {
+        // Collapse
+        sidebar.classList.remove('w-64');
+        sidebar.classList.add('w-16');
+        sidebarTexts.forEach(text => text.classList.add('hidden'));
+    } else {
+        // Expand
+        sidebar.classList.remove('w-16');
+        sidebar.classList.add('w-64');
+        sidebarTexts.forEach(text => text.classList.remove('hidden'));
+    }
+});
+
+// User Dropdown Toggle
+function toggleUserDropdown() {
+    const menu = document.getElementById('user-dropdown-menu');
+    menu.classList.toggle('hidden');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(event) {
+    const dropdown = document.getElementById('user-dropdown');
+    const menu = document.getElementById('user-dropdown-menu');
+    
+    if (dropdown && !dropdown.contains(event.target)) {
+        menu.classList.add('hidden');
+    }
+});
+
+// Active nav item highlighting
+function updateActiveNavItem() {
+    const hash = window.location.hash || '#dashboard';
+    const navItems = document.querySelectorAll('.nav-item');
+    
+    navItems.forEach(item => {
+        if (item.getAttribute('href') === hash) {
+            item.classList.add('bg-bg-hover', 'text-accent-primary', 'border-l-4', 'border-accent-primary');
+            item.classList.remove('text-text-secondary');
+        } else {
+            item.classList.remove('bg-bg-hover', 'text-accent-primary', 'border-l-4', 'border-accent-primary');
+            item.classList.add('text-text-secondary');
+        }
+    });
+}
+
+// Update active nav on hash change
+window.addEventListener('hashchange', updateActiveNavItem);
+window.addEventListener('load', updateActiveNavItem);
+</script>
+
 </body>
 </html>
