@@ -101,19 +101,27 @@ class App {
 
     /**
      * Render appropriate view based on state
+     * Using cssText to force styles with !important equivalent
      */
     renderView(view) {
         const loginScreen = document.getElementById('login-screen');
         const wrapper = document.getElementById('wrapper');
         
+        if (!loginScreen || !wrapper) {
+            console.error('[App] Missing DOM elements:', { loginScreen: !!loginScreen, wrapper: !!wrapper });
+            return;
+        }
+        
         if (view === 'login') {
-            if (loginScreen) loginScreen.style.display = 'flex';
-            if (wrapper) wrapper.style.display = 'none';
-            console.log('[App] Showing login screen');
+            // Show login screen
+            loginScreen.style.cssText = 'display: flex !important; z-index: 9999;';
+            wrapper.style.cssText = 'display: none !important;';
+            console.log('[App] ✅ Login screen shown, app hidden');
         } else if (view === 'app') {
-            if (loginScreen) loginScreen.style.display = 'none';
-            if (wrapper) wrapper.style.display = 'flex';
-            console.log('[App] Showing application');
+            // Hide login screen, show app
+            loginScreen.style.cssText = 'display: none !important;';
+            wrapper.style.cssText = 'display: flex !important;';
+            console.log('[App] ✅ Application shown, login hidden');
             
             // Load app metadata when showing app
             this.loadAppMetadata();
@@ -240,12 +248,22 @@ class App {
             });
         }
 
-        // Login form - attach ONCE
+        // Login form - REMOVE inline handler and attach properly
         const loginForm = document.getElementById('login-form');
-        if (loginForm && !loginForm.dataset.listenerAttached) {
-            loginForm.addEventListener('submit', (e) => this.handleLogin(e));
-            loginForm.dataset.listenerAttached = 'true';
-            console.log('[App] Login form listener attached');
+        if (loginForm) {
+            // Remove inline onsubmit if present
+            loginForm.removeAttribute('onsubmit');
+            
+            // Attach event listener ONCE
+            if (!loginForm.dataset.listenerAttached) {
+                loginForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.handleLogin(e);
+                });
+                loginForm.dataset.listenerAttached = 'true';
+                console.log('[App] Login form listener attached');
+            }
         }
 
         console.log('[App] Event listeners setup');
@@ -296,23 +314,31 @@ class App {
      * Handle login form submission
      */
     async handleLogin(event) {
-        event.preventDefault();
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
         
         const submitBtn = document.getElementById('login-btn');
         const errorDiv = document.getElementById('login-error');
         
         // Prevent double submission
-        if (submitBtn.disabled) {
+        if (submitBtn && submitBtn.disabled) {
             console.log('[App] Login already in progress, ignoring');
             return;
         }
         
-        const username = document.getElementById('login-user').value;
-        const password = document.getElementById('login-pass').value;
+        const username = document.getElementById('login-user')?.value;
+        const password = document.getElementById('login-pass')?.value;
+        
+        if (!username || !password) {
+            console.error('[App] Missing username or password');
+            return;
+        }
         
         // Disable form
-        submitBtn.disabled = true;
-        errorDiv.classList.add('d-none');
+        if (submitBtn) submitBtn.disabled = true;
+        if (errorDiv) errorDiv.classList.add('d-none');
         
         try {
             const result = await this.auth.login(username, password);
@@ -323,15 +349,19 @@ class App {
                 // AuthManager will update store, triggering view change
             } else {
                 console.error('[App] Login failed:', result.error);
-                errorDiv.textContent = result.error;
-                errorDiv.classList.remove('d-none');
+                if (errorDiv) {
+                    errorDiv.textContent = result.error;
+                    errorDiv.classList.remove('d-none');
+                }
             }
         } catch (error) {
             console.error('[App] Login error:', error);
-            errorDiv.textContent = 'An unexpected error occurred';
-            errorDiv.classList.remove('d-none');
+            if (errorDiv) {
+                errorDiv.textContent = 'An unexpected error occurred';
+                errorDiv.classList.remove('d-none');
+            }
         } finally {
-            submitBtn.disabled = false;
+            if (submitBtn) submitBtn.disabled = false;
         }
     }
 
@@ -476,7 +506,8 @@ window.logout = () => {
     }
 };
 
-// Maintain backward compatibility with old login handler
+// Make handleLogin global for HTML inline handler (backward compatibility)
+// But we'll remove the inline handler in setupEventListeners()
 window.handleLogin = (e) => {
     if (window.app) {
         window.app.handleLogin(e);
