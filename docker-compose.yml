@@ -1,41 +1,49 @@
 version: '3.8'
 
 services:
-  # Backend Service
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: trishul-snmp-backend
-    env_file:
-      - .env
     ports:
       - "8000:8000"
-      - "${SNMP_PORT:-1061}:${SNMP_PORT:-1061}/udp"
-      - "${TRAP_PORT:-1162}:${TRAP_PORT:-1162}/udp"
     volumes:
-      - ./backend/data:/app/data
-      - ./backend/data/mibs:/usr/share/snmp/mibs/custom
+      - ./backend:/app
+      - ./data:/app/data
+      - ./mibs:/app/mibs
     environment:
       - PYTHONUNBUFFERED=1
-      # Application Metadata
-      - APP_NAME=${APP_NAME:-Trishul SNMP Studio}
-      - APP_VERSION=${APP_VERSION:-1.1.5}
-      - APP_AUTHOR=${APP_AUTHOR:-Your Organization}
-      - APP_DESCRIPTION=${APP_DESCRIPTION:-Network Management & SNMP Monitoring Platform}
-      # SNMP Settings
-      - SNMP_PORT=${SNMP_PORT:-1061}
-      - SNMP_COMMUNITY=${SNMP_COMMUNITY:-public}
-      - TRAP_PORT=${TRAP_PORT:-1162}
-      # Other Settings
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - SESSION_TIMEOUT=${SESSION_TIMEOUT:-3600}
-    restart: always
+      - ENVIRONMENT=development
+    networks:
+      - trishul-network
+    restart: unless-stopped
 
-  # Frontend Service
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development  # Use 'production' for prod builds
     container_name: trishul-snmp-frontend
     ports:
-      - "8080:80"
+      - "8080:8080"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules  # Prevent overwriting node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:8000
+    networks:
+      - trishul-network
     depends_on:
       - backend
-    restart: always
+    restart: unless-stopped
+    stdin_open: true  # Keep container running
+    tty: true
+
+networks:
+  trishul-network:
+    driver: bridge
+
+volumes:
+  node_modules:

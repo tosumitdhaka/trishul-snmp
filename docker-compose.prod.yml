@@ -1,0 +1,23 @@
+version: '3.8'
+
+# Production docker-compose override
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  backend:
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=warning
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production  # Use nginx production stage
+    ports:
+      - "80:80"
+    environment:
+      - NODE_ENV=production
+    volumes: []  # Remove volume mounts in production
+    restart: always
