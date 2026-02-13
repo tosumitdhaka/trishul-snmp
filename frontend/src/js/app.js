@@ -7,6 +7,8 @@ import { Router } from './core/router.js';
 import { AuthManager } from './core/auth.js';
 import { ApiClient } from './core/api.js';
 import { createAppStore } from './core/store.js';
+import { ThemeManager } from './core/theme.js';
+import { toast } from './components/Toast.js';
 
 // ==================== Fetch Interceptor (Backward Compatibility) ====================
 // This interceptor automatically injects auth tokens into ALL fetch requests
@@ -57,6 +59,7 @@ class App {
         this.router = new Router();
         this.auth = new AuthManager(this.store);
         this.api = new ApiClient();
+        this.theme = new ThemeManager(this.store);
         
         // Track if we're already logging out to prevent loops
         this.isLoggingOut = false;
@@ -94,6 +97,11 @@ class App {
         // React to backend status
         this.store.subscribe('backendOnline', (online) => {
             this.updateBackendStatus(online);
+        });
+        
+        // React to theme changes
+        this.store.subscribe('theme', (theme) => {
+            this.updateThemeIcon(theme);
         });
 
         console.log('[App] State subscriptions setup');
@@ -140,6 +148,9 @@ class App {
     async init() {
         console.log('[App] Starting initialization...');
         
+        // Initialize theme FIRST (before anything renders)
+        this.theme.init();
+        
         // IMPORTANT: Show login screen FIRST, before any async operations
         console.log('[App] Showing initial login screen');
         this.renderView('login');
@@ -158,16 +169,14 @@ class App {
             if (verification.valid) {
                 console.log('[App] Token valid, user:', verification.user);
                 this.updateUserUI(verification.user);
-                // AuthManager.verify() already updated store to 'app' view
+                // Show welcome toast
+                toast.success(`Welcome back, ${verification.user}!`, { duration: 2000 });
             } else {
                 console.log('[App] Token invalid');
-                // AuthManager.verify() already cleared state and set to 'login'
-                // Explicitly render to ensure it's visible
                 this.renderView('login');
             }
         } else {
             console.log('[App] No existing token');
-            // Already showing login screen from above
         }
     }
 
@@ -236,7 +245,7 @@ class App {
         window.addEventListener('auth:unauthorized', () => {
             console.log('[App] Unauthorized event received');
             this.logout();
-        }, { once: false }); // Allow multiple but we'll handle duplicates
+        }, { once: false });
 
         // Sidebar toggle
         const sidebarToggle = document.getElementById('sidebarToggle');
@@ -247,14 +256,24 @@ class App {
                 this.store.set('sidebarCollapsed', !collapsed);
             });
         }
+        
+        // Theme toggle
+        const themeToggle = document.getElementById('theme-toggle');
+        if (themeToggle) {
+            themeToggle.addEventListener('click', () => {
+                const newTheme = this.theme.toggle();
+                const emoji = newTheme === 'dark' ? '🌙' : '☀️';
+                toast.info(`${emoji} ${newTheme === 'dark' ? 'Dark' : 'Light'} mode activated`, { 
+                    duration: 2000 
+                });
+            });
+        }
 
-        // Login form - REMOVE inline handler and attach properly
+        // Login form
         const loginForm = document.getElementById('login-form');
         if (loginForm) {
-            // Remove inline onsubmit if present
             loginForm.removeAttribute('onsubmit');
             
-            // Attach event listener ONCE
             if (!loginForm.dataset.listenerAttached) {
                 loginForm.addEventListener('submit', (e) => {
                     e.preventDefault();
@@ -309,6 +328,16 @@ class App {
             el.classList.toggle('active', href === `#${route}`);
         });
     }
+    
+    /**
+     * Update theme icon
+     */
+    updateThemeIcon(theme) {
+        const icon = document.getElementById('theme-icon');
+        if (icon) {
+            icon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+        }
+    }
 
     /**
      * Handle login form submission
@@ -346,13 +375,14 @@ class App {
             if (result.success) {
                 console.log('[App] Login successful');
                 this.updateUserUI(result.user);
-                // AuthManager will update store, triggering view change
+                toast.success(`Welcome, ${result.user}!`, { duration: 2000 });
             } else {
                 console.error('[App] Login failed:', result.error);
                 if (errorDiv) {
                     errorDiv.textContent = result.error;
                     errorDiv.classList.remove('d-none');
                 }
+                toast.error(result.error || 'Login failed', { duration: 3000 });
             }
         } catch (error) {
             console.error('[App] Login error:', error);
@@ -360,6 +390,7 @@ class App {
                 errorDiv.textContent = 'An unexpected error occurred';
                 errorDiv.classList.remove('d-none');
             }
+            toast.error('An unexpected error occurred', { duration: 3000 });
         } finally {
             if (submitBtn) submitBtn.disabled = false;
         }
@@ -391,7 +422,6 @@ class App {
             
             document.title = data.name;
             
-            // Update store
             this.store.update({
                 appMetadata: data,
                 backendOnline: true
@@ -408,6 +438,7 @@ class App {
             }
             
             this.store.set('backendOnline', false);
+            toast.warning('Backend is offline', { duration: 3000 });
         }
     }
 
@@ -415,12 +446,10 @@ class App {
      * Start periodic backend health check
      */
     startHealthCheck() {
-        // Clear any existing interval
         if (this.healthCheckInterval) {
             clearInterval(this.healthCheckInterval);
         }
         
-        // Check every 60 seconds
         this.healthCheckInterval = setInterval(async () => {
             await this.checkBackendHealth();
         }, 60000);
@@ -436,6 +465,7 @@ class App {
             const wasOffline = !this.store.get('backendOnline');
             if (wasOffline) {
                 console.log('[App] Backend is back online');
+                toast.success('Backend connection restored', { duration: 2000 });
             }
             
             this.store.set('backendOnline', true);
@@ -444,6 +474,7 @@ class App {
             const wasOnline = this.store.get('backendOnline');
             if (wasOnline) {
                 console.error('[App] Backend went offline');
+                toast.error('Lost connection to backend', { duration: 3000 });
             }
             
             this.store.set('backendOnline', false);
@@ -465,7 +496,6 @@ class App {
      * Logout user
      */
     async logout() {
-        // Prevent logout loop
         if (this.isLoggingOut) {
             console.log('[App] Logout already in progress, skipping');
             return;
@@ -474,15 +504,13 @@ class App {
         this.isLoggingOut = true;
         console.log('[App] Logging out...');
         
-        // Stop health check
         if (this.healthCheckInterval) {
             clearInterval(this.healthCheckInterval);
         }
         
         await this.auth.logout();
-        // AuthManager will update store, triggering view change to 'login'
+        toast.info('Logged out successfully', { duration: 2000 });
         
-        // Reset flag after a delay
         setTimeout(() => {
             this.isLoggingOut = false;
         }, 1000);
@@ -507,7 +535,6 @@ window.logout = () => {
 };
 
 // Make handleLogin global for HTML inline handler (backward compatibility)
-// But we'll remove the inline handler in setupEventListeners()
 window.handleLogin = (e) => {
     if (window.app) {
         window.app.handleLogin(e);
