@@ -132,6 +132,10 @@ class App {
     async init() {
         console.log('[App] Starting initialization...');
         
+        // IMPORTANT: Show login screen FIRST, before any async operations
+        console.log('[App] Showing initial login screen');
+        this.renderView('login');
+        
         // Setup routes
         this.setupRoutes();
         
@@ -146,21 +150,16 @@ class App {
             if (verification.valid) {
                 console.log('[App] Token valid, user:', verification.user);
                 this.updateUserUI(verification.user);
-                // State store will trigger view change to 'app'
+                // AuthManager.verify() already updated store to 'app' view
             } else {
-                console.log('[App] Token invalid, clearing and showing login');
-                // Clear invalid token
-                sessionStorage.removeItem('snmp_token');
-                sessionStorage.removeItem('snmp_user');
-                this.store.set('currentView', 'login');
-                // Explicitly render since state might not change
+                console.log('[App] Token invalid');
+                // AuthManager.verify() already cleared state and set to 'login'
+                // Explicitly render to ensure it's visible
                 this.renderView('login');
             }
         } else {
-            console.log('[App] No existing token, showing login');
-            this.store.set('currentView', 'login');
-            // Explicitly render initial view
-            this.renderView('login');
+            console.log('[App] No existing token');
+            // Already showing login screen from above
         }
     }
 
