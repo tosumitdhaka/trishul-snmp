@@ -7,6 +7,40 @@ import { Router } from './core/router.js';
 import { AuthManager } from './core/auth.js';
 import { ApiClient } from './core/api.js';
 
+// ==================== Fetch Interceptor (Backward Compatibility) ====================
+// This interceptor automatically injects auth tokens into ALL fetch requests
+// Required for legacy modules (dashboard.js, simulator.js, etc.) that make direct fetch() calls
+// TODO: Remove this once all modules are migrated to use ApiClient
+
+const originalFetch = window.fetch;
+window.fetch = async function(url, options = {}) {
+    const token = sessionStorage.getItem('snmp_token');
+    
+    if (token) {
+        if (!options.headers) {
+            options.headers = {};
+        }
+        
+        if (options.headers instanceof Headers) {
+            options.headers.append('X-Auth-Token', token);
+        } else {
+            options.headers['X-Auth-Token'] = token;
+        }
+    }
+
+    const response = await originalFetch(url, options);
+    
+    // Trigger logout on 401 (except for login endpoint)
+    if (response.status === 401 && !url.includes('/login')) {
+        console.warn('[Fetch Interceptor] 401 Unauthorized - triggering logout');
+        window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+    }
+
+    return response;
+};
+
+console.log('[App] Fetch interceptor installed for backward compatibility');
+
 // Import modules - These will be converted to proper ES6 classes step by step
 // For now, we'll keep compatibility with existing window.XxxModule pattern
 
