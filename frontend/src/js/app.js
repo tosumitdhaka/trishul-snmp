@@ -1,11 +1,12 @@
 /**
  * Trishul SNMP - Main Application Entry Point
- * Modern ES6 Module-based Architecture
+ * Modern ES6 Module-based Architecture with Reactive State Management
  */
 
 import { Router } from './core/router.js';
 import { AuthManager } from './core/auth.js';
 import { ApiClient } from './core/api.js';
+import { createAppStore } from './core/store.js';
 
 // ==================== Fetch Interceptor (Backward Compatibility) ====================
 // This interceptor automatically injects auth tokens into ALL fetch requests
@@ -41,22 +42,82 @@ window.fetch = async function(url, options = {}) {
 
 console.log('[App] Fetch interceptor installed for backward compatibility');
 
-// Import modules - These will be converted to proper ES6 classes step by step
-// For now, we'll keep compatibility with existing window.XxxModule pattern
-
 /**
  * Main Application Class
  */
 class App {
     constructor() {
+        // Initialize store first
+        this.store = createAppStore();
+        
+        // Initialize core modules with store
         this.router = new Router();
-        this.auth = new AuthManager();
+        this.auth = new AuthManager(this.store);
         this.api = new ApiClient();
+        
+        // Subscribe to state changes for reactive UI
+        this.setupStateSubscriptions();
         
         // Make available globally for debugging and compatibility
         window.app = this;
         
         console.log('[App] Trishul SNMP initializing...');
+    }
+
+    /**
+     * Setup reactive subscriptions to state changes
+     */
+    setupStateSubscriptions() {
+        // React to view changes (login <-> app)
+        this.store.subscribe('currentView', (view) => {
+            console.log('[App] View changed to:', view);
+            this.renderView(view);
+        });
+
+        // React to route changes
+        this.store.subscribe('currentRoute', (route) => {
+            console.log('[App] Route changed to:', route);
+            this.updateActiveNavItem(route);
+        });
+
+        // React to sidebar state
+        this.store.subscribe('sidebarCollapsed', (collapsed) => {
+            document.body.classList.toggle('sb-sidenav-toggled', collapsed);
+        });
+
+        // React to backend status
+        this.store.subscribe('backendOnline', (online) => {
+            this.updateBackendStatus(online);
+        });
+
+        console.log('[App] State subscriptions setup');
+    }
+
+    /**
+     * Render appropriate view based on state
+     */
+    renderView(view) {
+        const loginScreen = document.getElementById('login-screen');
+        const wrapper = document.getElementById('wrapper');
+        
+        if (view === 'login') {
+            if (loginScreen) loginScreen.style.display = 'flex';
+            if (wrapper) wrapper.style.display = 'none';
+            console.log('[App] Showing login screen');
+        } else if (view === 'app') {
+            if (loginScreen) loginScreen.style.display = 'none';
+            if (wrapper) wrapper.style.display = 'flex';
+            console.log('[App] Showing application');
+            
+            // Load app metadata when showing app
+            this.loadAppMetadata();
+            
+            // Start health check
+            this.startHealthCheck();
+            
+            // Navigate to current route
+            this.handleRoute();
+        }
     }
 
     /**
@@ -76,22 +137,21 @@ class App {
             const verification = await this.auth.verify();
             
             if (verification.valid) {
-                console.log('[App] Token valid, showing app');
+                console.log('[App] Token valid, user:', verification.user);
                 this.updateUserUI(verification.user);
-                await this.showApp();
+                // State store will trigger view change to 'app'
             } else {
                 console.log('[App] Token invalid, showing login');
-                this.showLogin();
+                this.store.set('currentView', 'login');
             }
         } else {
             console.log('[App] Not authenticated, showing login');
-            this.showLogin();
+            this.store.set('currentView', 'login');
         }
     }
 
     /**
      * Register routes with their module classes
-     * Using temporary HTML loading until modules are fully converted
      */
     setupRoutes() {
         const container = document.getElementById('main-content');
@@ -162,7 +222,8 @@ class App {
         if (sidebarToggle) {
             sidebarToggle.addEventListener('click', (e) => {
                 e.preventDefault();
-                document.body.classList.toggle('sb-sidenav-toggled');
+                const collapsed = this.store.get('sidebarCollapsed');
+                this.store.set('sidebarCollapsed', !collapsed);
             });
         }
 
@@ -180,10 +241,30 @@ class App {
      */
     async handleRoute() {
         const route = this.router.getCurrentRoute();
-        console.log('[App] Route changed:', route);
+        this.store.set('currentRoute', route);
         
         await this.router.navigate(route);
-        this.updateActiveNavItem(route);
+        this.updatePageTitle(route);
+    }
+
+    /**
+     * Update page title
+     */
+    updatePageTitle(route) {
+        const titles = {
+            'dashboard': 'Trishul SNMP',
+            'simulator': 'SNMP Simulator',
+            'walker': 'Walk & Parse',
+            'traps': 'Trap Manager',
+            'browser': 'MIB Browser',
+            'mibs': 'MIB Manager',
+            'settings': 'Settings'
+        };
+
+        const titleEl = document.getElementById('page-title');
+        if (titleEl) {
+            titleEl.textContent = titles[route] || 'Trishul SNMP';
+        }
     }
 
     /**
@@ -217,7 +298,7 @@ class App {
             if (result.success) {
                 console.log('[App] Login successful');
                 this.updateUserUI(result.user);
-                await this.showApp();
+                // AuthManager will update store, triggering view change
             } else {
                 console.error('[App] Login failed:', result.error);
                 errorDiv.textContent = result.error;
@@ -230,51 +311,6 @@ class App {
         } finally {
             submitBtn.disabled = false;
         }
-    }
-
-    /**
-     * Show application (hide login)
-     */
-    async showApp() {
-        const loginScreen = document.getElementById('login-screen');
-        const wrapper = document.getElementById('wrapper');
-        
-        if (loginScreen) {
-            loginScreen.style.display = 'none';
-        }
-        
-        if (wrapper) {
-            wrapper.style.display = 'flex';
-        }
-        
-        // Load app metadata
-        await this.loadAppMetadata();
-        
-        // Start periodic health check
-        this.startHealthCheck();
-        
-        // Navigate to current route
-        await this.handleRoute();
-        
-        console.log('[App] Application shown');
-    }
-
-    /**
-     * Show login screen (hide app)
-     */
-    showLogin() {
-        const loginScreen = document.getElementById('login-screen');
-        const wrapper = document.getElementById('wrapper');
-        
-        if (loginScreen) {
-            loginScreen.style.display = 'flex';
-        }
-        
-        if (wrapper) {
-            wrapper.style.display = 'none';
-        }
-        
-        console.log('[App] Login screen shown');
     }
 
     /**
@@ -292,15 +328,9 @@ class App {
      */
     async loadAppMetadata() {
         const versionEl = document.getElementById('app-version');
-        const badge = document.getElementById('backend-status');
         
         try {
             const data = await this.api.get('/meta');
-            
-            if (badge) {
-                badge.className = 'badge bg-success';
-                badge.textContent = 'Online';
-            }
             
             if (versionEl) {
                 versionEl.textContent = `v${data.version}`;
@@ -309,22 +339,23 @@ class App {
             
             document.title = data.name;
             
-            window.AppMetadata = data;
+            // Update store
+            this.store.update({
+                appMetadata: data,
+                backendOnline: true
+            });
             
             console.log(`[App] 🔱 ${data.name} v${data.version} loaded`);
             
         } catch (error) {
             console.error('[App] Failed to load metadata:', error);
             
-            if (badge) {
-                badge.className = 'badge bg-danger';
-                badge.textContent = 'Offline';
-            }
-            
             if (versionEl) {
                 versionEl.textContent = 'Offline';
                 versionEl.style.color = '#ef4444';
             }
+            
+            this.store.set('backendOnline', false);
         }
     }
 
@@ -347,23 +378,34 @@ class App {
      * Check backend health
      */
     async checkBackendHealth() {
-        const badge = document.getElementById('backend-status');
-        
         try {
-            const data = await this.api.get('/meta');
+            await this.api.get('/meta');
             
-            if (badge && !badge.classList.contains('bg-success')) {
-                badge.className = 'badge bg-success';
-                badge.textContent = 'Online';
+            const wasOffline = !this.store.get('backendOnline');
+            if (wasOffline) {
                 console.log('[App] Backend is back online');
             }
             
+            this.store.set('backendOnline', true);
+            
         } catch (error) {
-            if (badge && badge.classList.contains('bg-success')) {
-                badge.className = 'badge bg-danger';
-                badge.textContent = 'Offline';
+            const wasOnline = this.store.get('backendOnline');
+            if (wasOnline) {
                 console.error('[App] Backend went offline');
             }
+            
+            this.store.set('backendOnline', false);
+        }
+    }
+
+    /**
+     * Update backend status badge
+     */
+    updateBackendStatus(online) {
+        const badge = document.getElementById('backend-status');
+        if (badge) {
+            badge.className = online ? 'badge bg-success' : 'badge bg-danger';
+            badge.textContent = online ? 'Online' : 'Offline';
         }
     }
 
@@ -379,7 +421,7 @@ class App {
         }
         
         await this.auth.logout();
-        window.location.reload();
+        // AuthManager will update store, triggering view change to 'login'
     }
 }
 
