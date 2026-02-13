@@ -1,0 +1,118 @@
+/**
+ * Toast Notification Styles
+ * Custom styles for toast notifications
+ */
+
+/* Toast container positioning */
+.toast-container {
+    z-index: 9999;
+    pointer-events: none;
+}
+
+.toast-container > * {
+    pointer-events: auto;
+}
+
+/* Toast base styles */
+.toast {
+    min-width: 300px;
+    max-width: 400px;
+    font-size: 0.875rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Toast body */
+.toast-body {
+    padding: 0.75rem;
+    word-wrap: break-word;
+}
+
+/* Toast types - ensure good contrast */
+.toast.text-bg-success {
+    background-color: #198754 !important;
+    color: white !important;
+}
+
+.toast.text-bg-danger {
+    background-color: #dc3545 !important;
+    color: white !important;
+}
+
+.toast.text-bg-warning {
+    background-color: #ffc107 !important;
+    color: #000 !important;
+}
+
+.toast.text-bg-info {
+    background-color: #0dcaf0 !important;
+    color: #000 !important;
+}
+
+/* Dark mode adjustments */
+[data-theme="dark"] .toast {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .toast.text-bg-success {
+    background-color: #198754 !important;
+}
+
+[data-theme="dark"] .toast.text-bg-danger {
+    background-color: #dc3545 !important;
+}
+
+[data-theme="dark"] .toast.text-bg-warning {
+    background-color: #ffca2c !important;
+    color: #000 !important;
+}
+
+[data-theme="dark"] .toast.text-bg-info {
+    background-color: #31d2f2 !important;
+    color: #000 !important;
+}
+
+/* Close button */
+.toast .btn-close {
+    box-shadow: none;
+}
+
+/* Responsive */
+@media (max-width: 576px) {
+    .toast {
+        min-width: 250px;
+        max-width: 90vw;
+        font-size: 0.8125rem;
+    }
+    
+    .toast-container {
+        left: 50% !important;
+        right: auto !important;
+        transform: translateX(-50%);
+    }
+}
+
+/* Animation for multiple toasts */
+.toast-container > .toast {
+    margin-bottom: 0.5rem;
+}
+
+.toast-container > .toast:last-child {
+    margin-bottom: 0;
+}
+
+/* Hover effects */
+.toast:hover {
+    box-shadow: 0 0.75rem 1.5rem rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="dark"] .toast:hover {
+    box-shadow: 0 0.75rem 1.5rem rgba(0, 0, 0, 0.5);
+}
