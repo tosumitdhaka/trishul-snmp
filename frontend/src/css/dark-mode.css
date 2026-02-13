@@ -1,0 +1,284 @@
+/**
+ * Dark Mode Theme
+ * CSS variables and styles for dark theme
+ */
+
+/* ==================== CSS Variables ==================== */
+
+:root {
+    /* Light theme (default) */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --bg-tertiary: #e9ecef;
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --text-muted: #adb5bd;
+    --border-color: #dee2e6;
+    --shadow: rgba(0, 0, 0, 0.1);
+    --shadow-lg: rgba(0, 0, 0, 0.15);
+    
+    /* Sidebar */
+    --sidebar-bg: #212529;
+    --sidebar-text: #ffffff;
+    --sidebar-hover: rgba(255, 255, 255, 0.1);
+    --sidebar-active: rgba(255, 255, 255, 0.2);
+    
+    /* Cards */
+    --card-bg: #ffffff;
+    --card-border: #dee2e6;
+    
+    /* Inputs */
+    --input-bg: #ffffff;
+    --input-border: #ced4da;
+    --input-focus-border: #86b7fe;
+}
+
+/* Dark theme */
+[data-theme="dark"] {
+    --bg-primary: #1a1d23;
+    --bg-secondary: #242830;
+    --bg-tertiary: #2d323b;
+    --text-primary: #e9ecef;
+    --text-secondary: #adb5bd;
+    --text-muted: #6c757d;
+    --border-color: #3d4350;
+    --shadow: rgba(0, 0, 0, 0.3);
+    --shadow-lg: rgba(0, 0, 0, 0.5);
+    
+    /* Sidebar - lighter in dark mode */
+    --sidebar-bg: #2d323b;
+    --sidebar-text: #e9ecef;
+    --sidebar-hover: rgba(255, 255, 255, 0.1);
+    --sidebar-active: rgba(255, 255, 255, 0.15);
+    
+    /* Cards */
+    --card-bg: #242830;
+    --card-border: #3d4350;
+    
+    /* Inputs */
+    --input-bg: #2d323b;
+    --input-border: #3d4350;
+    --input-focus-border: #4dabf7;
+}
+
+/* ==================== Apply Theme ==================== */
+
+/* Body */
+body {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Cards */
+.card {
+    background-color: var(--card-bg);
+    border-color: var(--card-border);
+    color: var(--text-primary);
+}
+
+.card-header {
+    background-color: var(--bg-tertiary);
+    border-bottom-color: var(--border-color);
+}
+
+.card-footer {
+    background-color: var(--bg-tertiary);
+    border-top-color: var(--border-color);
+}
+
+/* Navbar */
+.navbar-light {
+    background-color: var(--bg-primary) !important;
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* Sidebar */
+#sidebar-wrapper {
+    background-color: var(--sidebar-bg) !important;
+    border-right-color: var(--border-color);
+}
+
+#sidebar-wrapper .list-group-item {
+    background-color: transparent !important;
+    color: var(--sidebar-text) !important;
+    border-color: transparent;
+}
+
+#sidebar-wrapper .list-group-item:hover {
+    background-color: var(--sidebar-hover) !important;
+}
+
+#sidebar-wrapper .list-group-item.active {
+    background-color: var(--sidebar-active) !important;
+}
+
+/* Forms */
+.form-control,
+.form-select {
+    background-color: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--text-primary);
+}
+
+.form-control:focus,
+.form-select:focus {
+    background-color: var(--input-bg);
+    border-color: var(--input-focus-border);
+    color: var(--text-primary);
+}
+
+.form-control::placeholder {
+    color: var(--text-muted);
+}
+
+/* Tables */
+.table {
+    color: var(--text-primary);
+}
+
+.table-striped > tbody > tr:nth-of-type(odd) > * {
+    background-color: var(--bg-tertiary);
+}
+
+.table-hover > tbody > tr:hover > * {
+    background-color: var(--bg-tertiary);
+}
+
+/* Modals */
+.modal-content {
+    background-color: var(--card-bg);
+    color: var(--text-primary);
+}
+
+.modal-header,
+.modal-footer {
+    border-color: var(--border-color);
+}
+
+/* Dropdowns */
+.dropdown-menu {
+    background-color: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+.dropdown-item {
+    color: var(--text-primary);
+}
+
+.dropdown-item:hover {
+    background-color: var(--bg-tertiary);
+}
+
+/* Alerts */
+[data-theme="dark"] .alert-light {
+    background-color: var(--bg-tertiary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+/* Badges */
+[data-theme="dark"] .badge.bg-light {
+    background-color: var(--bg-tertiary) !important;
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .badge.bg-secondary {
+    background-color: #495057 !important;
+}
+
+/* Buttons */
+.btn-outline-secondary {
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+.btn-outline-secondary:hover {
+    background-color: var(--bg-tertiary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+/* Text colors */
+.text-muted {
+    color: var(--text-muted) !important;
+}
+
+.text-secondary {
+    color: var(--text-secondary) !important;
+}
+
+/* Borders */
+.border,
+.border-top,
+.border-bottom,
+.border-start,
+.border-end {
+    border-color: var(--border-color) !important;
+}
+
+/* Shadows */
+.shadow-sm {
+    box-shadow: 0 0.125rem 0.25rem var(--shadow) !important;
+}
+
+.shadow {
+    box-shadow: 0 0.5rem 1rem var(--shadow) !important;
+}
+
+.shadow-lg {
+    box-shadow: 0 1rem 3rem var(--shadow-lg) !important;
+}
+
+/* Login screen */
+#login-screen {
+    background-color: var(--bg-secondary);
+}
+
+#login-screen .card {
+    background-color: var(--card-bg);
+    border-color: var(--card-border);
+}
+
+/* Scrollbars (webkit browsers) */
+[data-theme="dark"] ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+    background: #495057;
+}
+
+/* Code blocks */
+[data-theme="dark"] code,
+[data-theme="dark"] pre {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+/* Transitions for smooth theme switching */
+* {
+    transition: background-color 0.3s ease, 
+                border-color 0.3s ease, 
+                color 0.3s ease,
+                box-shadow 0.3s ease;
+}
+
+/* Disable transitions on buttons to keep them snappy */
+.btn,
+button,
+a {
+    transition: background-color 0.15s ease, 
+                border-color 0.15s ease, 
+                color 0.15s ease;
+}
