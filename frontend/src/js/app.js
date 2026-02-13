@@ -1,321 +1,374 @@
-const API_BASE = "/api";
-let currentModule = null; 
+/**
+ * Trishul SNMP - Main Application Entry Point
+ * Modern ES6 Module-based Architecture
+ */
 
-window.AppState = {
-    simulator: null,
-    logs: []
-};
+import { Router } from './core/router.js';
+import { AuthManager } from './core/auth.js';
+import { ApiClient } from './core/api.js';
 
-// ==================== Fetch Interceptor (Auth Token Injection) ====================
+// Import modules - These will be converted to proper ES6 classes step by step
+// For now, we'll keep compatibility with existing window.XxxModule pattern
 
-const originalFetch = window.fetch;
-window.fetch = async function(url, options = {}) {
-    const token = sessionStorage.getItem("snmp_token");
-    if (token) {
-        if (!options.headers) options.headers = {};
-        if (options.headers instanceof Headers) {
-            options.headers.append("X-Auth-Token", token);
-        } else {
-            options.headers["X-Auth-Token"] = token;
-        }
+/**
+ * Main Application Class
+ */
+class App {
+    constructor() {
+        this.router = new Router();
+        this.auth = new AuthManager();
+        this.api = new ApiClient();
+        
+        // Make available globally for debugging and compatibility
+        window.app = this;
+        
+        console.log('[App] Trishul SNMP initializing...');
     }
 
-    const response = await originalFetch(url, options);
-    
-    if (response.status === 401 && !url.includes("/login")) {
-        logout(false); 
-    }
-
-    return response;
-};
-
-// ==================== App Initialization ====================
-
-document.addEventListener("DOMContentLoaded", () => {
-    initAuth();
-});
-
-async function initAuth() {
-    const loginScreen = document.getElementById("login-screen");
-    const wrapper = document.getElementById("wrapper");
-    const token = sessionStorage.getItem("snmp_token");
-
-    if (!token) {
-        loginScreen.style.display = "flex";
-        wrapper.style.display = "none";
-    } else {
-        try {
-            const res = await fetch('/api/settings/check');
-            if (res.ok) {
-                const data = await res.json();
-                updateUserUI(data.user);
-                showApp();
+    /**
+     * Initialize application
+     */
+    async init() {
+        console.log('[App] Starting initialization...');
+        
+        // Setup routes
+        this.setupRoutes();
+        
+        // Setup global event listeners
+        this.setupEventListeners();
+        
+        // Check authentication
+        if (this.auth.isAuthenticated()) {
+            const verification = await this.auth.verify();
+            
+            if (verification.valid) {
+                console.log('[App] Token valid, showing app');
+                this.updateUserUI(verification.user);
+                await this.showApp();
             } else {
-                logout(false);
+                console.log('[App] Token invalid, showing login');
+                this.showLogin();
             }
-        } catch (e) {
-            console.error("Auth Check Failed", e);
-            logout(false); 
-        }
-    }
-}
-
-// ==================== Login Handler ====================
-
-window.handleLogin = async function(e) {
-    e.preventDefault();
-    const user = document.getElementById("login-user").value;
-    const pass = document.getElementById("login-pass").value;
-    const btn = document.getElementById("login-btn");
-    const err = document.getElementById("login-error");
-
-    btn.disabled = true;
-    err.classList.add("d-none");
-
-    try {
-        const res = await originalFetch('/api/settings/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: user, password: pass })
-        });
-
-        const data = await res.json();
-
-        if (res.ok) {
-            sessionStorage.setItem("snmp_token", data.token);
-            updateUserUI(data.username);
-            showApp(); 
         } else {
-            err.textContent = data.detail || "Login Failed";
-            err.classList.remove("d-none");
+            console.log('[App] Not authenticated, showing login');
+            this.showLogin();
         }
-    } catch (e) {
-        err.textContent = "Connection Error";
-        err.classList.remove("d-none");
-    } finally {
-        btn.disabled = false;
-    }
-};
-
-// ==================== Show App After Login ====================
-
-function showApp() {
-    const loginScreen = document.getElementById("login-screen");
-    const wrapper = document.getElementById("wrapper");
-
-    if (loginScreen) {
-        loginScreen.classList.remove("d-flex"); 
-        loginScreen.style.display = "none";
     }
 
-    if (wrapper) {
-        wrapper.style.display = "flex";
-    }
-
-    initializeAppLogic();
-}
-
-// ==================== Logout ====================
-
-window.logout = async function(callApi = true) {
-    if (callApi) {
-        try { await fetch('/api/settings/logout', { method: 'POST' }); } catch(e){}
-    }
-    sessionStorage.removeItem("snmp_token");
-    window.location.reload();
-};
-
-// ==================== Update User UI ====================
-
-function updateUserUI(username) {
-    const el = document.getElementById("nav-user-name");
-    if(el) el.textContent = username;
-}
-
-// ==================== Initialize App Logic ====================
-
-function initializeAppLogic() {
-    // Sidebar toggle
-    const sidebarToggle = document.querySelector('#sidebarToggle');
-    if (sidebarToggle) {
-        sidebarToggle.addEventListener('click', e => {
-            e.preventDefault();
-            document.body.classList.toggle('sb-sidenav-toggled');
-        });
-    }
-
-    // Load app metadata and check backend health
-    loadAppMetadata();
-    
-    // Check backend health periodically
-    setInterval(checkBackendHealth, 60000);
-
-    // Handle routing
-    window.addEventListener('hashchange', handleRouting);
-    handleRouting(); 
-}
-
-// ==================== Load App Metadata ====================
-
-async function loadAppMetadata() {
-    const versionEl = document.getElementById("app-version");
-    const badge = document.getElementById("backend-status");
-    
-    try {
-        const res = await fetch(`${API_BASE}/meta`);
-        const data = await res.json();
+    /**
+     * Register routes with their module classes
+     * Using temporary HTML loading until modules are fully converted
+     */
+    setupRoutes() {
+        const container = document.getElementById('main-content');
         
-        if (badge) {
-            badge.className = "badge bg-success";
-            badge.textContent = "Online";
-        }
-        
-        if (versionEl) {
-            versionEl.textContent = `v${data.version}`;
-            versionEl.title = `${data.name} v${data.version}`;
-        }
-        
-        document.title = data.name;
-        
-        window.AppMetadata = {
-            name: data.name,
-            version: data.version,
-            author: data.author,
-            description: data.description
+        // Temporary route handler that loads HTML and initializes old modules
+        const createModuleWrapper = (moduleName) => {
+            return class {
+                constructor(container) {
+                    this.container = container;
+                    this.moduleName = moduleName;
+                }
+                
+                async init() {
+                    // Load HTML
+                    const response = await fetch(`${this.moduleName}.html`);
+                    if (!response.ok) throw new Error('Module not found');
+                    const html = await response.text();
+                    this.container.innerHTML = html;
+                    
+                    // Initialize old module if exists
+                    const capitalizedName = this.moduleName.charAt(0).toUpperCase() + this.moduleName.slice(1);
+                    const oldModule = window[`${capitalizedName}Module`];
+                    if (oldModule && typeof oldModule.init === 'function') {
+                        oldModule.init();
+                    }
+                }
+                
+                destroy() {
+                    const capitalizedName = this.moduleName.charAt(0).toUpperCase() + this.moduleName.slice(1);
+                    const oldModule = window[`${capitalizedName}Module`];
+                    if (oldModule && typeof oldModule.destroy === 'function') {
+                        oldModule.destroy();
+                    }
+                }
+            };
         };
         
-        console.log(`🔱 ${data.name} v${data.version} loaded successfully`);
+        this.router
+            .setContainer(container)
+            .register('dashboard', createModuleWrapper('dashboard'))
+            .register('simulator', createModuleWrapper('simulator'))
+            .register('walker', createModuleWrapper('walker'))
+            .register('traps', createModuleWrapper('traps'))
+            .register('browser', createModuleWrapper('browser'))
+            .register('mibs', createModuleWrapper('mibs'))
+            .register('settings', createModuleWrapper('settings'));
         
-    } catch (e) {
-        console.error("Failed to load app metadata:", e);
-        
-        if (badge) {
-            badge.className = "badge bg-danger";
-            badge.textContent = "Offline";
+        console.log('[App] Routes registered');
+    }
+
+    /**
+     * Setup global event listeners
+     */
+    setupEventListeners() {
+        // Hash change for routing
+        window.addEventListener('hashchange', () => {
+            this.handleRoute();
+        });
+
+        // Auth events
+        window.addEventListener('auth:unauthorized', () => {
+            console.log('[App] Unauthorized event received');
+            this.logout();
+        });
+
+        // Sidebar toggle
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        if (sidebarToggle) {
+            sidebarToggle.addEventListener('click', (e) => {
+                e.preventDefault();
+                document.body.classList.toggle('sb-sidenav-toggled');
+            });
         }
+
+        // Login form
+        const loginForm = document.getElementById('login-form');
+        if (loginForm) {
+            loginForm.addEventListener('submit', (e) => this.handleLogin(e));
+        }
+
+        console.log('[App] Event listeners setup');
+    }
+
+    /**
+     * Handle route changes
+     */
+    async handleRoute() {
+        const route = this.router.getCurrentRoute();
+        console.log('[App] Route changed:', route);
         
-        if (versionEl) {
-            versionEl.textContent = "Offline";
-            versionEl.style.color = "#ef4444";
-            versionEl.title = "Backend is offline";
+        await this.router.navigate(route);
+        this.updateActiveNavItem(route);
+    }
+
+    /**
+     * Update active navigation item
+     */
+    updateActiveNavItem(route) {
+        document.querySelectorAll('.list-group-item').forEach(el => {
+            const href = el.getAttribute('href');
+            el.classList.toggle('active', href === `#${route}`);
+        });
+    }
+
+    /**
+     * Handle login form submission
+     */
+    async handleLogin(event) {
+        event.preventDefault();
+        
+        const username = document.getElementById('login-user').value;
+        const password = document.getElementById('login-pass').value;
+        const submitBtn = document.getElementById('login-btn');
+        const errorDiv = document.getElementById('login-error');
+        
+        // Disable form
+        submitBtn.disabled = true;
+        errorDiv.classList.add('d-none');
+        
+        try {
+            const result = await this.auth.login(username, password);
+            
+            if (result.success) {
+                console.log('[App] Login successful');
+                this.updateUserUI(result.user);
+                await this.showApp();
+            } else {
+                console.error('[App] Login failed:', result.error);
+                errorDiv.textContent = result.error;
+                errorDiv.classList.remove('d-none');
+            }
+        } catch (error) {
+            console.error('[App] Login error:', error);
+            errorDiv.textContent = 'An unexpected error occurred';
+            errorDiv.classList.remove('d-none');
+        } finally {
+            submitBtn.disabled = false;
         }
     }
-}
 
-// ==================== Check Backend Health ====================
-
-async function checkBackendHealth() {
-    const badge = document.getElementById("backend-status");
-    const versionEl = document.getElementById("app-version");
-    
-    try {
-        const res = await fetch(`${API_BASE}/meta`);
-        const data = await res.json();
+    /**
+     * Show application (hide login)
+     */
+    async showApp() {
+        const loginScreen = document.getElementById('login-screen');
+        const wrapper = document.getElementById('wrapper');
         
-        if (badge) {
-            badge.className = "badge bg-success";
-            badge.textContent = "Online";
+        if (loginScreen) {
+            loginScreen.style.display = 'none';
         }
         
-        if (versionEl && versionEl.textContent !== `v${data.version}`) {
-            versionEl.textContent = `v${data.version}`;
-            versionEl.title = `${data.name} v${data.version}`;
-            // console.log(`🔄 Version updated to v${data.version}`);
+        if (wrapper) {
+            wrapper.style.display = 'flex';
         }
         
-        if (document.title !== data.name) {
+        // Load app metadata
+        await this.loadAppMetadata();
+        
+        // Start periodic health check
+        this.startHealthCheck();
+        
+        // Navigate to current route
+        await this.handleRoute();
+        
+        console.log('[App] Application shown');
+    }
+
+    /**
+     * Show login screen (hide app)
+     */
+    showLogin() {
+        const loginScreen = document.getElementById('login-screen');
+        const wrapper = document.getElementById('wrapper');
+        
+        if (loginScreen) {
+            loginScreen.style.display = 'flex';
+        }
+        
+        if (wrapper) {
+            wrapper.style.display = 'none';
+        }
+        
+        console.log('[App] Login screen shown');
+    }
+
+    /**
+     * Update user info in UI
+     */
+    updateUserUI(username) {
+        const userNameEl = document.getElementById('nav-user-name');
+        if (userNameEl) {
+            userNameEl.textContent = username || 'User';
+        }
+    }
+
+    /**
+     * Load application metadata
+     */
+    async loadAppMetadata() {
+        const versionEl = document.getElementById('app-version');
+        const badge = document.getElementById('backend-status');
+        
+        try {
+            const data = await this.api.get('/meta');
+            
+            if (badge) {
+                badge.className = 'badge bg-success';
+                badge.textContent = 'Online';
+            }
+            
+            if (versionEl) {
+                versionEl.textContent = `v${data.version}`;
+                versionEl.title = `${data.name} v${data.version}`;
+            }
+            
             document.title = data.name;
+            
+            window.AppMetadata = data;
+            
+            console.log(`[App] 🔱 ${data.name} v${data.version} loaded`);
+            
+        } catch (error) {
+            console.error('[App] Failed to load metadata:', error);
+            
+            if (badge) {
+                badge.className = 'badge bg-danger';
+                badge.textContent = 'Offline';
+            }
+            
+            if (versionEl) {
+                versionEl.textContent = 'Offline';
+                versionEl.style.color = '#ef4444';
+            }
+        }
+    }
+
+    /**
+     * Start periodic backend health check
+     */
+    startHealthCheck() {
+        // Clear any existing interval
+        if (this.healthCheckInterval) {
+            clearInterval(this.healthCheckInterval);
         }
         
-    } catch (e) {
-        if (badge && badge.classList.contains("bg-success")) {
-            console.error("Backend went offline:", e);
+        // Check every 60 seconds
+        this.healthCheckInterval = setInterval(async () => {
+            await this.checkBackendHealth();
+        }, 60000);
+    }
+
+    /**
+     * Check backend health
+     */
+    async checkBackendHealth() {
+        const badge = document.getElementById('backend-status');
+        
+        try {
+            const data = await this.api.get('/meta');
+            
+            if (badge && !badge.classList.contains('bg-success')) {
+                badge.className = 'badge bg-success';
+                badge.textContent = 'Online';
+                console.log('[App] Backend is back online');
+            }
+            
+        } catch (error) {
+            if (badge && badge.classList.contains('bg-success')) {
+                badge.className = 'badge bg-danger';
+                badge.textContent = 'Offline';
+                console.error('[App] Backend went offline');
+            }
+        }
+    }
+
+    /**
+     * Logout user
+     */
+    async logout() {
+        console.log('[App] Logging out...');
+        
+        // Stop health check
+        if (this.healthCheckInterval) {
+            clearInterval(this.healthCheckInterval);
         }
         
-        if (badge) {
-            badge.className = "badge bg-danger";
-            badge.textContent = "Offline";
-        }
-        
-        if (versionEl && versionEl.textContent !== "Offline") {
-            versionEl.textContent = "Offline";
-            versionEl.style.color = "#ef4444";
-            versionEl.title = "Backend is offline";
-        }
+        await this.auth.logout();
+        window.location.reload();
     }
 }
 
-// ==================== Routing ====================
-
-async function handleRouting() {
-    let moduleName = window.location.hash.substring(1) || 'dashboard';
+// Initialize app when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('[App] DOM loaded, initializing...');
     
-    if (currentModule && typeof currentModule.destroy === 'function') {
-        currentModule.destroy();
-    }
-    
-    document.querySelectorAll('.list-group-item').forEach(el => {
-        el.classList.remove('active');
-        if(el.getAttribute('href') === `#${moduleName}`) el.classList.add('active');
+    const app = new App();
+    app.init().catch(error => {
+        console.error('[App] Initialization failed:', error);
     });
+});
 
-    await loadModule(moduleName);
-}
-
-// ==================== Module Loading (NO CACHE) ====================
-
-async function loadModule(moduleName) {
-    const container = document.getElementById("main-content");
-    const title = document.getElementById("page-title");
-
-    const titles = {
-        'dashboard': 'Trishul SNMP',
-        'simulator': 'SNMP Simulator',
-        'walker': 'Walk & Parse',
-        'traps': 'Trap Manager',
-        'browser': 'MIB Browser',
-        'mibs': 'MIB Manager',
-        'settings': 'Settings'
-    };
-
-    title.textContent = titles[moduleName] || 'Trishul SNMP';
-
-    // Always fetch fresh HTML (no cache)
-    try {
-        container.innerHTML = '<div class="text-center mt-5"><div class="spinner-border text-primary"></div></div>';
-        
-        const res = await fetch(`${moduleName}.html`);
-        
-        if (!res.ok) throw new Error("Module not found");
-        
-        const html = await res.text();
-        container.innerHTML = html;
-        
-    } catch (e) {
-        container.innerHTML = `
-            <div class="alert alert-danger">
-                <i class="fas fa-exclamation-triangle me-2"></i>
-                Error loading module: ${e.message}
-            </div>
-        `;
-        return;
+// Make logout function global for HTML onclick handlers
+window.logout = () => {
+    if (window.app) {
+        window.app.logout();
     }
+};
 
-    // Initialize module
-    const moduleMap = {
-        'dashboard': window.DashboardModule,
-        'simulator': window.SimulatorModule,
-        'walker': window.WalkerModule,
-        'traps': window.TrapsModule,
-        'browser': window.BrowserModule,
-        'mibs': window.MibsModule,
-        'settings': window.SettingsModule
-    };
-
-    if (moduleMap[moduleName]) {
-        currentModule = moduleMap[moduleName];
-        if(typeof currentModule.init === 'function') {
-            currentModule.init();
-        }
+// Maintain backward compatibility with old login handler
+window.handleLogin = (e) => {
+    if (window.app) {
+        window.app.handleLogin(e);
     }
-}
+};
