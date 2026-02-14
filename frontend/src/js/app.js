@@ -11,10 +11,6 @@ import { ThemeManager, createThemeToggle } from './core/theme.js';
 import { Toast } from './components/Toast.js';
 
 // ==================== Fetch Interceptor (Backward Compatibility) ====================
-// This interceptor automatically injects auth tokens into ALL fetch requests
-// Required for legacy modules (dashboard.js, simulator.js, etc.) that make direct fetch() calls
-// TODO: Remove this once all modules are migrated to use ApiClient
-
 const originalFetch = window.fetch;
 window.fetch = async function(url, options = {}) {
     const token = sessionStorage.getItem('snmp_token');
@@ -33,10 +29,8 @@ window.fetch = async function(url, options = {}) {
 
     const response = await originalFetch(url, options);
     
-    // Trigger logout on 401 (except for login/logout endpoints)
     if (response.status === 401 && !url.includes('/login') && !url.includes('/logout')) {
         console.warn('[Fetch Interceptor] 401 Unauthorized - triggering logout');
-        // Only trigger if we're currently authenticated
         if (window.app && window.app.store.get('isAuthenticated')) {
             window.dispatchEvent(new CustomEvent('auth:unauthorized'));
         }
@@ -45,56 +39,38 @@ window.fetch = async function(url, options = {}) {
     return response;
 };
 
-console.log('[App] Fetch interceptor installed for backward compatibility');
+console.log('[App] Fetch interceptor installed');
 
-/**
- * Main Application Class
- */
 class App {
     constructor() {
-        // Initialize store first
         this.store = createAppStore();
-        
-        // Initialize core modules with store
         this.router = new Router();
         this.auth = new AuthManager(this.store);
         this.api = new ApiClient();
         this.theme = new ThemeManager(this.store);
-        
-        // Track if we're already logging out to prevent loops
         this.isLoggingOut = false;
         
-        // Subscribe to state changes for reactive UI
         this.setupStateSubscriptions();
-        
-        // Make available globally for debugging and compatibility
         window.app = this;
         
         console.log('[App] Trishul SNMP initializing...');
     }
 
-    /**
-     * Setup reactive subscriptions to state changes
-     */
     setupStateSubscriptions() {
-        // React to view changes (login <-> app)
         this.store.subscribe('currentView', (view) => {
             console.log('[App] View changed to:', view);
             this.renderView(view);
         });
 
-        // React to route changes
         this.store.subscribe('currentRoute', (route) => {
             console.log('[App] Route changed to:', route);
             this.updateActiveNavItem(route);
         });
 
-        // React to sidebar state
         this.store.subscribe('sidebarCollapsed', (collapsed) => {
             document.body.classList.toggle('sb-sidenav-toggled', collapsed);
         });
 
-        // React to backend status
         this.store.subscribe('backendOnline', (online) => {
             this.updateBackendStatus(online);
         });
@@ -102,9 +78,6 @@ class App {
         console.log('[App] State subscriptions setup');
     }
 
-    /**
-     * Render appropriate view based on state
-     */
     renderView(view) {
         const loginScreen = document.getElementById('login-screen');
         const appWrapper = document.getElementById('app-wrapper');
@@ -123,44 +96,30 @@ class App {
             appWrapper.classList.remove('d-none');
             console.log('[App] ✅ Application shown');
             
-            // Load app metadata
+            // Setup routes NOW that app-wrapper is visible
+            if (!this.routesSetup) {
+                this.setupRoutes();
+                this.routesSetup = true;
+            }
+            
             this.loadAppMetadata();
-            
-            // Start health check
             this.startHealthCheck();
-            
-            // Navigate to current route
             this.handleRoute();
         }
     }
 
-    /**
-     * Initialize application
-     */
     async init() {
         console.log('[App] Starting initialization...');
         
-        // Remove no-transition class after a brief delay
         setTimeout(() => {
             document.body.classList.remove('no-transition');
         }, 100);
         
-        // Initialize theme FIRST
         this.theme.init();
-        
-        // Create and mount theme toggle
         this.createThemeToggle();
-        
-        // Show login screen initially
         this.renderView('login');
-        
-        // Setup routes
-        this.setupRoutes();
-        
-        // Setup global event listeners
         this.setupEventListeners();
         
-        // Check authentication
         if (this.auth.isAuthenticated()) {
             console.log('[App] Found existing token, verifying...');
             const verification = await this.auth.verify();
@@ -180,9 +139,6 @@ class App {
         console.log('[App] ✅ Initialization complete');
     }
 
-    /**
-     * Create theme toggle button
-     */
     createThemeToggle() {
         const container = document.getElementById('theme-toggle-container');
         if (container) {
@@ -192,31 +148,49 @@ class App {
         }
     }
 
-    /**
-     * Register routes
-     */
     setupRoutes() {
-        const container = document.getElementById('main-content');
+        console.log('[App] Setting up routes...');
         
-        // Temporary wrapper for old modules
+        const container = document.getElementById('main-content');
+        console.log('[App] Container element:', container);
+        
+        if (!container) {
+            console.error('[App] ❌ main-content container not found!');
+            return;
+        }
+        
         const createModuleWrapper = (moduleName) => {
             return class {
                 constructor(container) {
                     this.container = container;
                     this.moduleName = moduleName;
+                    console.log(`[Module:${moduleName}] Created with container:`, container);
                 }
                 
                 async init() {
+                    console.log(`[Module:${this.moduleName}] Fetching ${this.moduleName}.html...`);
                     const response = await fetch(`${this.moduleName}.html`);
-                    if (!response.ok) throw new Error('Module not found');
+                    
+                    if (!response.ok) {
+                        console.error(`[Module:${this.moduleName}] Failed to fetch: ${response.status}`);
+                        throw new Error(`Module not found: ${response.statusText}`);
+                    }
+                    
                     const html = await response.text();
+                    console.log(`[Module:${this.moduleName}] Loaded ${html.length} bytes`);
+                    
                     this.container.innerHTML = html;
+                    console.log(`[Module:${this.moduleName}] HTML injected into container`);
                     
                     // Initialize old module if exists
                     const capitalizedName = this.moduleName.charAt(0).toUpperCase() + this.moduleName.slice(1);
                     const oldModule = window[`${capitalizedName}Module`];
+                    
                     if (oldModule && typeof oldModule.init === 'function') {
+                        console.log(`[Module:${this.moduleName}] Initializing ${capitalizedName}Module...`);
                         oldModule.init();
+                    } else {
+                        console.log(`[Module:${this.moduleName}] No ${capitalizedName}Module found, HTML only`);
                     }
                 }
                 
@@ -240,25 +214,19 @@ class App {
             .register('mibs', createModuleWrapper('mibs'))
             .register('settings', createModuleWrapper('settings'));
         
-        console.log('[App] Routes registered');
+        console.log('[App] ✅ Routes registered');
     }
 
-    /**
-     * Setup global event listeners
-     */
     setupEventListeners() {
-        // Hash change for routing
         window.addEventListener('hashchange', () => {
             this.handleRoute();
         });
 
-        // Auth events
         window.addEventListener('auth:unauthorized', () => {
             console.log('[App] Unauthorized event received');
             this.logout();
         });
 
-        // Sidebar toggle
         const sidebarToggle = document.getElementById('sidebarToggle');
         if (sidebarToggle) {
             sidebarToggle.addEventListener('click', (e) => {
@@ -268,7 +236,6 @@ class App {
             });
         }
 
-        // Logout button
         const logoutBtn = document.getElementById('logout-btn');
         if (logoutBtn) {
             logoutBtn.addEventListener('click', (e) => {
@@ -277,7 +244,6 @@ class App {
             });
         }
 
-        // Login form
         const loginForm = document.getElementById('login-form');
         if (loginForm) {
             loginForm.addEventListener('submit', (e) => {
@@ -289,9 +255,6 @@ class App {
         console.log('[App] Event listeners setup');
     }
 
-    /**
-     * Handle route changes
-     */
     async handleRoute() {
         const route = this.router.getCurrentRoute();
         this.store.set('currentRoute', route);
@@ -300,9 +263,6 @@ class App {
         this.updatePageTitle(route);
     }
 
-    /**
-     * Update page title
-     */
     updatePageTitle(route) {
         const titles = {
             'dashboard': 'Dashboard - Trishul SNMP',
@@ -317,9 +277,6 @@ class App {
         document.title = titles[route] || 'Trishul SNMP';
     }
 
-    /**
-     * Update active navigation item
-     */
     updateActiveNavItem(route) {
         document.querySelectorAll('.list-group-item').forEach(el => {
             const dataRoute = el.getAttribute('data-route');
@@ -327,9 +284,6 @@ class App {
         });
     }
 
-    /**
-     * Handle login
-     */
     async handleLogin() {
         const username = document.getElementById('username')?.value;
         const password = document.getElementById('password')?.value;
@@ -343,7 +297,6 @@ class App {
             return;
         }
         
-        // Hide error
         if (errorDiv) errorDiv.classList.add('d-none');
         
         try {
@@ -369,9 +322,6 @@ class App {
         }
     }
 
-    /**
-     * Update user UI
-     */
     updateUserUI(username) {
         const userDisplay = document.getElementById('username-display');
         if (userDisplay) {
@@ -379,9 +329,6 @@ class App {
         }
     }
 
-    /**
-     * Load app metadata
-     */
     async loadAppMetadata() {
         try {
             const data = await this.api.get('/meta');
@@ -400,9 +347,6 @@ class App {
         }
     }
 
-    /**
-     * Start health check
-     */
     startHealthCheck() {
         if (this.healthCheckInterval) {
             clearInterval(this.healthCheckInterval);
@@ -413,9 +357,6 @@ class App {
         }, 60000);
     }
 
-    /**
-     * Check backend health
-     */
     async checkBackendHealth() {
         try {
             await this.api.get('/meta');
@@ -439,9 +380,6 @@ class App {
         }
     }
 
-    /**
-     * Update backend status badge
-     */
     updateBackendStatus(online) {
         const badge = document.getElementById('backend-status');
         if (badge) {
@@ -453,9 +391,6 @@ class App {
         }
     }
 
-    /**
-     * Logout
-     */
     async logout() {
         if (this.isLoggingOut) {
             console.log('[App] Logout already in progress');
@@ -478,7 +413,6 @@ class App {
     }
 }
 
-// Initialize app when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         console.log('[App] DOM loaded, initializing...');
