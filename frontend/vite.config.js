@@ -23,15 +23,18 @@ export default defineConfig(({ command, mode }) => {
             },
             hmr: {
                 overlay: true,
-                clientPort: 8080
+                clientPort: 8080,
+                // More conservative HMR
+                timeout: 30000
             },
             watch: {
-                usePolling: true, // Needed for Docker
-                interval: 100
+                usePolling: true,
+                interval: 300, // Increased from 100ms to be less aggressive
+                ignored: ['**/node_modules/**', '**/dist/**']
             }
         },
 
-        // Preview server (production build testing)
+        // Preview server
         preview: {
             port: 8080,
             strictPort: true,
@@ -58,10 +61,7 @@ export default defineConfig(({ command, mode }) => {
                 },
                 output: {
                     manualChunks: {
-                        // Vendor chunk for third-party dependencies
                         vendor: ['bootstrap'],
-                        
-                        // Core application modules
                         core: [
                             './src/js/core/router.js',
                             './src/js/core/auth.js',
@@ -69,8 +69,6 @@ export default defineConfig(({ command, mode }) => {
                             './src/js/core/store.js',
                             './src/js/core/component.js'
                         ],
-                        
-                        // UI components
                         components: [
                             './src/js/components/Card.js',
                             './src/js/components/Table.js',
@@ -84,13 +82,8 @@ export default defineConfig(({ command, mode }) => {
                 }
             },
             
-            // Chunk size warnings
             chunkSizeWarningLimit: 1000,
-            
-            // CSS code splitting
             cssCodeSplit: true,
-            
-            // Asset inlining (small assets as base64)
             assetsInlineLimit: 4096
         },
 
@@ -123,9 +116,7 @@ export default defineConfig(({ command, mode }) => {
         // CSS configuration
         css: {
             devSourcemap: isDev,
-            preprocessorOptions: {
-                // Add if using SCSS later
-            }
+            preprocessorOptions: {}
         },
 
         // Logging
