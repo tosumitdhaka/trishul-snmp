@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: trishul-snmp-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data
+      - ./mibs:/app/mibs
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=development
+    networks:
+      - trishul-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.simple
+    container_name: trishul-snmp-frontend
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./frontend/src:/usr/share/nginx/html:ro
+    networks:
+      - trishul-network
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+networks:
+  trishul-network:
+    driver: bridge
