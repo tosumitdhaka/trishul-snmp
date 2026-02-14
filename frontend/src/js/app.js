@@ -49,6 +49,7 @@ class App {
         this.api = new ApiClient();
         this.theme = new ThemeManager(this.store);
         this.isLoggingOut = false;
+        this.currentView = null; // Track current view
         
         this.setupStateSubscriptions();
         window.app = this;
@@ -58,7 +59,13 @@ class App {
 
     setupStateSubscriptions() {
         this.store.subscribe('currentView', (view) => {
-            console.log('[App] View changed to:', view);
+            // Prevent unnecessary re-renders
+            if (this.currentView === view) {
+                console.log('[App] View unchanged, skipping render:', view);
+                return;
+            }
+            console.log('[App] View changing:', this.currentView, '->', view);
+            this.currentView = view;
             this.renderView(view);
         });
 
@@ -96,15 +103,18 @@ class App {
             appWrapper.classList.remove('d-none');
             console.log('[App] ✅ Application shown');
             
-            // Setup routes NOW that app-wrapper is visible
-            if (!this.routesSetup) {
-                this.setupRoutes();
-                this.routesSetup = true;
-            }
-            
-            this.loadAppMetadata();
-            this.startHealthCheck();
-            this.handleRoute();
+            // Wait for DOM to be fully visible before setting up routes
+            requestAnimationFrame(() => {
+                // Setup routes NOW that app-wrapper is visible
+                if (!this.routesSetup) {
+                    this.setupRoutes();
+                    this.routesSetup = true;
+                }
+                
+                this.loadAppMetadata();
+                this.startHealthCheck();
+                this.handleRoute();
+            });
         }
     }
 
@@ -156,6 +166,15 @@ class App {
         
         if (!container) {
             console.error('[App] ❌ main-content container not found!');
+            // Retry after a short delay
+            setTimeout(() => {
+                console.log('[App] Retrying route setup...');
+                const retryContainer = document.getElementById('main-content');
+                if (retryContainer) {
+                    this.routesSetup = false;
+                    this.setupRoutes();
+                }
+            }, 100);
             return;
         }
         
@@ -181,13 +200,23 @@ class App {
                     const html = await response.text();
                     console.log(`[Module:${this.moduleName}] Loaded ${html.length} bytes`);
                     
-                    // Re-query container before injecting
-                    const container = this.containerGetter();
+                    // Multiple attempts to get container
+                    let container = this.containerGetter();
+                    let attempts = 0;
+                    
+                    while (!container && attempts < 5) {
+                        console.warn(`[Module:${this.moduleName}] Container not found, waiting... (attempt ${attempts + 1})`);
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                        container = this.containerGetter();
+                        attempts++;
+                    }
+                    
                     if (!container) {
-                        console.error(`[Module:${this.moduleName}] Container disappeared!`);
+                        console.error(`[Module:${this.moduleName}] Container disappeared after ${attempts} attempts!`);
                         throw new Error('Container element not found');
                     }
                     
+                    console.log(`[Module:${this.moduleName}] Container found, injecting HTML...`);
                     container.innerHTML = html;
                     console.log(`[Module:${this.moduleName}] ✅ HTML injected into container`);
                     
