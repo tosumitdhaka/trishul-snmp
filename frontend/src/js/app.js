@@ -159,16 +159,18 @@ class App {
             return;
         }
         
+        // Create wrapper that re-queries container
         const createModuleWrapper = (moduleName) => {
             return class {
-                constructor(container) {
-                    this.container = container;
+                constructor(initialContainer, containerGetter) {
                     this.moduleName = moduleName;
-                    console.log(`[Module:${moduleName}] Created with container:`, container);
+                    this.containerGetter = containerGetter || (() => document.getElementById('main-content'));
+                    console.log(`[Module:${moduleName}] Created`);
                 }
                 
                 async init() {
                     console.log(`[Module:${this.moduleName}] Fetching ${this.moduleName}.html...`);
+                    
                     const response = await fetch(`${this.moduleName}.html`);
                     
                     if (!response.ok) {
@@ -179,8 +181,26 @@ class App {
                     const html = await response.text();
                     console.log(`[Module:${this.moduleName}] Loaded ${html.length} bytes`);
                     
-                    this.container.innerHTML = html;
-                    console.log(`[Module:${this.moduleName}] HTML injected into container`);
+                    // Re-query container before injecting
+                    const container = this.containerGetter();
+                    if (!container) {
+                        console.error(`[Module:${this.moduleName}] Container disappeared!`);
+                        throw new Error('Container element not found');
+                    }
+                    
+                    container.innerHTML = html;
+                    console.log(`[Module:${this.moduleName}] ✅ HTML injected into container`);
+                    
+                    // Wait a tick for DOM to settle
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                    
+                    // Verify content is still there
+                    const verifyContainer = this.containerGetter();
+                    if (verifyContainer && verifyContainer.children.length > 0) {
+                        console.log(`[Module:${this.moduleName}] ✅ Content verified: ${verifyContainer.children.length} elements`);
+                    } else {
+                        console.warn(`[Module:${this.moduleName}] ⚠️ Content may have been removed!`);
+                    }
                     
                     // Initialize old module if exists
                     const capitalizedName = this.moduleName.charAt(0).toUpperCase() + this.moduleName.slice(1);
