@@ -5,7 +5,7 @@ export class Router {
     constructor() {
         this.routes = new Map();
         this.currentModule = null;
-        this.container = null;
+        this.containerId = null;
         console.log('[Router] Initialized');
     }
 
@@ -22,9 +22,29 @@ export class Router {
      * Set the container element for modules
      */
     setContainer(container) {
-        this.container = container;
-        console.log('[Router] Container set:', container?.id || 'unknown');
+        if (container && container.id) {
+            this.containerId = container.id;
+            console.log('[Router] Container ID set:', this.containerId);
+        } else {
+            console.error('[Router] Invalid container provided');
+        }
         return this;
+    }
+
+    /**
+     * Get the current container element (re-query from DOM)
+     */
+    getContainer() {
+        if (!this.containerId) {
+            console.error('[Router] No container ID set!');
+            return null;
+        }
+        
+        const container = document.getElementById(this.containerId);
+        if (!container) {
+            console.error(`[Router] Container #${this.containerId} not found in DOM!`);
+        }
+        return container;
     }
 
     /**
@@ -33,13 +53,15 @@ export class Router {
     async navigate(path) {
         console.log(`[Router] Navigating to: ${path}`);
 
-        if (!this.container) {
-            console.error('[Router] No container set!');
+        // Re-query container from DOM
+        const container = this.getContainer();
+        if (!container) {
+            console.error('[Router] Cannot navigate - no container!');
             return;
         }
 
         // Show loading spinner
-        this.showLoading(path);
+        this.showLoading(container, path);
 
         // Destroy current module if exists
         if (this.currentModule?.destroy) {
@@ -57,14 +79,15 @@ export class Router {
         if (!ModuleClass) {
             console.error(`[Router] No module found for route: ${path}`);
             console.log('[Router] Available routes:', Array.from(this.routes.keys()));
-            this.showError(`Route not found: ${path}`);
+            this.showError(container, `Route not found: ${path}`);
             return;
         }
 
         try {
             console.log('[Router] Creating module instance...');
-            // Create and initialize new module
-            this.currentModule = new ModuleClass(this.container);
+            
+            // Pass container getter instead of container itself
+            this.currentModule = new ModuleClass(container, () => this.getContainer());
             
             if (typeof this.currentModule.init === 'function') {
                 console.log('[Router] Initializing module...');
@@ -81,17 +104,22 @@ export class Router {
         } catch (error) {
             console.error('[Router] ❌ Error loading module:', error);
             console.error('[Router] Error stack:', error.stack);
-            this.showError(`Failed to load ${path}: ${error.message}`, error.stack);
+            
+            // Re-query container for error display
+            const errorContainer = this.getContainer();
+            if (errorContainer) {
+                this.showError(errorContainer, `Failed to load ${path}: ${error.message}`, error.stack);
+            }
         }
     }
 
     /**
      * Show loading spinner
      */
-    showLoading(route) {
-        if (!this.container) return;
+    showLoading(container, route) {
+        if (!container) return;
         
-        this.container.innerHTML = `
+        container.innerHTML = `
             <div class="text-center py-5">
                 <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
                     <span class="visually-hidden">Loading...</span>
@@ -128,8 +156,8 @@ export class Router {
     /**
      * Show error message in container
      */
-    showError(message, stack = '') {
-        if (!this.container) return;
+    showError(container, message, stack = '') {
+        if (!container) return;
         
         const stackTrace = stack ? `
             <hr>
@@ -139,7 +167,7 @@ export class Router {
             </details>
         ` : '';
         
-        this.container.innerHTML = `
+        container.innerHTML = `
             <div class="alert alert-danger" role="alert">
                 <h4 class="alert-heading">
                     <i class="fas fa-exclamation-triangle me-2"></i>
