@@ -110,13 +110,13 @@ window.WalkerModule = {
         countEl.textContent = `${this.walkHistory.length} saved`;
         
         if (this.walkHistory.length === 0) {
-            emptyEl.style.display = 'block';
-            listEl.style.display = 'none';
+            emptyEl.classList.remove('d-none');
+            listEl.classList.add('d-none');
             return;
         }
         
-        emptyEl.style.display = 'none';
-        listEl.style.display = 'block';
+        emptyEl.classList.add('d-none');
+        listEl.classList.remove('d-none');
         
         listEl.innerHTML = this.walkHistory.map(item => {
             const timeAgo = this.formatRelativeTime(item.timestamp);
@@ -401,7 +401,27 @@ window.WalkerModule = {
         return msg;
     },
 
-    // ==================== Result Display & Filtering ====================
+    // ==================== Result Display, Filtering & Clear ====================
+
+    clearResults: function() {
+        const output = document.getElementById("walk-output");
+        const countBadge = document.getElementById("walk-count");
+        const searchInput = document.getElementById("walk-result-search");
+
+        this.lastData = null;
+        this.lastDisplayMode = null;
+        this.lastRawLines = null;
+        this.filteredData = null;
+
+        sessionStorage.removeItem('walkerLastResult');
+
+        if (output) {
+            output.textContent = "No data yet. Run a walk to see results.";
+            output.className = "m-0 p-3 border-0 bg-light text-muted font-monospace small";
+        }
+        if (countBadge) countBadge.textContent = "0 items";
+        if (searchInput) searchInput.value = '';
+    },
 
     filterResults: function() {
         const searchInput = document.getElementById("walk-result-search");
