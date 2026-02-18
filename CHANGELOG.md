@@ -7,64 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.3.0] - 2026-02-18
+## [1.2.3] - 2026-02-18
 
 ### Added
-- **WebSocket server-push** (Phase 9) — replaces all frontend `setInterval` HTTP polling.
-  Backend now pushes real-time state changes to all connected clients via a persistent
-  WebSocket connection at `/api/ws`. Closes [#16](https://github.com/tosumitdhaka/trishul-snmp/issues/16).
-- **`core/ws_manager.py`** — `ConnectionManager` singleton with `broadcast()`, `send_to()`,
-  and dead-connection auto-cleanup. Module-level `manager` used by all routers.
-- **`api/routers/ws.py`** — WebSocket endpoint `/api/ws` with `?token=` query-param auth
-  (4001 close on failure). Sends `full_state` snapshot on connect; ping/pong keepalive.
-- **UDP loopback IPC** — `_UDPListenerProtocol` in `ws_manager.py` listens on
-  `127.0.0.1:WS_INTERNAL_PORT` (default 19876). Worker subprocesses send trap datagrams
-  here for zero-latency real-time push without shared memory or Redis.
-- **`workers/trap_receiver.py`** — `_send_ws_datagram()` sends `{type:"trap"}` UDP datagram
-  to main process after every trap written to disk (fire-and-forget, non-fatal on failure).
-- **Auto-start on boot** (Phase 8) — simulator and trap receiver start automatically on
-  container startup via FastAPI lifespan handler. Controlled by `AUTO_START_SIMULATOR` and
-  `AUTO_START_TRAP_RECEIVER` env vars.
-- **`docs/websocket.md`** — full WebSocket API reference: message types, connection flow,
-  keepalive, IPC architecture diagram, and `wscat` test commands.
+- **Phase 9 — WebSocket server-push backend** — `core/ws_manager.py` `ConnectionManager` singleton + asyncio UDP listener on `127.0.0.1:19876` for worker IPC. `/api/ws` endpoint with token auth, `full_state` on connect, ping/pong keepalive. Closes [#16](https://github.com/tosumitdhaka/trishul-snmp/issues/16).
+- **Phase 8 — Auto-start on boot** — `AUTO_START_SIMULATOR` / `AUTO_START_TRAP_RECEIVER` env vars; FastAPI lifespan handler starts both services on container startup. Closes [#15](https://github.com/tosumitdhaka/trishul-snmp/issues/15).
+- **Phase 2 — Global stats** — `core/stats_store.py` file-backed thread-safe JSON stats store; `/api/stats/`, `/api/stats/{module}`, `DELETE /api/stats/` endpoints. Closes [#11](https://github.com/tosumitdhaka/trishul-snmp/issues/11).
+- **Phase 4–7 — Per-module stats** — walker (`walks_executed`, `walks_failed`, `oids_returned`), simulator (`start_count`, `restart_count`, `simulator_run_seconds`, `snmp_requests_served`), traps (`receiver_start_count`, `traps_received_total`, `traps_sent_total`), MIBs (`upload_count`, `delete_count`, `reload_count`). Closes [#14](https://github.com/tosumitdhaka/trishul-snmp/issues/14).
 
 ### Changed
-- **`api/routers/simulator.py`** — all lifecycle endpoints (`start`, `stop`, `restart`,
-  `data`) now `await _broadcast_status()` + `await _broadcast_stats()` after state changes,
-  pushing `{type:"status"}` and `{type:"stats"}` to WS clients.
-- **`services/trap_manager.py`** — `start()` and `stop()` call `_try_broadcast_status()`
-  (uses `asyncio.ensure_future` — safe from sync context). `--ws-port` now passed to
-  `trap_receiver` subprocess from `settings.WS_INTERNAL_PORT`.
-- **`main.py`** — lifespan starts UDP listener (`await start_udp_listener()`) **before**
-  auto-starting services to prevent dropped datagrams on boot. Graceful
-  `await stop_udp_listener()` on shutdown.
-- **`nginx.conf`** — added `/api/ws` location block (before `/api/` catch-all) with
-  `Upgrade`/`Connection` headers and `proxy_read_timeout 3600s` for persistent WS connections.
-  Also added `proxy_redirect`, gzip compression, and real-IP forwarding headers (Phase 8).
-- **`core/config.py`** — added `WS_INTERNAL_PORT`, `AUTO_START_SIMULATOR`,
-  `AUTO_START_TRAP_RECEIVER` settings; `APP_AUTHOR` / `APP_DESCRIPTION` now read from env.
-- **`.env`** — added `WS_INTERNAL_PORT=19876`, `AUTO_START_SIMULATOR=true`,
-  `AUTO_START_TRAP_RECEIVER=true`.
+- **Phase 9** — simulator and trap manager lifecycle endpoints broadcast `status` + `stats` WS events after state changes. `trap_receiver` worker sends UDP datagram to main process on each received trap.
+- **Phase 8 — nginx.conf** — added `/api/ws` WS location block (3600s timeout), `proxy_redirect`, gzip compression, real-IP headers, 120s proxy timeouts (fixes 504 on large MIB reloads).
+- **Phase 8 — docker-compose.yml** — removed deprecated `version: '3.8'`; backend healthcheck added; frontend `depends_on` uses `service_healthy`; `AUTO_START_*` env vars injected.
+- **Phase 1** — `core/logging.py` renamed to `core/log_config.py` to stop shadowing stdlib `logging` (BUG-14). CORS `allow_origins` now reads `ALLOWED_ORIGINS` env var instead of wildcard (BUG-16).
+- **Docker base image** — `python:3.9-slim` → `python:3.10-slim` (required for `str | None` type hint syntax).
+- **UI/UX consistency** — unified dark card headers (`#1e293b`), consistent `card-header` height, standardised `btn-sm` / `btn-group-sm` across all pages, CSS height variables replacing magic numbers.
+- **Dashboard tool cards** — horizontal layout, responsive breakpoints (`col-12 col-sm-6 col-md-3`), compact icon/text side-by-side.
 
 ### Fixed
-- **Docker healthcheck** — replaced `curl` (not present in `python:3.10-slim`) with
-  `python -c urllib.request.urlopen(...)`. This was causing the backend container to report
-  unhealthy, which blocked frontend startup via `depends_on: condition: service_healthy`.
-- **`simulator.py` restart stats** — `update_custom_data()` and `mibs.py` MIB-reload-triggered
-  restarts now go through `_restart_simulator_with_stats()` shared helper, fixing
-  `restart_count` not incrementing on indirect restarts.
-- **`trap_manager.py` port** — `get_status()` now returns `self._port` instead of hardcoded
-  `1162` (BUG-9).
-- **`trap_manager.py` file handle** — `clear_traps()` uses context manager to prevent
-  file handle leak (BUG-10).
-- **Docker Compose** — removed deprecated `version: '3.8'` key; added backend healthcheck
-  so frontend `depends_on: service_healthy` works correctly.
-- **nginx** — added `proxy_connect_timeout 60s` / `proxy_send_timeout 120s` /
-  `proxy_read_timeout 120s` to prevent 504 on large MIB reloads and SNMP walks.
+- **Docker healthcheck** — replaced `curl` (absent in `python:3.10-slim`) with `python -c urllib.request.urlopen(...)`, fixing backend always-unhealthy state that blocked frontend startup.
+- **Phase 1 — Auth** — `AppMeta` reads from settings instance (BUG-3); SHA-256+salt password hashing with plaintext migration on login (BUG-4); `SESSION_TIMEOUT` enforced (BUG-5); logout correctly passes token header (BUG-11); duplicate `SECRETS_FILE` definition removed (BUG-15).
+- **Phase 3 — Dead code** — removed `api/routers/files.py` (never registered, imported non-existent `file_service.py`). Closes [#12](https://github.com/tosumitdhaka/trishul-snmp/issues/12).
+- **Phase 4 — Walker** — input validation before walk (BUG-6); `HTTPException` caught before outer `except` to prevent message corruption (BUG-7); label-only walk returns `mode:label` instead of silent empty (BUG-13).
+- **Phase 5 — Simulator** — `SimulatorManager.restart()` now preserves `_port`/`_community` (BUG-8); single restart code path via `_restart_simulator_with_stats()` helper (BUG-12); removed `simulator_metrics.json`.
+- **Phase 6 — Traps** — `get_status()` uses `self._port` not hardcoded 1162 (BUG-9); `clear_traps()` uses context manager (BUG-10); `SnmpEngine` singleton in traps router (BUG-17).
+- **Phase 7 — MIBs** — filename sanitization in `save_mib_file()` (IMPR-11).
+- **Phase 8 — Restart chain stats** — `update_custom_data()` and MIB-reload-triggered restarts use `_restart_simulator_with_stats()`, fixing `restart_count` not incrementing on indirect restarts.
+- **JS visibility bugs** — standardised all `style.display` toggles to `classList`/`d-none` across `traps.js`, `mibs.js`, `walker.js`, `browser.js`, `settings.js`; fixed walker `clearResults()` missing implementation; fixed walker history delete navigating to dashboard (`preventDefault` added).
+- **Trap modal copy** — `showTrapDetails()` stores JSON in `_modalJson` keyed by modal ID; no raw JSON embedded in HTML `onclick` attributes.
+- **Browser clear icon** — fixed `#btn-clear-search` always hidden when OID pre-loaded from other pages.
 
 ### Performance
-- **Zero polling** — WS push eliminates dashboard (30s×3 calls), simulator (10s×1),
-  and traps (3s×2 calls) polling loops. Frontend integration tracked separately.
+- **WebSocket push** — eliminates dashboard (30s × 3), simulator (10s × 1), and traps (3s × 2) polling intervals. Frontend migration tracked in separate branch.
 
 ---
 
@@ -229,7 +203,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[1.3.0]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.2.2...v1.3.0
+[1.2.3]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.1.7...v1.2.0
