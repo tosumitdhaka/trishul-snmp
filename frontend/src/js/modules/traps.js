@@ -5,6 +5,7 @@ window.TrapsModule = {
     allObjects: [],
     receivedTraps: [],
     filteredTraps: [],
+    _modalJson: {},          // keyed by modal id — avoids JSON-in-onclick-attr breakage
 
     init: function() {
         this.loadPersistedTraps();
@@ -74,7 +75,6 @@ window.TrapsModule = {
 
     persistTraps: function() {
         try {
-            // Keep only last 100 traps
             const toStore = this.receivedTraps.slice(0, 100);
             localStorage.setItem('trishul_received_traps', JSON.stringify(toStore));
         } catch (e) {
@@ -547,7 +547,6 @@ window.TrapsModule = {
             const latest = this.receivedTraps[0];
             lastEl.textContent = this.formatRelativeTime(latest.timestamp);
             
-            // Calculate top source
             const sourceCounts = {};
             this.receivedTraps.forEach(t => {
                 sourceCounts[t.source] = (sourceCounts[t.source] || 0) + 1;
@@ -562,7 +561,6 @@ window.TrapsModule = {
             sourceEl.textContent = '--';
         }
         
-        // Port from status
         const port = document.getElementById('tr-port').value;
         portEl.textContent = `:${port}`;
     },
@@ -576,7 +574,6 @@ window.TrapsModule = {
             const diffMs = now - date;
             const diffSec = Math.floor(diffMs / 1000);
             
-            // Sanity check: if > 1 year old, show date instead
             if (diffMs > 365 * 24 * 60 * 60 * 1000) {
                 return date.toLocaleDateString() + ' (' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + ')';
             }
@@ -599,7 +596,6 @@ window.TrapsModule = {
             const res = await fetch('/api/traps/');
             const json = await res.json();
             
-            // Merge with persisted, keep unique by timestamp
             const newTraps = json.data || [];
             const existing = this.receivedTraps;
             const merged = [...newTraps];
@@ -610,7 +606,6 @@ window.TrapsModule = {
                 }
             });
             
-            // Sort by timestamp desc, keep last 100
             this.receivedTraps = merged
                 .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
                 .slice(0, 100);
@@ -723,6 +718,27 @@ window.TrapsModule = {
         return simplified;
     },
 
+    // ==================== Trap Detail Modal ====================
+
+    /**
+     * BUG FIX: Copy button in modal was broken.
+     *
+     * Old approach: injected raw JSON into onclick="...writeText(`${json}`)..."
+     * Problem: JSON contains double-quotes (") that broke the HTML attribute
+     * boundary, causing a silent parse error — the onclick never fired.
+     *
+     * New approach: store the JSON string in TrapsModule._modalJson[id],
+     * then call TrapsModule.copyModalJson(id) from the onclick attribute.
+     * No raw JSON is ever embedded inside an HTML attribute.
+     */
+    copyModalJson: function(modalId) {
+        const json = this._modalJson[modalId];
+        if (!json) return;
+        navigator.clipboard.writeText(json)
+            .then(() => this.showNotification('Copied!', 'success'))
+            .catch(() => this.showNotification('Copy failed', 'error'));
+    },
+
     showTrapDetails: function(idx) {
         const trapsToShow = this.filteredTraps.length > 0 ? this.filteredTraps : this.receivedTraps;
         const trap = trapsToShow[idx];
@@ -739,9 +755,14 @@ window.TrapsModule = {
         };
         
         const json = JSON.stringify(displayTrap, null, 2);
+
+        // Unique ID so the copy helper can look up the JSON safely
+        const modalId = `trap-detail-modal-${Date.now()}`;
+        this._modalJson[modalId] = json;
         
         const modal = document.createElement('div');
         modal.className = 'modal fade';
+        modal.id = modalId;
         modal.innerHTML = `
             <div class="modal-dialog modal-lg">
                 <div class="modal-content">
@@ -750,10 +771,11 @@ window.TrapsModule = {
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
-                        <pre class="bg-dark text-light p-3 rounded" style="max-height: 500px; overflow-y: auto;">${json}</pre>
+                        <pre class="bg-dark text-light p-3 rounded" style="max-height: 500px; overflow-y: auto;">${json.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
                     </div>
                     <div class="modal-footer">
-                        <button class="btn btn-sm btn-primary py-1 px-2" onclick="navigator.clipboard.writeText(\`${json.replace(/`/g, '\\`')}\`); TrapsModule.showNotification('Copied!', 'success');">
+                        <button class="btn btn-sm btn-primary py-1 px-2"
+                                onclick="TrapsModule.copyModalJson('${modalId}')">
                             <i class="fas fa-copy"></i> Copy
                         </button>
                         <button class="btn btn-sm btn-secondary py-1 px-2" data-bs-dismiss="modal">Close</button>
@@ -765,7 +787,10 @@ window.TrapsModule = {
         document.body.appendChild(modal);
         const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
-        modal.addEventListener('hidden.bs.modal', () => modal.remove());
+        modal.addEventListener('hidden.bs.modal', () => {
+            delete this._modalJson[modalId];   // clean up stored JSON
+            modal.remove();
+        });
     },
 
     copyTrap: function(idx) {
