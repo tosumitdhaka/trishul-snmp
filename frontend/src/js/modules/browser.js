@@ -246,7 +246,7 @@ window.BrowserModule = {
                             <i class="fas fa-exclamation-triangle fa-3x mb-3 text-warning"></i>
                             <p>Could not restore previous selection</p>
                             <p class="small">The node may have been removed or filtered out</p>
-                            <button class="btn btn-sm btn-outline-primary mt-2" onclick="BrowserModule.clearSelection()">
+                            <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="BrowserModule.clearSelection()">
                                 <i class="fas fa-times"></i> Clear Selection
                             </button>
                         </div>
@@ -974,7 +974,7 @@ window.BrowserModule = {
                     <p class="small mb-0 mt-2">${e.message}</p>
                 </div>
                 <div class="text-center mt-3">
-                    <button class="btn btn-sm btn-outline-primary" onclick="BrowserModule.clearSelection()">
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="BrowserModule.clearSelection()">
                         <i class="fas fa-times"></i> Clear Selection
                     </button>
                 </div>
@@ -1020,7 +1020,7 @@ window.BrowserModule = {
                         <td>
                             <div class="d-flex align-items-center">
                                 <code class="flex-grow-1 text-truncate" title="${node.full_name}">${node.full_name}</code>
-                                <button class="btn btn-xs btn-outline-secondary ms-2" 
+                                <button type="button" class="btn btn-xs btn-outline-secondary ms-2" 
                                         onclick="navigator.clipboard.writeText('${node.full_name}'); BrowserModule.showNotification('Copied!', 'success')">
                                     <i class="fas fa-copy"></i>
                                 </button>
@@ -1032,7 +1032,7 @@ window.BrowserModule = {
                         <td>
                             <div class="d-flex align-items-center">
                                 <code class="flex-grow-1 text-truncate" title="${node.oid}">${node.oid}</code>
-                                <button class="btn btn-xs btn-outline-secondary ms-2" 
+                                <button type="button" class="btn btn-xs btn-outline-secondary ms-2" 
                                         onclick="navigator.clipboard.writeText('${node.oid}'); BrowserModule.showNotification('Copied!', 'success')">
                                     <i class="fas fa-copy"></i>
                                 </button>
@@ -1104,12 +1104,12 @@ window.BrowserModule = {
             <hr>
             <div class="d-grid gap-2">
                 ${!isNotification ? `
-                    <button class="btn btn-sm btn-primary" onclick="BrowserModule.useInWalker('${node.full_name}')">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="BrowserModule.useInWalker('${node.full_name}')">
                         <i class="fas fa-walking"></i> Walk this OID
                     </button>
                 ` : ''}
                 ${isNotification ? `
-                    <button class="btn btn-sm btn-success" onclick="BrowserModule.useInTrapSender(${JSON.stringify({
+                    <button type="button" class="btn btn-sm btn-success" onclick="BrowserModule.useInTrapSender(${JSON.stringify({
                         full_name: node.full_name,
                         name: node.name,
                         oid: node.oid,

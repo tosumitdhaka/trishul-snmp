@@ -67,7 +67,7 @@ window.MibsModule = {
                         ${mib.imports.length > 0 ? `· Imports: ${mib.imports.slice(0, 3).join(', ')}${mib.imports.length > 3 ? '...' : ''}` : ''}
                     </small>
                 </div>
-                <button class="btn btn-sm btn-outline-danger" onclick="MibsModule.deleteMib('${mib.file}')">
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="MibsModule.deleteMib('${mib.file}')">
                     <i class="fas fa-trash"></i>
                 </button>
             </li>
@@ -91,13 +91,13 @@ window.MibsModule = {
                         ${mib.status === 'missing_deps' ? `
                             <div class="mt-2">
                                 <span class="badge bg-warning text-dark">Missing dependencies</span>
-                                <button class="btn btn-xs btn-outline-info ms-2" onclick="MibsModule.showDependencyHelp()">
+                                <button type="button" class="btn btn-xs btn-outline-info ms-2" onclick="MibsModule.showDependencyHelp()">
                                     <i class="fas fa-question-circle"></i> Help
                                 </button>
                             </div>
                         ` : ''}
                     </div>
-                    <button class="btn btn-sm btn-outline-danger" onclick="MibsModule.deleteMib('${mib.file}')">
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="MibsModule.deleteMib('${mib.file}')">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
@@ -169,12 +169,12 @@ window.MibsModule = {
                 </td>
                 <td class="text-center">
                     <div class="btn-group btn-group-sm" role="group">
-                        <button class="btn btn-outline-primary btn-sm py-0 px-2" 
+                        <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" 
                                 onclick='MibsModule.showTrapDetails(${JSON.stringify(trap).replace(/'/g, "&apos;")})' 
                                 title="View Details">
                             <i class="fas fa-info-circle"></i>
                         </button>
-                        <button class="btn btn-success btn-sm py-0 px-2" 
+                        <button type="button" class="btn btn-success btn-sm py-0 px-2" 
                                 onclick='MibsModule.useTrapDirectly(${JSON.stringify(trap).replace(/'/g, "&apos;")})' 
                                 title="Send Trap">
                             <i class="fas fa-paper-plane"></i>
@@ -212,6 +212,9 @@ window.MibsModule = {
     
         title.textContent = trap.full_name;
     
+        // Escape single quotes in OID to avoid breaking onclick attr
+        const safeOid = (trap.oid || '').replace(/'/g, "\\'");
+
         body.innerHTML = `
             <div class="mb-3">
                 <label class="fw-bold">Name:</label>
@@ -225,7 +228,7 @@ window.MibsModule = {
                 <label class="fw-bold">OID:</label>
                 <div>
                     <code>${trap.oid}</code>
-                    <button class="btn btn-xs btn-outline-secondary ms-2" onclick="navigator.clipboard.writeText('${trap.oid}')">
+                    <button type="button" class="btn btn-xs btn-outline-secondary ms-2" onclick="navigator.clipboard.writeText('${safeOid}')">
                         <i class="fas fa-copy"></i> Copy
                     </button>
                 </div>

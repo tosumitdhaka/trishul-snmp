@@ -6,8 +6,8 @@
     --sidebar-bg: #1e293b;
     --sidebar-text: #94a3b8;
     --sidebar-active: #3b82f6;
-    --header-bg: #ffffff;
-    --header-text: #1e293b;
+    --header-bg: #1e293b;           /* matches sidebar-bg — dark card headers */
+    --header-text: #ffffff;
 
     /* Height variables — avoids magic numbers in HTML */
     --trap-table-max-height: calc(100vh - 450px);
@@ -161,8 +161,26 @@ pre {
     background-color: var(--header-bg);
     color: var(--header-text);
     font-weight: 600;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid rgba(255,255,255,0.12); /* subtle separator on dark bg */
     padding: 0.5rem 1rem;           /* was: 1rem 1.25rem */
+}
+
+/* Ensure badges/code inside dark card headers remain readable */
+.card-header .badge {
+    background-color: rgba(255,255,255,0.15) !important;
+    color: #fff !important;
+}
+.card-header code {
+    background-color: rgba(255,255,255,0.1);
+    color: #e2e8f0;
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+.card-header .text-muted {
+    color: #94a3b8 !important;
+}
+.card-header .btn-close {
+    filter: invert(1);
 }
 
 /* ==================== Dashboard Tool Cards ==================== */
