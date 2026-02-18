@@ -143,8 +143,14 @@ window.WalkerModule = {
                         </div>
                         <div class="text-end ms-2">
                             <span class="badge bg-info">${item.count} items</span>
-                            <button class="btn btn-sm btn-outline-danger mt-1" 
-                                    onclick="event.stopPropagation(); WalkerModule.deleteHistoryItem(${item.id})"
+                            <!-- BUG FIX: was event.stopPropagation() only.
+                                 stopPropagation() stops bubbling but does NOT cancel
+                                 the parent <a href="#"> default navigation — the SPA
+                                 router sees href="#" and routes to the dashboard.
+                                 Must also call event.preventDefault() to cancel the
+                                 anchor default before deleteHistoryItem() runs. -->
+                            <button type="button" class="btn btn-sm btn-outline-danger mt-1" 
+                                    onclick="event.stopPropagation(); event.preventDefault(); WalkerModule.deleteHistoryItem(${item.id})"
                                     title="Delete" aria-label="Delete history item">
                                 <i class="fas fa-times"></i>
                             </button>
