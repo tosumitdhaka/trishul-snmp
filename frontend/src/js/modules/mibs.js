@@ -37,9 +37,9 @@ window.MibsModule = {
             const failedCard = document.getElementById('failed-mibs-card');
             if (data.errors.length > 0) {
                 this.renderFailedMibs(data.errors);
-                failedCard.style.display = 'block';
+                failedCard.classList.remove('d-none');
             } else {
-                failedCard.style.display = 'none';
+                failedCard.classList.add('d-none');
             }
         } catch (e) {
             console.error('Failed to load MIB status', e);
@@ -118,8 +118,6 @@ window.MibsModule = {
                 totalBadge.textContent = this.allTraps.length;
             }
             
-            // console.log(`Loaded ${this.allTraps.length} traps from backend`);
-            
             this.renderTraps(this.allTraps);
         } catch (e) {
             console.error('Failed to load traps', e);
@@ -134,8 +132,6 @@ window.MibsModule = {
             return;
         }
         
-        // console.log(`Rendering ${traps.length} traps`);
-        
         // Get list of loaded MIB modules from currentStatus
         const loadedModules = new Set();
         if (this.currentStatus && this.currentStatus.mibs) {
@@ -144,16 +140,12 @@ window.MibsModule = {
             });
         }
         
-        console.log('Loaded modules:', Array.from(loadedModules));
-        
         // Known system MIBs (only mark as system if NOT in loaded modules)
         const knownSystemMibs = ['SNMPv2-MIB', 'SNMPv2-SMI', 'RMON-MIB', 'SNMP-FRAMEWORK-MIB'];
 
         tbody.innerHTML = traps.map(trap => {
             // Only mark as system if it's a known system MIB AND not explicitly loaded
             const isSystemMib = knownSystemMibs.includes(trap.module) && !loadedModules.has(trap.module);
-            
-            // console.log(`${trap.module}::${trap.name} - System: ${isSystemMib}, Loaded: ${loadedModules.has(trap.module)}`);
             
             return `
             <tr ${isSystemMib ? 'class="table-secondary"' : ''}>
@@ -277,8 +269,8 @@ window.MibsModule = {
 
     showUploadModal: function() {
         document.getElementById('mib-upload-input').value = '';
-        document.getElementById('upload-validation-results').style.display = 'none';
-        document.getElementById('dependency-alert').style.display = 'none';
+        document.getElementById('upload-validation-results').classList.add('d-none');
+        document.getElementById('dependency-alert').classList.add('d-none');
         document.getElementById('btn-validate').disabled = false;
         document.getElementById('btn-upload').disabled = true;
 
@@ -357,7 +349,7 @@ window.MibsModule = {
                 `;
             }).join('');
 
-            resultsDiv.style.display = 'block';
+            resultsDiv.classList.remove('d-none');
 
             if (data.global_missing_deps.length > 0) {
                 depList.innerHTML = `
@@ -373,9 +365,9 @@ window.MibsModule = {
                         • Continue anyway (affected MIBs will fail to load)
                     </p>
                 `;
-                depAlert.style.display = 'block';
+                depAlert.classList.remove('d-none');
             } else {
-                depAlert.style.display = 'none';
+                depAlert.classList.add('d-none');
             }
 
             document.getElementById('btn-upload').disabled = !data.can_upload;
@@ -470,7 +462,6 @@ window.MibsModule = {
 
 
     reloadMibs: async function() {
-        // Remove event parameter since it's called programmatically too
         const reloadBtn = document.querySelector('button[onclick*="reloadMibs"]');
         const originalHtml = reloadBtn ? reloadBtn.innerHTML : '';
         
@@ -488,14 +479,10 @@ window.MibsModule = {
             
             const data = await res.json();
             
-            // Reload status and traps
             await this.loadStatus();
             await this.loadTraps();
             
-            // Show success notification
             this.showNotification(`Reloaded: ${data.loaded} loaded, ${data.failed} failed`, 'success');
-            
-            // console.log('MIBs reloaded:', data);
         } catch (e) {
             console.error('Reload failed', e);
             this.showNotification('Reload failed: ' + e.message, 'error');
@@ -537,10 +524,7 @@ window.MibsModule = {
                 throw new Error(errorData.detail || 'Delete failed');
             }
             
-            // Show success notification
             this.showNotification(`Deleted ${filename}`, 'success');
-            
-            // Reload MIBs to refresh the list
             await this.reloadMibs();
             
         } catch (e) {
