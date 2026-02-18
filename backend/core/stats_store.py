@@ -14,6 +14,7 @@ Thread safety:
   - Worker subprocesses (snmp_simulator, trap_receiver): they write directly
     to the JSON file using atomic rename (tempfile + os.replace) via
     worker_increment() / worker_set_field() to avoid partial-write corruption.
+  - Cross-process safety relies on os.replace() being atomic on POSIX.
 """
 
 import json
@@ -27,41 +28,44 @@ from core.config import settings
 _lock = Lock()
 
 # ---------------------------------------------------------------------------
-# Schema — all keys that every module tracks.
-# New keys added here will automatically appear in existing stats.json files
-# on the next load() call (merge-with-defaults logic).
+# Schema
+# ---------------------------------------------------------------------------
+# All keys that every module tracks. New keys added here will automatically
+# appear in existing stats.json files on the next load() (merge-with-defaults).
+#
+# NOT included (runtime-enriched only, never persisted):
+#   mibs: loaded_mibs, failed_mibs, total_mibs  <- from mib_service.get_status()
+#   simulator: running, pid, port, community     <- from SimulatorManager.status()
+#   traps: running, pid                          <- from trap_manager.get_status()
 # ---------------------------------------------------------------------------
 
-DEFAULT_STATS: dict[str, dict] = {
+DEFAULT_STATS: dict = {
     "simulator": {
         "start_count": 0,
         "stop_count": 0,
         "restart_count": 0,
-        "oids_loaded": 0,
-        "snmp_requests_served": 0,
-        "last_started": None,
-        "last_stopped": None,
+        "oids_loaded": 0,            # OID instances generated on last start
+        "total_oids_simulated": 0,   # cumulative OIDs served (GET + GETNEXT)
+        "snmp_requests_served": 0,   # cumulative SNMP requests handled
+        "simulator_run_seconds": 0,  # cumulative seconds simulator was running
     },
     "traps": {
         "receiver_start_count": 0,
         "receiver_stop_count": 0,
-        "traps_received_total": 0,
+        "traps_received_total": 0,   # cumulative traps received (worker)
+        "traps_sent_total": 0,       # cumulative traps sent via POST /traps/send
         "traps_cleared_count": 0,
-        "last_trap_source": None,
-        "last_trap_time": None,
+        "receiver_run_seconds": 0,   # cumulative seconds receiver was running
     },
     "walker": {
         "walks_executed": 0,
         "walks_failed": 0,
-        "last_walk_target": None,
-        "last_walk_oid": None,
-        "last_walk_time": None,
+        "oids_returned": 0,          # OID count from last successful walk
     },
     "mibs": {
         "reload_count": 0,
-        "upload_count": 0,
+        "upload_count": 0,           # cumulative files uploaded
         "delete_count": 0,
-        "last_reload_time": None,
     },
 }
 
@@ -108,7 +112,7 @@ def _save_unsafe(stats: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Public API  (used by routers + services inside the API process)
+# Public API  (routers + services inside the API process)
 # ---------------------------------------------------------------------------
 
 def load() -> dict:
@@ -144,8 +148,8 @@ def set_field(module: str, key: str, value: Any) -> None:
 def update_module(module: str, updates: dict) -> None:
     """
     Atomically apply multiple field updates for one module in a single
-    read-modify-write cycle. Preferred over multiple set_field() calls
-    when updating counter + timestamp together.
+    read-modify-write cycle. Preferred when updating counter + runtime
+    value together (e.g. stop_count + simulator_run_seconds).
     """
     with _lock:
         stats = _load_unsafe()
@@ -161,50 +165,61 @@ def reset() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Worker-safe helpers  (used by subprocess workers: snmp_simulator, trap_receiver)
+# Worker-safe helpers  (subprocess workers: snmp_simulator, trap_receiver)
 # ---------------------------------------------------------------------------
 # Workers run as separate processes and cannot share the in-process _lock.
-# They use the same atomic-rename pattern directly to avoid partial writes.
-# The API process lock only protects within the API process; cross-process
-# safety relies on os.replace() being atomic on POSIX (Linux/macOS).
+# They use the same atomic-rename pattern. Cross-process safety relies on
+# os.replace() being atomic on POSIX (Linux/macOS).
+
+def _worker_load(stats_file: str) -> dict:
+    """Load stats from file in worker context. Returns DEFAULT_STATS copy on any error."""
+    if os.path.exists(stats_file):
+        try:
+            with open(stats_file, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return deepcopy(DEFAULT_STATS)
+
+
+def _worker_save(stats_file: str, stats: dict) -> None:
+    """Atomically write stats in worker context."""
+    parent = os.path.dirname(stats_file) or "."
+    os.makedirs(parent, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=parent, prefix="stats_", suffix=".tmp")
+    with os.fdopen(fd, "w") as f:
+        json.dump(stats, f, indent=2, default=str)
+    os.replace(tmp, stats_file)
+
 
 def worker_increment(stats_file: str, module: str, key: str, by: int = 1) -> None:
-    """Increment a counter from a worker subprocess. Uses atomic rename."""
+    """Increment a counter from a worker subprocess."""
     try:
-        if os.path.exists(stats_file):
-            with open(stats_file, "r") as f:
-                stats = json.load(f)
-        else:
-            stats = deepcopy(DEFAULT_STATS)
-
+        stats = _worker_load(stats_file)
         stats.setdefault(module, {})
         stats[module][key] = stats[module].get(key, 0) + by
-
-        parent = os.path.dirname(stats_file) or "."
-        fd, tmp = tempfile.mkstemp(dir=parent, prefix="stats_", suffix=".tmp")
-        with os.fdopen(fd, "w") as f:
-            json.dump(stats, f, indent=2, default=str)
-        os.replace(tmp, stats_file)
+        _worker_save(stats_file, stats)
     except Exception:
         pass  # never crash a worker over stats
 
 
 def worker_set_field(stats_file: str, module: str, key: str, value: Any) -> None:
-    """Set a field from a worker subprocess. Uses atomic rename."""
+    """Set a single field from a worker subprocess."""
     try:
-        if os.path.exists(stats_file):
-            with open(stats_file, "r") as f:
-                stats = json.load(f)
-        else:
-            stats = deepcopy(DEFAULT_STATS)
-
+        stats = _worker_load(stats_file)
         stats.setdefault(module, {})
         stats[module][key] = value
+        _worker_save(stats_file, stats)
+    except Exception:
+        pass
 
-        parent = os.path.dirname(stats_file) or "."
-        fd, tmp = tempfile.mkstemp(dir=parent, prefix="stats_", suffix=".tmp")
-        with os.fdopen(fd, "w") as f:
-            json.dump(stats, f, indent=2, default=str)
-        os.replace(tmp, stats_file)
+
+def worker_update_module(stats_file: str, module: str, updates: dict) -> None:
+    """Atomically apply multiple field updates from a worker subprocess."""
+    try:
+        stats = _worker_load(stats_file)
+        stats.setdefault(module, {})
+        stats[module].update(updates)
+        _worker_save(stats_file, stats)
     except Exception:
         pass
