@@ -61,7 +61,7 @@
                         </div>
                         <div class="form-check form-switch mb-0">
                             <input class="form-check-input" type="checkbox" id="walk-use-mibs" checked disabled>
-                            <label class="form-check-label small" for="walk-use-mibs">Resolve OIDs</label>  <!-- was: Resolve -->
+                            <label class="form-check-label small" for="walk-use-mibs">Resolve OIDs</label>
                         </div>
                     </div>
                     <div class="form-text small text-muted">Parsing requires MIB resolution</div>
@@ -92,7 +92,7 @@
         </div>
 
         <!-- BOTTOM: History -->
-        <div class="card shadow-sm" style="flex: 1 1 auto; min-height: 250px; max-height: var(--walker-history-max-height); overflow: hidden;">  <!-- was calc() inline -->
+        <div class="card shadow-sm" style="flex: 1 1 auto; min-height: 250px; max-height: var(--walker-history-max-height); overflow: hidden;">
             <div class="card-header py-1 d-flex justify-content-between align-items-center"
                  style="min-height: 32px;">
                 <span class="small">
@@ -110,16 +110,17 @@
 
             <div class="card-body p-0 h-100 overflow-auto">
                 <div id="walk-history-empty" class="text-center text-muted p-3">
-                    <i class="fas fa-history fa-lg mb-2 opacity-25"></i>  <!-- was fa-2x -->
+                    <i class="fas fa-history fa-lg mb-2 opacity-25"></i>
                     <div class="small">
                         No walk history yet.<br>
                         Recent walks will appear here.
                     </div>
                 </div>
 
+                <!-- BUG FIX: was style="display:none" — renderHistory() uses classList.remove('d-none'),
+                     inline style overrides class so the list never appeared. -->
                 <div id="walk-history-list"
-                     class="list-group list-group-flush"
-                     style="display: none;">
+                     class="list-group list-group-flush d-none">
                     <!-- History items injected by WalkerModule.renderHistory() -->
                 </div>
             </div>
@@ -159,7 +160,7 @@
                     </div>
                 </div>
             </div>
-            <div class="card-body p-0" style="height: var(--walker-results-height); overflow: hidden;">  <!-- was calc() inline -->
+            <div class="card-body p-0" style="height: var(--walker-results-height); overflow: hidden;">
                 <pre id="walk-output" class="m-0 p-3 border-0 bg-light font-monospace small overflow-auto"
                      style="height: 100%;">No data yet. Run a walk to see results.</pre>
             </div>
