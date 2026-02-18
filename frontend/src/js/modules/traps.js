@@ -693,13 +693,9 @@ window.TrapsModule = {
                                 onclick="TrapsModule.copyTrap(${idx})" title="Copy JSON">
                             <i class="fas fa-copy"></i>
                         </button>
-                        <button type="button" class="btn btn-sm btn-outline-success py-0 px-1 me-1"
+                        <button type="button" class="btn btn-sm btn-outline-success py-0 px-1"
                                 onclick="TrapsModule.downloadTrap(${idx})" title="Download">
                             <i class="fas fa-download"></i>
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1"
-                                onclick="TrapsModule.deleteTrap(${idx})" title="Delete">
-                            <i class="fas fa-trash"></i>
                         </button>
                     </td>
                 </tr>
@@ -727,38 +723,6 @@ window.TrapsModule = {
         }
         
         return simplified;
-    },
-
-    // ==================== Per-row Delete ====================
-
-    /**
-     * Delete a single trap from the received list by its rendered index.
-     * Works for both the full list and the filtered view:
-     * - If a filter is active, removes from receivedTraps by matching the
-     *   filtered item, then clears filteredTraps so it is rebuilt on next
-     *   filterTraps() call (avoids stale index references).
-     * - If no filter, removes directly by index from receivedTraps.
-     * Re-persists, re-renders, and updates metrics after removal.
-     */
-    deleteTrap: function(idx) {
-        if (this.filteredTraps.length > 0) {
-            // Remove from master list by reference equality
-            const target = this.filteredTraps[idx];
-            this.receivedTraps = this.receivedTraps.filter(t => t !== target);
-            // Rebuild filtered list from updated master
-            const searchInput = document.getElementById('tr-search');
-            const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
-            this.filteredTraps = searchTerm
-                ? this.receivedTraps.filter(t => JSON.stringify(t).toLowerCase().includes(searchTerm))
-                : [];
-        } else {
-            this.receivedTraps.splice(idx, 1);
-        }
-        
-        this.persistTraps();
-        this.renderTraps();
-        this.updateMetrics();
-        this.showNotification('Trap deleted', 'info');
     },
 
     // ==================== Trap Detail Modal ====================
