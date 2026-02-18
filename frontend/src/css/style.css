@@ -1,23 +1,4 @@
-/* ==================== Page Header Standardization ==================== */
-
-.page-header {
-    padding-bottom: 0.75rem;
-    border-bottom: 2px solid #e2e8f0;
-    margin-bottom: 1.5rem;
-}
-
-.page-header h4 {
-    font-size: 1.5rem;
-    font-weight: 600;
-    margin: 0;
-    color: #1e293b;
-}
-
-.page-header h4 i {
-    font-size: 1.3rem;
-}
-
-/* ==================== Existing Styles (Keep All) ==================== */
+/* ==================== CSS Variables ==================== */
 
 :root {
     --sidebar-width: 260px;
@@ -27,13 +8,27 @@
     --sidebar-active: #3b82f6;
     --header-bg: #ffffff;
     --header-text: #1e293b;
+
+    /* Height variables — avoids magic numbers in HTML */
+    --trap-table-max-height: calc(100vh - 450px);
+    --walker-history-max-height: calc(100vh - 220px);
+    --walker-results-height: calc(100vh - 180px);
+    --sim-log-height: calc(100vh - 350px);
+    --mib-list-max-height: 400px;
+    --mib-trap-table-max-height: 600px;
+
+    /* Input width helpers */
+    --input-w-port: 70px;
+    --input-w-community: 90px;
 }
 
-/* --- Layout Base --- */
+/* ==================== Layout Base ==================== */
+
 body {
+    font-size: 14px;
     overflow-x: hidden;
     background-color: #f1f5f9;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     margin: 0;
 }
 
@@ -51,7 +46,8 @@ body {
     height: 100vh;
 }
 
-/* --- Sidebar Styling --- */
+/* ==================== Sidebar ==================== */
+
 #sidebar-wrapper {
     width: var(--sidebar-width);
     background-color: var(--sidebar-bg);
@@ -64,9 +60,9 @@ body {
 }
 
 #sidebar-wrapper .sidebar-heading {
-    padding: 1.5rem;
+    padding: 1.25rem 1.5rem;
     color: #fff;
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     background-color: rgba(0,0,0,0.2);
     white-space: nowrap;
     overflow: hidden;
@@ -76,7 +72,7 @@ body {
     background-color: transparent;
     color: var(--sidebar-text);
     border: none;
-    padding: 1rem 1.5rem;
+    padding: 0.65rem 1.25rem;       /* was: 1rem 1.5rem — reduces item height ~56px → ~40px */
     transition: all 0.2s;
     border-left: 4px solid transparent;
     white-space: nowrap;
@@ -98,16 +94,17 @@ body {
 }
 
 #sidebar-wrapper .list-group-item i {
-    min-width: 30px;
+    min-width: 28px;
     text-align: center;
     margin-right: 10px;
-    font-size: 1.1rem;
+    font-size: 0.95rem;             /* was: 1.1rem */
 }
 
-/* --- Mobile Responsiveness --- */
+/* ==================== Mobile Responsiveness ==================== */
+
 @media (max-width: 768px) {
     #sidebar-wrapper {
-        margin-left: -var(--sidebar-width);
+        margin-left: calc(-1 * var(--sidebar-width));  /* BUG FIX: was -var() which is invalid CSS */
     }
     body.sb-sidenav-toggled #sidebar-wrapper {
         margin-left: 0;
@@ -118,7 +115,8 @@ body {
     }
 }
 
-/* --- Desktop Collapsed State --- */
+/* ==================== Desktop Collapsed State ==================== */
+
 @media (min-width: 769px) {
     body.sb-sidenav-toggled #sidebar-wrapper {
         width: var(--sidebar-mini-width);
@@ -130,10 +128,10 @@ body {
     }
     body.sb-sidenav-toggled #sidebar-wrapper .sidebar-heading {
         text-align: center;
-        padding: 1.5rem 0;
+        padding: 1.25rem 0;
     }
     body.sb-sidenav-toggled #sidebar-wrapper .list-group-item {
-        padding: 1rem 0;
+        padding: 0.65rem 0;
         justify-content: center;
     }
     body.sb-sidenav-toggled #sidebar-wrapper .list-group-item i {
@@ -141,20 +139,22 @@ body {
     }
 }
 
-/* --- Components & Utils --- */
+/* ==================== Components & Utils ==================== */
+
 .cursor-pointer { cursor: pointer; }
 
-pre { 
-    background: #212529; 
-    color: #f8f9fa; 
-    border-radius: 4px; 
+pre {
+    background: #212529;
+    color: #f8f9fa;
+    border-radius: 4px;
 }
 
-/* Cards */
+/* ==================== Cards ==================== */
+
 .card {
     border: none;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;            /* was: 1.5rem */
 }
 
 .card-header {
@@ -162,10 +162,11 @@ pre {
     color: var(--header-text);
     font-weight: 600;
     border-bottom: 1px solid #e2e8f0;
-    padding: 1rem 1.25rem;
+    padding: 0.5rem 1rem;           /* was: 1rem 1.25rem */
 }
 
-/* Dashboard Tools */
+/* ==================== Dashboard Tool Cards ==================== */
+
 .tool-card {
     transition: transform 0.2s, box-shadow 0.2s;
     cursor: pointer;
@@ -174,22 +175,28 @@ pre {
 }
 
 .tool-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 12px -3px rgba(0, 0, 0, 0.1);
     border-color: var(--sidebar-active);
 }
 
+.tool-card:focus {
+    outline: 2px solid var(--sidebar-active);
+    outline-offset: 2px;
+}
+
 .tool-icon {
-    width: 50px;
-    height: 50px;
+    width: 40px;                    /* was: 50px */
+    height: 40px;                   /* was: 50px */
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 12px;
-    margin-bottom: 1rem;
+    border-radius: 10px;
+    margin-bottom: 0.75rem;
 }
 
-/* Trap VarBind List */
+/* ==================== Trap VarBind List ==================== */
+
 .varbind-list {
     max-height: 150px;
     overflow-y: auto;
@@ -199,9 +206,10 @@ pre {
 .varbind-list::-webkit-scrollbar { width: 4px; }
 .varbind-list::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 2px; }
 
-/* Badges & Buttons */
+/* ==================== Badges & Buttons ==================== */
+
 .badge.bg-success { background-color: #10b981 !important; }
-.badge.bg-danger { background-color: #ef4444 !important; }
+.badge.bg-danger  { background-color: #ef4444 !important; }
 .badge.bg-warning { background-color: #f59e0b !important; color: #000 !important; }
 
 .badge { font-weight: 500; padding: 0.25em 0.6em; }
@@ -209,17 +217,28 @@ pre {
 .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
 .btn-group-sm .btn { padding: 0.15rem 0.4rem; font-size: 0.75rem; }
 
-/* --- Table & Sticky Headers --- */
+/* ==================== Input Width Helpers ==================== */
+
+.input-w-port      { width: var(--input-w-port); }
+.input-w-community { width: var(--input-w-community); }
+
+/* ==================== Tables ==================== */
+
 .table-wrapper {
-  overflow: auto;
+    overflow: auto;
 }
 
 table {
-  width: 100%;
-  border-collapse: collapse;
+    width: 100%;
+    border-collapse: collapse;
 }
 
-/* Fix for sticky headers z-index issues */
+/* Dense table for data-heavy modules */
+.table-dense {
+    font-size: 0.8125rem;
+}
+
+/* Sticky headers */
 .sticky-top {
     position: sticky;
     top: 0;
@@ -227,61 +246,31 @@ table {
     background-color: #fff;
 }
 
-/* Specific Table Tweaks */
-#trap-table-body tr { 
-    vertical-align: middle; 
-}
+/* Trap receiver table body */
+#trap-table-body tr   { vertical-align: middle; }
+#trap-table-body td   { padding: 0.5rem 0.75rem; word-wrap: break-word; overflow-wrap: break-word; }
 
-#trap-table-body td { 
-    padding: 0.5rem 0.75rem;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-}
+#tr-table-body tr { vertical-align: middle; }
+#tr-table-body td { padding: 0.5rem 0.75rem; overflow: hidden; text-overflow: ellipsis; }
 
-/* Trap Receiver Table - Explicit Column Widths */
-#tr-table-body tr {
-    vertical-align: middle;
-}
-
-#tr-table-body td {
-    padding: 0.5rem 0.75rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* Define column widths for trap receiver table */
-.trap-receiver-table {
-    table-layout: fixed;
-}
+/* Trap receiver column widths */
+.trap-receiver-table { table-layout: fixed; }
 
 .trap-receiver-table th:nth-child(1),
-.trap-receiver-table td:nth-child(1) {
-    width: 140px; /* Time */
-}
+.trap-receiver-table td:nth-child(1) { width: 140px; }
 
 .trap-receiver-table th:nth-child(2),
-.trap-receiver-table td:nth-child(2) {
-    width: 150px; /* Source */
-}
+.trap-receiver-table td:nth-child(2) { width: 150px; }
 
 .trap-receiver-table th:nth-child(3),
-.trap-receiver-table td:nth-child(3) {
-    width: 130px; /* Trap Type */
-}
+.trap-receiver-table td:nth-child(3) { width: 130px; }
 
 .trap-receiver-table th:nth-child(4),
-.trap-receiver-table td:nth-child(4) {
-    width: auto; /* VarBinds - takes remaining space */
-    min-width: 200px;
-}
+.trap-receiver-table td:nth-child(4) { width: auto; min-width: 200px; }
 
 .trap-receiver-table th:nth-child(5),
-.trap-receiver-table td:nth-child(5) {
-    width: 90px; /* Actions */
-    text-align: center;
-}
+.trap-receiver-table td:nth-child(5) { width: 90px; text-align: center; }
 
-/* Ensure code blocks don't overflow */
 .trap-receiver-table code {
     display: block;
     white-space: nowrap;
@@ -290,58 +279,27 @@ table {
     max-width: 100%;
 }
 
-/* ==================== MIB Manager Trap Table ==================== */
-
-.mib-trap-table {
-    table-layout: fixed;
-    width: 100%;
-}
+/* MIB Manager trap table */
+.mib-trap-table { table-layout: fixed; width: 100%; }
 
 .mib-trap-table th,
-.mib-trap-table td {
-    padding: 0.5rem 0.75rem;
-    vertical-align: middle;
-}
+.mib-trap-table td { padding: 0.5rem 0.75rem; vertical-align: middle; }
 
-/* Truncate long text with ellipsis */
 .mib-trap-table td:nth-child(1),
-.mib-trap-table td:nth-child(2) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
+.mib-trap-table td:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Ensure action buttons stay visible */
-.mib-trap-table td:nth-child(5) {
-    white-space: nowrap;
-    overflow: visible;
-}
+.mib-trap-table td:nth-child(5) { white-space: nowrap; overflow: visible; }
 
-.mib-trap-table .btn-group {
-    display: inline-flex;
-}
+.mib-trap-table .btn-group { display: inline-flex; }
 
-/* ==================== MIB Browser Styles ==================== */
+/* ==================== MIB Browser ==================== */
 
-/* Purple color for MIB Browser (matches your color scheme) */
-.bg-purple {
-    background-color: #8b5cf6 !important;
-}
+.bg-purple   { background-color: #8b5cf6 !important; }
+.text-purple { color: #8b5cf6 !important; }
 
-.text-purple {
-    color: #8b5cf6 !important;
-}
+.tool-icon.bg-purple { background-color: rgba(139, 92, 246, 0.1) !important; }
 
-/* For tool-icon with purple */
-.tool-icon.bg-purple {
-    background-color: rgba(139, 92, 246, 0.1) !important;
-}
-
-/* Tree Node Styles */
-.tree-node {
-    position: relative;
-    user-select: none;
-}
+.tree-node { position: relative; user-select: none; }
 
 .tree-node-content {
     cursor: pointer;
@@ -351,18 +309,14 @@ table {
     padding: 0.5rem 0.75rem;
 }
 
-.tree-node-content:hover {
-    background-color: #f1f5f9;
-}
+.tree-node-content:hover { background-color: #f1f5f9; }
 
 .tree-node-content.bg-primary {
     background-color: #3b82f6 !important;
     color: white !important;
 }
 
-.tree-node-content.bg-primary:hover {
-    background-color: #2563eb !important;
-}
+.tree-node-content.bg-primary:hover { background-color: #2563eb !important; }
 
 .tree-node-content.bg-primary code,
 .tree-node-content.bg-primary .badge {
@@ -370,10 +324,7 @@ table {
     background-color: rgba(255, 255, 255, 0.2) !important;
 }
 
-.tree-node-name {
-    font-size: 0.85rem;
-    font-weight: 500;
-}
+.tree-node-name    { font-size: 0.85rem; font-weight: 500; }
 
 .tree-expand-icon {
     cursor: pointer;
@@ -381,20 +332,12 @@ table {
     color: #64748b;
 }
 
-.tree-expand-icon:hover {
-    color: #3b82f6;
-}
+.tree-expand-icon:hover { color: #3b82f6; }
 
-.tree-children {
-    border-left: 1px dashed #cbd5e0;
-    margin-left: 10px;
-}
+.tree-children { border-left: 1px dashed #cbd5e0; margin-left: 10px; }
+.tree-module   { margin-bottom: 8px; }
 
-.tree-module {
-    margin-bottom: 8px;
-}
-
-/* Search Result Styles */
+/* Search results */
 .search-result-item {
     transition: background-color 0.2s;
     border-left: 3px solid transparent;
@@ -418,10 +361,8 @@ table {
     background-color: rgba(255, 255, 255, 0.2) !important;
 }
 
-/* Details Panel */
-#browser-details-panel {
-    font-size: 0.9rem;
-}
+/* Details panel */
+#browser-details-panel { font-size: 0.9rem; }
 
 #browser-details-panel code {
     background-color: #f1f5f9;
@@ -430,10 +371,7 @@ table {
     font-size: 0.85rem;
 }
 
-#browser-details-panel table td {
-    padding: 0.5rem 0.75rem;
-    vertical-align: middle;
-}
+#browser-details-panel table td { padding: 0.5rem 0.75rem; vertical-align: middle; }
 
 /* Breadcrumb */
 .breadcrumb {
@@ -450,21 +388,11 @@ table {
     white-space: nowrap;
 }
 
-.breadcrumb-item a {
-    text-decoration: none;
-    color: #3b82f6;
-}
+.breadcrumb-item a          { text-decoration: none; color: #3b82f6; }
+.breadcrumb-item a:hover    { text-decoration: underline; }
+.breadcrumb-item.active     { font-weight: 600; color: #1e293b; }
 
-.breadcrumb-item a:hover {
-    text-decoration: underline;
-}
-
-.breadcrumb-item.active {
-    font-weight: 600;
-    color: #1e293b;
-}
-
-/* Scrollbar Styling */
+/* Scrollbars */
 #browser-tree-container::-webkit-scrollbar,
 #browser-details-panel::-webkit-scrollbar {
     width: 8px;
@@ -472,42 +400,28 @@ table {
 }
 
 #browser-tree-container::-webkit-scrollbar-track,
-#browser-details-panel::-webkit-scrollbar-track {
-    background: #f1f5f9;
-}
+#browser-details-panel::-webkit-scrollbar-track { background: #f1f5f9; }
 
 #browser-tree-container::-webkit-scrollbar-thumb,
-#browser-details-panel::-webkit-scrollbar-thumb {
-    background: #cbd5e0;
-    border-radius: 4px;
-}
+#browser-details-panel::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 4px; }
 
 #browser-tree-container::-webkit-scrollbar-thumb:hover,
-#browser-details-panel::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
-}
+#browser-details-panel::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-/* Search input enhancements */
 #browser-search-input:focus {
     border-color: #3b82f6;
     box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
 }
 
-/* Filter section */
-.form-label.small {
-    margin-bottom: 0.25rem;
-    color: #64748b;
-}
+.form-label.small { margin-bottom: 0.25rem; color: #64748b; }
 
-/* ==================== Enhanced Tree Controls ==================== */
+/* ==================== Tree Controls ==================== */
 
-/* Make the controls group seamless */
 #tree-controls {
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     border-radius: 4px;
 }
 
-/* Level selector styling */
 #expand-depth-select {
     border-right: none;
     background-color: #f8f9fa;
@@ -522,7 +436,6 @@ table {
     background-color: #fff;
 }
 
-/* Expand button styling */
 #btn-expand {
     border-left: 1px solid #dee2e6;
     font-weight: 500;
@@ -535,19 +448,9 @@ table {
     border-color: #198754;
 }
 
-#btn-expand:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
-}
+#btn-expand:disabled { cursor: not-allowed; opacity: 0.6; }
 
-/* Collapse button styling */
-#tree-controls .btn-outline-secondary:hover {
-    background-color: #6c757d;
-    color: white;
-}
+#tree-controls .btn-outline-secondary:hover { background-color: #6c757d; color: white; }
 
-/* Smooth transitions */
 #tree-controls button,
-#tree-controls select {
-    transition: all 0.2s ease;
-}
+#tree-controls select { transition: all 0.2s ease; }

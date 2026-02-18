@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Trishul SNMP</title>
-    
+
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="img/trishul-icon.svg">
     <link rel="alternate icon" href="favicon.ico">
-    
+
     <!-- Stylesheets -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -16,28 +16,36 @@
 </head>
 <body>
 
+<!-- Auth Loading State (shown while token is being validated, hides flash) -->
+<div id="auth-loading" class="position-fixed top-0 start-0 w-100 h-100 bg-light d-flex flex-column justify-content-center align-items-center" style="z-index: 10000;">
+    <div class="spinner-border text-primary mb-3" role="status" aria-label="Authenticating">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+    <span class="text-muted small">Authenticating...</span>
+</div>
+
 <!-- Login Screen -->
-<div id="login-screen" class="position-fixed top-0 start-0 w-100 h-100 bg-light d-flex flex-column justify-content-center align-items-center" style="z-index: 9999;">
+<div id="login-screen" class="position-fixed top-0 start-0 w-100 h-100 bg-light d-none flex-column justify-content-center align-items-center" style="z-index: 9999;">
     <div class="card shadow-lg border-0" style="width: 380px;">
         <div class="card-body p-4 text-center">
             <!-- Trishul Icon -->
             <div class="mb-3">
-                <img src="img/trishul-icon.svg" alt="Trishul" style="width: 64px; height: 64px;">
+                <img src="img/trishul-icon.svg" alt="Trishul" style="width: 56px; height: 56px;">
             </div>
             <h4 class="mb-1 fw-bold" style="color: #1e293b;">Trishul SNMP Studio</h4>
             <p class="text-muted small mb-4">Network Management & Monitoring</p>
-            
+
             <form id="login-form" onsubmit="handleLogin(event)">
                 <div class="mb-3 text-start">
                     <label class="form-label small fw-bold">Username</label>
-                    <input type="text" id="login-user" class="form-control" placeholder="admin" required autocomplete="username">
+                    <input type="text" id="login-user" class="form-control form-control-sm" placeholder="admin" required autocomplete="username">
                 </div>
                 <div class="mb-3 text-start">
                     <label class="form-label small fw-bold">Password</label>
-                    <input type="password" id="login-pass" class="form-control" placeholder="••••••" required autocomplete="current-password">
+                    <input type="password" id="login-pass" class="form-control form-control-sm" placeholder="••••••" required autocomplete="current-password">
                 </div>
                 <div id="login-error" class="alert alert-danger py-2 small d-none"></div>
-                <button type="submit" class="btn btn-primary w-100" id="login-btn">
+                <button type="submit" class="btn btn-primary btn-sm w-100" id="login-btn">
                     <i class="fas fa-sign-in-alt me-2"></i> Log In
                 </button>
             </form>
@@ -50,10 +58,10 @@
     <!-- Sidebar -->
     <div class="bg-dark text-white border-end" id="sidebar-wrapper">
         <div class="sidebar-heading border-bottom bg-dark fw-bold text-truncate">
-            <img src="img/trishul-icon.svg" alt="Trishul" style="width: 28px; height: 28px; vertical-align: middle;">
+            <img src="img/trishul-icon.svg" alt="Trishul" style="width: 26px; height: 26px; vertical-align: middle;">
             <span class="ms-2">Trishul SNMP</span>
         </div>
-        
+
         <div class="list-group list-group-flush flex-grow-1">
             <a class="list-group-item list-group-item-action bg-dark text-white" href="#dashboard">
                 <i class="fas fa-tachometer-alt"></i> <span class="ms-2">Dashboard</span>
@@ -77,29 +85,29 @@
                 <i class="fas fa-cog"></i> <span class="ms-2">Settings</span>
             </a>
         </div>
-        
-        <div class="p-3 text-center text-secondary small border-top border-secondary bg-dark">
+
+        <div class="p-2 text-center text-secondary small border-top border-secondary bg-dark">
             <span id="app-version">Loading...</span>
         </div>
     </div>
 
     <!-- Page Content -->
     <div id="page-content-wrapper" class="w-100">
-        <nav class="navbar navbar-expand-lg navbar-light bg-light border-bottom px-3">
-            <button class="btn btn-outline-secondary btn-sm" id="sidebarToggle">
+        <nav class="navbar navbar-expand-lg navbar-light bg-light border-bottom px-3 py-2">
+            <button class="btn btn-outline-secondary btn-sm" id="sidebarToggle" aria-label="Toggle Sidebar">
                 <i class="fas fa-bars"></i>
             </button>
             <span class="navbar-brand ms-3 fw-bold text-secondary d-flex align-items-center">
-                <img src="img/trishul-icon.svg" alt="Trishul" style="width: 24px; height: 24px; margin-right: 8px;">
+                <img src="img/trishul-icon.svg" alt="Trishul" style="width: 20px; height: 20px; margin-right: 6px;">
                 <span id="page-title">Dashboard</span>
             </span>
-            
+
             <div class="ms-auto d-flex align-items-center gap-3">
                 <span class="badge bg-secondary" id="backend-status">Connecting...</span>
-                
+
                 <div class="dropdown">
                     <a class="nav-link dropdown-toggle text-dark fw-bold" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer;">
-                        <i class="fas fa-user-circle text-primary fa-lg me-1"></i> 
+                        <i class="fas fa-user-circle text-primary me-1"></i>
                         <span id="nav-user-name">User</span>
                     </a>
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 mt-2">
@@ -119,7 +127,7 @@
             </div>
         </nav>
 
-        <div class="container-fluid p-4" id="main-content">
+        <div class="container-fluid p-3" id="main-content">
             <!-- Dynamic Content -->
         </div>
     </div>

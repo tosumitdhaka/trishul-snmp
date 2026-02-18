@@ -1,63 +1,71 @@
 <!-- Stats Row -->
-<div class="row mb-4">
+<div class="row mb-3">
     <div class="col-md-3">
         <div class="card shadow-sm border-0">
-            <div class="card-body">
+            <div class="card-body py-3">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <h6 class="text-muted mb-1">MIBs Loaded</h6>
-                        <h3 class="mb-0" id="stat-mibs">-</h3>
+                        <h4 class="mb-0" id="stat-mibs">
+                            <span class="spinner-border spinner-border-sm text-muted" role="status" aria-label="Loading"></span>
+                        </h4>
                     </div>
-                    <div class="bg-primary bg-opacity-10 p-3 rounded">
-                        <i class="fas fa-database fa-2x text-primary"></i>
+                    <div class="bg-primary bg-opacity-10 p-2 rounded">
+                        <i class="fas fa-database fa-lg text-primary"></i>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    
+
     <div class="col-md-3">
         <div class="card shadow-sm border-0">
-            <div class="card-body">
+            <div class="card-body py-3">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <h6 class="text-muted mb-1">Traps Available</h6>
-                        <h3 class="mb-0" id="stat-traps">-</h3>
+                        <h4 class="mb-0" id="stat-traps">
+                            <span class="spinner-border spinner-border-sm text-muted" role="status" aria-label="Loading"></span>
+                        </h4>
                     </div>
-                    <div class="bg-warning bg-opacity-10 p-3 rounded">
-                        <i class="fas fa-bell fa-2x text-warning"></i>
+                    <div class="bg-warning bg-opacity-10 p-2 rounded">
+                        <i class="fas fa-bell fa-lg text-warning"></i>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    
+
     <div class="col-md-3">
         <div class="card shadow-sm border-0">
-            <div class="card-body">
+            <div class="card-body py-3">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <h6 class="text-muted mb-1">Simulator</h6>
-                        <h3 class="mb-0" id="stat-simulator">Offline</h3>
+                        <h4 class="mb-0" id="stat-simulator">
+                            <span class="spinner-border spinner-border-sm text-muted" role="status" aria-label="Loading"></span>
+                        </h4>
                     </div>
-                    <div class="bg-success bg-opacity-10 p-3 rounded">
-                        <i class="fas fa-server fa-2x text-success"></i>
+                    <div class="bg-success bg-opacity-10 p-2 rounded">
+                        <i class="fas fa-server fa-lg text-success"></i>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    
+
     <div class="col-md-3">
         <div class="card shadow-sm border-0">
-            <div class="card-body">
+            <div class="card-body py-3">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <h6 class="text-muted mb-1">Trap Receiver</h6>
-                        <h3 class="mb-0" id="stat-receiver">Stopped</h3>
+                        <h4 class="mb-0" id="stat-receiver">
+                            <span class="spinner-border spinner-border-sm text-muted" role="status" aria-label="Loading"></span>
+                        </h4>
                     </div>
-                    <div class="bg-info bg-opacity-10 p-3 rounded">
-                        <i class="fas fa-satellite-dish fa-2x text-info"></i>
+                    <div class="bg-info bg-opacity-10 p-2 rounded">
+                        <i class="fas fa-satellite-dish fa-lg text-info"></i>
                     </div>
                 </div>
             </div>
@@ -68,43 +76,54 @@
 <!-- Quick Actions -->
 <div class="row">
     <div class="col-12">
-        <h5 class="mb-3"><i class="fas fa-bolt me-2"></i>Quick Actions</h5>
+        <h6 class="mb-3 text-muted fw-bold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.08em;">
+            <i class="fas fa-bolt me-1"></i> Quick Actions
+        </h6>
     </div>
-    
+
     <!-- Simulator -->
     <div class="col-md-4 mb-3">
-        <div class="card tool-card shadow-sm h-100" onclick="window.location.hash='#simulator'">
-            <div class="card-body text-center py-4">
+        <div class="card tool-card shadow-sm h-100"
+             role="button" tabindex="0"
+             onclick="window.location.hash='#simulator'"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.hash='#simulator';}">
+            <div class="card-body text-center py-3">
                 <div class="tool-icon bg-success bg-opacity-10 mx-auto">
-                    <i class="fas fa-server fa-2x text-success"></i>
+                    <i class="fas fa-server fa-lg text-success"></i>
                 </div>
-                <h5 class="mt-3 mb-2">SNMP Simulator</h5>
+                <h6 class="mt-2 mb-1">SNMP Simulator</h6>
                 <p class="text-muted small mb-0">Start/stop SNMP agent and configure custom data</p>
             </div>
         </div>
     </div>
-    
+
     <!-- Walker -->
     <div class="col-md-4 mb-3">
-        <div class="card tool-card shadow-sm h-100" onclick="window.location.hash='#walker'">
-            <div class="card-body text-center py-4">
+        <div class="card tool-card shadow-sm h-100"
+             role="button" tabindex="0"
+             onclick="window.location.hash='#walker'"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.hash='#walker';}">
+            <div class="card-body text-center py-3">
                 <div class="tool-icon bg-primary bg-opacity-10 mx-auto">
-                    <i class="fas fa-walking fa-2x text-primary"></i>
+                    <i class="fas fa-walking fa-lg text-primary"></i>
                 </div>
-                <h5 class="mt-3 mb-2">Walk & Parse</h5>
+                <h6 class="mt-2 mb-1">Walk & Parse</h6>
                 <p class="text-muted small mb-0">Execute SNMP walks and parse MIB data</p>
             </div>
         </div>
     </div>
-    
+
     <!-- Traps -->
     <div class="col-md-4 mb-3">
-        <div class="card tool-card shadow-sm h-100" onclick="window.location.hash='#traps'">
-            <div class="card-body text-center py-4">
+        <div class="card tool-card shadow-sm h-100"
+             role="button" tabindex="0"
+             onclick="window.location.hash='#traps'"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.hash='#traps';}">
+            <div class="card-body text-center py-3">
                 <div class="tool-icon bg-warning bg-opacity-10 mx-auto">
-                    <i class="fas fa-bell fa-2x text-warning"></i>
+                    <i class="fas fa-bell fa-lg text-warning"></i>
                 </div>
-                <h5 class="mt-3 mb-2">Trap Manager</h5>
+                <h6 class="mt-2 mb-1">Trap Manager</h6>
                 <p class="text-muted small mb-0">Send and receive SNMP traps</p>
             </div>
         </div>
@@ -112,38 +131,47 @@
 
     <!-- MIB Browser -->
     <div class="col-md-4 mb-3">
-        <div class="card tool-card shadow-sm h-100" onclick="window.location.hash='#browser'">
-            <div class="card-body text-center py-4">
+        <div class="card tool-card shadow-sm h-100"
+             role="button" tabindex="0"
+             onclick="window.location.hash='#browser'"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.hash='#browser';}">
+            <div class="card-body text-center py-3">
                 <div class="tool-icon bg-purple bg-opacity-10 mx-auto">
-                    <i class="fas fa-sitemap fa-2x text-purple"></i>
+                    <i class="fas fa-sitemap fa-lg text-purple"></i>
                 </div>
-                <h5 class="mt-3 mb-2">MIB Browser</h5>
+                <h6 class="mt-2 mb-1">MIB Browser</h6>
                 <p class="text-muted small mb-0">Browse and explore MIB tree structure</p>
             </div>
         </div>
     </div>
-    
+
     <!-- MIB Manager -->
     <div class="col-md-4 mb-3">
-        <div class="card tool-card shadow-sm h-100" onclick="window.location.hash='#mibs'">
-            <div class="card-body text-center py-4">
+        <div class="card tool-card shadow-sm h-100"
+             role="button" tabindex="0"
+             onclick="window.location.hash='#mibs'"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.hash='#mibs';}">
+            <div class="card-body text-center py-3">
                 <div class="tool-icon bg-info bg-opacity-10 mx-auto">
-                    <i class="fas fa-database fa-2x text-info"></i>
+                    <i class="fas fa-database fa-lg text-info"></i>
                 </div>
-                <h5 class="mt-3 mb-2">MIB Manager</h5>
+                <h6 class="mt-2 mb-1">MIB Manager</h6>
                 <p class="text-muted small mb-0">Upload, validate, and manage MIB files</p>
             </div>
         </div>
     </div>
-    
+
     <!-- Settings -->
     <div class="col-md-4 mb-3">
-        <div class="card tool-card shadow-sm h-100" onclick="window.location.hash='#settings'">
-            <div class="card-body text-center py-4">
+        <div class="card tool-card shadow-sm h-100"
+             role="button" tabindex="0"
+             onclick="window.location.hash='#settings'"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.hash='#settings';}">
+            <div class="card-body text-center py-3">
                 <div class="tool-icon bg-secondary bg-opacity-10 mx-auto">
-                    <i class="fas fa-cog fa-2x text-secondary"></i>
+                    <i class="fas fa-cog fa-lg text-secondary"></i>
                 </div>
-                <h5 class="mt-3 mb-2">Settings</h5>
+                <h6 class="mt-2 mb-1">Settings</h6>
                 <p class="text-muted small mb-0">Configure authentication and preferences</p>
             </div>
         </div>
