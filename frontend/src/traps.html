@@ -2,8 +2,8 @@
     <!-- ==================== LEFT: TRAP SENDER ==================== -->
     <div class="col-md-4">
         <div class="card shadow-sm">
-            <div class="card-header py-2">
-                <i class="fas fa-paper-plane me-2 text-success"></i> Send Trap
+            <div class="card-header">
+                <span><i class="fas fa-paper-plane me-2 text-success"></i> Send Trap</span>
             </div>
             <div class="card-body">
                 <form onsubmit="TrapsModule.sendTrap(event)">
@@ -54,8 +54,8 @@
                     <div class="mb-3">
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <label class="form-label small fw-bold mb-0">VarBinds</label>
-                            <div>
-                                <button type="button" class="btn btn-xs btn-outline-primary me-1"
+                            <div class="d-flex gap-1">
+                                <button type="button" class="btn btn-xs btn-outline-primary"
                                         onclick="TrapsModule.showVarBindPicker()">
                                     <i class="fas fa-search"></i> Browse
                                 </button>
@@ -97,45 +97,32 @@
     <div class="col-md-8">
         <!-- Receiver Controls -->
         <div class="card shadow-sm mb-3">
-            <div class="card-header py-2">
-                <i class="fas fa-satellite-dish me-2 text-info"></i> Trap Receiver
-            </div>
-            <div class="card-body py-2">
-                <div class="d-flex justify-content-between align-items-center">
-                    <!-- Status -->
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="fw-bold">Status:</span>
-                        <span id="tr-status-badge" class="badge bg-secondary">STOPPED</span>
-                        <span id="tr-status-detail" class="small text-muted"></span>
+            <div class="card-header">
+                <span><i class="fas fa-satellite-dish me-2 text-info"></i> Trap Receiver</span>
+                <div class="d-flex gap-2 align-items-center">
+                    <span id="tr-status-badge" class="badge bg-secondary">STOPPED</span>
+                    <span id="tr-status-detail" class="small" style="color: #94a3b8;"></span>
+                    <input type="number" id="tr-port" class="form-control form-control-sm input-w-port"
+                           value="1162" placeholder="Port">
+                    <input type="text" id="tr-community" class="form-control form-control-sm input-w-community"
+                           value="public" placeholder="Community">
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="tr-resolve-toggle" checked>
+                        <label class="form-check-label small" for="tr-resolve-toggle" style="color:#94a3b8;">Resolve OIDs</label>
                     </div>
-
-                    <!-- Controls -->
-                    <div class="d-flex gap-2 align-items-center">
-                        <input type="number" id="tr-port" class="form-control form-control-sm input-w-port"
-                               value="1162" placeholder="Port">  <!-- was style="width:70px" -->
-
-                        <input type="text" id="tr-community" class="form-control form-control-sm input-w-community"
-                               value="public" placeholder="Community">  <!-- was style="width:90px" -->
-
-                        <div class="form-check form-switch mb-0">
-                            <input class="form-check-input" type="checkbox" id="tr-resolve-toggle" checked>
-                            <label class="form-check-label small" for="tr-resolve-toggle">Resolve OIDs</label>  <!-- was: Resolve -->
-                        </div>
-
-                        <button class="btn btn-sm btn-success py-1 px-2" id="btn-tr-start"
-                                onclick="TrapsModule.startReceiver()">
-                            <i class="fas fa-play"></i> Start
-                        </button>
-                        <button class="btn btn-sm btn-danger py-1 px-2" id="btn-tr-stop"
-                                onclick="TrapsModule.stopReceiver()" disabled>
-                            <i class="fas fa-stop"></i> Stop
-                        </button>
-                    </div>
+                    <button type="button" class="btn btn-sm btn-success" id="btn-tr-start"
+                            onclick="TrapsModule.startReceiver()">
+                        <i class="fas fa-play"></i> Start
+                    </button>
+                    <button type="button" class="btn btn-sm btn-danger" id="btn-tr-stop"
+                            onclick="TrapsModule.stopReceiver()" disabled>
+                        <i class="fas fa-stop"></i> Stop
+                    </button>
                 </div>
             </div>
         </div>
 
-        <!-- Metrics Panel — BUG FIX: was style="display:none", JS classList.toggle won't work with inline style -->
+        <!-- Metrics Panel -->
         <div class="card shadow-sm mb-3 d-none" id="tr-metrics">
             <div class="card-body py-2">
                 <div class="row text-center small">
@@ -161,51 +148,46 @@
 
         <!-- Received Traps Table -->
         <div class="card shadow-sm">
-            <div class="card-body p-0">
-                <!-- Header with actions -->
-                <div class="d-flex justify-content-between align-items-center p-2 border-bottom">
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="small text-muted fw-bold">
-                            <i class="fas fa-list me-1"></i> Received Traps
-                        </span>
-                        <span id="tr-count-badge" class="badge bg-secondary">0</span>
-                    </div>
-                    <div class="d-flex gap-2 align-items-center">
-                        <input type="text" id="tr-search" class="form-control form-control-sm"
-                               placeholder="Search..." style="width: 150px;"
-                               oninput="TrapsModule.filterTraps()">
-                        <button class="btn btn-sm btn-outline-primary py-1 px-2"
-                                onclick="TrapsModule.downloadAllTraps()"
-                                title="Download all traps" aria-label="Download all traps">
-                            <i class="fas fa-download"></i> Download All
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger py-1 px-2"
-                                onclick="TrapsModule.clearTraps()"
-                                title="Clear all traps" aria-label="Clear all traps">
-                            <i class="fas fa-trash"></i> Clear
-                        </button>
-                    </div>
+            <div class="section-header">
+                <div class="d-flex align-items-center gap-2">
+                    <span><i class="fas fa-list me-2"></i> Received Traps</span>
+                    <span id="tr-count-badge" class="badge">0</span>
                 </div>
+                <div class="d-flex gap-2 align-items-center">
+                    <input type="text" id="tr-search" class="form-control form-control-sm"
+                           placeholder="Search..." style="width: 150px;"
+                           oninput="TrapsModule.filterTraps()">
+                    <button type="button" class="btn btn-sm btn-outline-light"
+                            onclick="TrapsModule.downloadAllTraps()"
+                            title="Download all traps" aria-label="Download all traps">
+                        <i class="fas fa-download"></i> Download
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-light"
+                            onclick="TrapsModule.clearTraps()"
+                            title="Clear all traps" aria-label="Clear all traps">
+                        <i class="fas fa-trash"></i> Clear
+                    </button>
+                </div>
+            </div>
 
-                <!-- Table — max-height from CSS variable -->
-                <div class="table-responsive" style="max-height: var(--trap-table-max-height); min-height: 300px; overflow-y: auto;">
-                    <table class="table table-sm table-hover mb-0 small trap-receiver-table">
-                        <thead class="table-light sticky-top">
-                            <tr>
-                                <th>Time</th>
-                                <th>Source</th>
-                                <th>Trap Type</th>
-                                <th>VarBinds (JSON)</th>
-                                <th class="text-center">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tr-table-body">
-                            <tr>
-                                <td colspan="5" class="text-center text-muted p-3">No traps received</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+            <!-- Table -->
+            <div class="table-responsive" style="max-height: var(--trap-table-max-height); min-height: 300px; overflow-y: auto;">
+                <table class="table table-sm table-hover mb-0 small trap-receiver-table">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th>Time</th>
+                            <th>Source</th>
+                            <th>Trap Type</th>
+                            <th>VarBinds (JSON)</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tr-table-body">
+                        <tr>
+                            <td colspan="5" class="text-center text-muted p-3">No traps received</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>

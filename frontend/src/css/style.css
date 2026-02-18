@@ -72,7 +72,7 @@ body {
     background-color: transparent;
     color: var(--sidebar-text);
     border: none;
-    padding: 0.65rem 1.25rem;       /* was: 1rem 1.5rem — reduces item height ~56px → ~40px */
+    padding: 0.65rem 1.25rem;
     transition: all 0.2s;
     border-left: 4px solid transparent;
     white-space: nowrap;
@@ -97,14 +97,14 @@ body {
     min-width: 28px;
     text-align: center;
     margin-right: 10px;
-    font-size: 0.95rem;             /* was: 1.1rem */
+    font-size: 0.95rem;
 }
 
 /* ==================== Mobile Responsiveness ==================== */
 
 @media (max-width: 768px) {
     #sidebar-wrapper {
-        margin-left: calc(-1 * var(--sidebar-width));  /* BUG FIX: was -var() which is invalid CSS */
+        margin-left: calc(-1 * var(--sidebar-width));
     }
     body.sb-sidenav-toggled #sidebar-wrapper {
         margin-left: 0;
@@ -154,15 +154,25 @@ pre {
 .card {
     border: none;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    margin-bottom: 1rem;            /* was: 1.5rem */
+    margin-bottom: 1rem;
+}
+
+/* Dashboard stat/action cards: light border to distinguish from page bg */
+.card-bordered {
+    border: 1px solid #e2e8f0 !important;
 }
 
 .card-header {
     background-color: var(--header-bg);
     color: var(--header-text);
     font-weight: 600;
-    border-bottom: 1px solid rgba(255,255,255,0.12); /* subtle separator on dark bg */
-    padding: 0.5rem 1rem;           /* was: 1rem 1.25rem */
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+    /* Unified height: all headers same minimum, consistent vertical rhythm */
+    min-height: 44px;
+    padding: 0 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
 
 /* Ensure badges/code inside dark card headers remain readable */
@@ -204,13 +214,33 @@ pre {
 }
 
 .tool-icon {
-    width: 40px;                    /* was: 50px */
-    height: 40px;                   /* was: 50px */
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 10px;
     margin-bottom: 0.75rem;
+}
+
+/* ==================== Unified Button Sizes ==================== */
+/*
+  Site-wide button scale:
+    .btn-xs  — icon-only or tight inline actions  (12px font, 2px/6px pad)
+    .btn-sm  — standard small action buttons      (13px font, 4px/10px pad)
+  All header action buttons should use btn-sm.
+  All inline table/row action buttons should use btn-xs.
+*/
+.btn-xs {
+    padding: 0.15rem 0.4rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+}
+.btn-sm,
+.btn-group-sm > .btn {
+    padding: 0.25rem 0.625rem;
+    font-size: 0.8125rem;
+    line-height: 1.5;
 }
 
 /* ==================== Trap VarBind List ==================== */
@@ -224,16 +254,13 @@ pre {
 .varbind-list::-webkit-scrollbar { width: 4px; }
 .varbind-list::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 2px; }
 
-/* ==================== Badges & Buttons ==================== */
+/* ==================== Badges ==================== */
 
 .badge.bg-success { background-color: #10b981 !important; }
 .badge.bg-danger  { background-color: #ef4444 !important; }
 .badge.bg-warning { background-color: #f59e0b !important; color: #000 !important; }
 
 .badge { font-weight: 500; padding: 0.25em 0.6em; }
-.btn-xs { padding: 0.15rem 0.4rem; font-size: 0.75rem; line-height: 1.2; }
-.btn-sm { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
-.btn-group-sm .btn { padding: 0.15rem 0.4rem; font-size: 0.75rem; }
 
 /* ==================== Input Width Helpers ==================== */
 
@@ -251,12 +278,10 @@ table {
     border-collapse: collapse;
 }
 
-/* Dense table for data-heavy modules */
 .table-dense {
     font-size: 0.8125rem;
 }
 
-/* Sticky headers */
 .sticky-top {
     position: sticky;
     top: 0;
@@ -264,7 +289,6 @@ table {
     background-color: #fff;
 }
 
-/* Trap receiver table body */
 #trap-table-body tr   { vertical-align: middle; }
 #trap-table-body td   { padding: 0.5rem 0.75rem; word-wrap: break-word; overflow-wrap: break-word; }
 
@@ -472,3 +496,42 @@ table {
 
 #tree-controls button,
 #tree-controls select { transition: all 0.2s ease; }
+
+/* ==================== Received Traps Section Header ==================== */
+/* Mimics .card-header for the inline div header in traps.html */
+.section-header {
+    background-color: var(--header-bg);
+    color: var(--header-text);
+    font-weight: 600;
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+    min-height: 44px;
+    padding: 0 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: calc(0.375rem - 1px) calc(0.375rem - 1px) 0 0; /* match Bootstrap card-header radius */
+}
+
+.section-header .badge {
+    background-color: rgba(255,255,255,0.15) !important;
+    color: #fff !important;
+}
+
+.section-header .form-control,
+.section-header .form-select {
+    background-color: rgba(255,255,255,0.1);
+    border-color: rgba(255,255,255,0.2);
+    color: #fff;
+}
+
+.section-header .form-control::placeholder {
+    color: rgba(255,255,255,0.5);
+}
+
+.section-header .form-control:focus,
+.section-header .form-select:focus {
+    background-color: rgba(255,255,255,0.15);
+    border-color: rgba(255,255,255,0.4);
+    box-shadow: none;
+    color: #fff;
+}
