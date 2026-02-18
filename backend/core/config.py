@@ -17,17 +17,18 @@ class Settings:
 
     # File paths
     CUSTOM_DATA_FILE = CONFIG_DIR / "custom_data.json"
-    SECRETS_FILE = CONFIG_DIR / "secrets.json"
-    TRAPS_FILE = DATA_DIR / "traps.jsonl"
+    SECRETS_FILE     = CONFIG_DIR / "secrets.json"
+    STATS_FILE       = CONFIG_DIR / "stats.json"      # Phase 2: global stats store
+    TRAPS_FILE       = DATA_DIR   / "traps.jsonl"
 
     # Logging
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")  # Options: DEBUG, INFO, WARNING, ERROR
-    LOG_FILE = LOG_DIR / "app.log"
+    LOG_FILE  = LOG_DIR / "app.log"
 
     # Application
-    APP_NAME = os.getenv("APP_NAME", "Trishul SNMP Studio")
-    APP_VERSION = os.getenv("APP_VERSION", "1.1.6")
-    APP_AUTHOR = "Sumit Dhaka"
+    APP_NAME        = os.getenv("APP_NAME", "Trishul SNMP Studio")
+    APP_VERSION     = os.getenv("APP_VERSION", "1.1.6")
+    APP_AUTHOR      = "Sumit Dhaka"
     APP_DESCRIPTION = "Network Management & SNMP Utilities"
 
     # Security

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.security import validate_auth
 from core.log_config import setup_logging   # BUG-14: renamed from core.logging to avoid shadowing stdlib
-from api.routers import simulator, walker, settings, traps, mibs, browser
+from api.routers import simulator, walker, settings, traps, mibs, browser, stats
 from core.config import meta
 
 setup_logging()
@@ -61,6 +61,7 @@ app.include_router(walker.router,    prefix="/api", dependencies=[Depends(valida
 app.include_router(traps.router,     prefix="/api", dependencies=[Depends(validate_auth)])
 app.include_router(browser.router,   prefix="/api", dependencies=[Depends(validate_auth)])
 app.include_router(mibs.router,      prefix="/api", dependencies=[Depends(validate_auth)])
+app.include_router(stats.router,     prefix="/api", dependencies=[Depends(validate_auth)])
 app.include_router(settings.router,  prefix="/api")  # public: login endpoint lives here
 
 
