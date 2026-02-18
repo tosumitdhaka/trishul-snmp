@@ -155,8 +155,17 @@
                 </div>
             </div>
             <div class="card-body p-0" style="height: var(--walker-results-height); overflow: hidden;">
-                <pre id="walk-output" class="m-0 p-3 border-0 bg-light font-monospace small overflow-auto"
-                     style="height: 100%;">No data yet. Run a walk to see results.</pre>
+                <!--
+                    Empty-state placeholder: walk-empty class enables flex centering via CSS.
+                    WalkerModule.renderResults() should:
+                      - Remove walk-empty + set textContent/innerHTML when results arrive
+                      - Re-add walk-empty + restore innerHTML when cleared
+                -->
+                <pre id="walk-output"
+                     class="m-0 p-3 border-0 font-monospace small overflow-auto walk-empty"
+                     style="height: 100%;"
+                     aria-label="Walk results"
+                     aria-live="polite"><span class="fs-2 mb-3 d-block text-center" style="font-family:inherit;"><i class="fas fa-walking" style="color:#cbd5e1;"></i></span><span class="fw-semibold d-block text-center mb-1" style="font-size:0.9rem; font-family:inherit;">No results yet</span><span class="d-block text-center" style="font-size:0.8rem; font-family:inherit;">Configure a target and click <strong>Run Walk</strong> to fetch OID data.</span></pre>
             </div>
         </div>
     </div>

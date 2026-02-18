@@ -152,14 +152,15 @@ pre {
 /* ==================== Cards ==================== */
 
 .card {
-    border: none;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    /* Visible border: one step darker than page bg (#f1f5f9) for clear card edges */
+    border: 1px solid #cbd5e1;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     margin-bottom: 1rem;
 }
 
-/* Dashboard stat/action cards: light border to distinguish from page bg */
+/* Dashboard stat cards — same border, kept explicit for clarity */
 .card-bordered {
-    border: 1px solid #e2e8f0 !important;
+    border: 1px solid #cbd5e1 !important;
 }
 
 .card-header {
@@ -199,12 +200,12 @@ pre {
     transition: transform 0.2s, box-shadow 0.2s;
     cursor: pointer;
     height: 100%;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #cbd5e1;
 }
 
 .tool-card:hover {
     transform: translateY(-3px);
-    box-shadow: 0 8px 12px -3px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 8px 12px -3px rgba(0, 0, 0, 0.12);
     border-color: var(--sidebar-active);
 }
 
@@ -466,28 +467,27 @@ table {
 
 #expand-depth-select {
     border-right: none;
-    background-color: #f8f9fa;
+    background-color: rgba(255,255,255,0.1);
     font-weight: 600;
-    color: #495057;
+    color: #fff;
     cursor: pointer;
+    border-color: rgba(255,255,255,0.2);
+}
+
+#expand-depth-select option {
+    background-color: #1e293b;
+    color: #fff;
 }
 
 #expand-depth-select:focus {
     box-shadow: none;
-    border-color: #198754;
-    background-color: #fff;
+    border-color: rgba(255,255,255,0.4);
+    background-color: rgba(255,255,255,0.15);
 }
 
 #btn-expand {
-    border-left: 1px solid #dee2e6;
     font-weight: 500;
     min-width: 90px;
-}
-
-#btn-expand:hover {
-    background-color: #198754;
-    color: white;
-    border-color: #198754;
 }
 
 #btn-expand:disabled { cursor: not-allowed; opacity: 0.6; }
@@ -496,6 +496,18 @@ table {
 
 #tree-controls button,
 #tree-controls select { transition: all 0.2s ease; }
+
+/* ==================== Walk Result Empty State ==================== */
+
+#walk-output.walk-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-family: system-ui, -apple-system, sans-serif; /* override monospace for placeholder */
+    background-color: #f8fafc;
+}
 
 /* ==================== Received Traps Section Header ==================== */
 /* Mimics .card-header for the inline div header in traps.html */
