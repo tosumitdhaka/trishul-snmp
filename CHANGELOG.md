@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.2] - 2026-02-18
+
+### Added
+- **Walk & Parse** - Added a clearer empty-state placeholder for “Current Result” when no results are present. [cite:102]
+
+### Fixed
+- **Walker** - Implemented missing “Clear results” handler and fixed delete-history click causing unintended navigation. [cite:102]
+- **Traps** - Fixed trap detail modal “Copy” breaking due to JSON quotes in inline handlers; ensured row action buttons don’t submit forms unintentionally (added `type="button"`). [cite:102]
+- **Browser** - Fixed search clear icon visibility/state issues and standardized visibility toggling using class-based approach. [cite:102]
+- **MIB Manager / Settings / UI** - Standardized dynamic show/hide behavior to use `classList` (`d-none`) instead of inline `style.display` where it was causing visibility bugs. [cite:102]
+
+### Changed
+- **UI/UX Consistency** - Unified card headers (dark theme, consistent height/alignment), standardized button sizing, and made card borders more visible across pages. [cite:102]
+
+
+## [1.2.1] - 2026-02-11
+
+### Added
+- **Simulator** - Runtime metrics (uptime, SNMP request count, relative last activity). [cite:102]
+- **Simulator** - Activity log persistence + search/filter/export, plus improved feedback (log + toast style messaging). [cite:102]
+- **Simulator** - JSON validation + unsaved changes indicator / warning. [cite:102]
+
+### Changed
+- **Simulator** - Improved state management and UX while running (config lock/disable patterns). [cite:102]
+
+### Fixed
+- **Simulator** - More robust error handling for start/stop/restart/status flows. [cite:102]
+
+
 ## [1.2.0] - 2026-02-09
 
 ### Added
@@ -139,6 +168,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.2.2]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.2.1...v1.2.2
+[1.2.1]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.1.7...v1.2.0
 [1.1.7]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.1.6...v1.1.7
 [1.1.6]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.1.5...v1.1.6
