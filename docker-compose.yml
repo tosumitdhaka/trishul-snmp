@@ -3,6 +3,7 @@
 #   C1: removed deprecated 'version' key (Compose v2 ignores it with a warning)
 #   C2: added healthcheck on backend — frontend waits for FastAPI to be ready
 #       before nginx starts proxying, preventing 502 on first page load
+#   C3: use python urllib for healthcheck — curl not present in python:3.10-slim
 
 services:
   backend:
@@ -35,14 +36,14 @@ services:
       # Auto-Start flags (Part A)
       - AUTO_START_SIMULATOR=${AUTO_START_SIMULATOR:-true}
       - AUTO_START_TRAP_RECEIVER=${AUTO_START_TRAP_RECEIVER:-true}
-    # C2: healthcheck — probe /api/health until FastAPI is ready
-    # start_period covers MIB loading time on first boot
+    # C2/C3: healthcheck using python stdlib — no curl needed in slim image
+    # start_period covers MIB download + FastAPI lifespan startup time
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 30s
     restart: always
 
   frontend:
