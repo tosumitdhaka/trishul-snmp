@@ -76,103 +76,115 @@
 <!-- Quick Actions -->
 <div class="row">
     <div class="col-12">
-        <h6 class="mb-3 text-muted fw-bold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.08em;">
+        <h6 class="mb-2 text-muted fw-bold text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.08em;">
             <i class="fas fa-bolt me-1"></i> Quick Actions
         </h6>
     </div>
 
     <!-- Simulator -->
-    <div class="col-md-4 mb-3">
+    <div class="col-md-3 col-lg-2 mb-3">
         <div class="card tool-card shadow-sm h-100"
              role="button" tabindex="0"
              onclick="window.location.hash='#simulator'"
              onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.hash='#simulator';}">
-            <div class="card-body text-center py-3">
-                <div class="tool-icon bg-success bg-opacity-10 mx-auto">
+            <div class="card-body d-flex align-items-center gap-3 py-2 px-3">
+                <div class="tool-icon bg-success bg-opacity-10 flex-shrink-0" style="margin-bottom:0;">
                     <i class="fas fa-server fa-lg text-success"></i>
                 </div>
-                <h6 class="mt-2 mb-1">SNMP Simulator</h6>
-                <p class="text-muted small mb-0">Start/stop SNMP agent and configure custom data</p>
+                <div class="text-start">
+                    <h6 class="mb-0">SNMP Simulator</h6>
+                    <p class="text-muted mb-0 d-none d-md-block" style="font-size:0.75rem;">Start/stop SNMP agent</p>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- Walker -->
-    <div class="col-md-4 mb-3">
+    <div class="col-md-3 col-lg-2 mb-3">
         <div class="card tool-card shadow-sm h-100"
              role="button" tabindex="0"
              onclick="window.location.hash='#walker'"
              onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.hash='#walker';}">
-            <div class="card-body text-center py-3">
-                <div class="tool-icon bg-primary bg-opacity-10 mx-auto">
+            <div class="card-body d-flex align-items-center gap-3 py-2 px-3">
+                <div class="tool-icon bg-primary bg-opacity-10 flex-shrink-0" style="margin-bottom:0;">
                     <i class="fas fa-walking fa-lg text-primary"></i>
                 </div>
-                <h6 class="mt-2 mb-1">Walk & Parse</h6>
-                <p class="text-muted small mb-0">Execute SNMP walks and parse MIB data</p>
+                <div class="text-start">
+                    <h6 class="mb-0">Walk & Parse</h6>
+                    <p class="text-muted mb-0 d-none d-md-block" style="font-size:0.75rem;">Execute SNMP walks</p>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- Traps -->
-    <div class="col-md-4 mb-3">
+    <div class="col-md-3 col-lg-2 mb-3">
         <div class="card tool-card shadow-sm h-100"
              role="button" tabindex="0"
              onclick="window.location.hash='#traps'"
              onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.hash='#traps';}">
-            <div class="card-body text-center py-3">
-                <div class="tool-icon bg-warning bg-opacity-10 mx-auto">
+            <div class="card-body d-flex align-items-center gap-3 py-2 px-3">
+                <div class="tool-icon bg-warning bg-opacity-10 flex-shrink-0" style="margin-bottom:0;">
                     <i class="fas fa-bell fa-lg text-warning"></i>
                 </div>
-                <h6 class="mt-2 mb-1">Trap Manager</h6>
-                <p class="text-muted small mb-0">Send and receive SNMP traps</p>
+                <div class="text-start">
+                    <h6 class="mb-0">Trap Manager</h6>
+                    <p class="text-muted mb-0 d-none d-md-block" style="font-size:0.75rem;">Send &amp; receive traps</p>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- MIB Browser -->
-    <div class="col-md-4 mb-3">
+    <div class="col-md-3 col-lg-2 mb-3">
         <div class="card tool-card shadow-sm h-100"
              role="button" tabindex="0"
              onclick="window.location.hash='#browser'"
              onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.hash='#browser';}">
-            <div class="card-body text-center py-3">
-                <div class="tool-icon bg-purple bg-opacity-10 mx-auto">
+            <div class="card-body d-flex align-items-center gap-3 py-2 px-3">
+                <div class="tool-icon bg-purple bg-opacity-10 flex-shrink-0" style="margin-bottom:0;">
                     <i class="fas fa-sitemap fa-lg text-purple"></i>
                 </div>
-                <h6 class="mt-2 mb-1">MIB Browser</h6>
-                <p class="text-muted small mb-0">Browse and explore MIB tree structure</p>
+                <div class="text-start">
+                    <h6 class="mb-0">MIB Browser</h6>
+                    <p class="text-muted mb-0 d-none d-md-block" style="font-size:0.75rem;">Explore MIB tree</p>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- MIB Manager -->
-    <div class="col-md-4 mb-3">
+    <div class="col-md-3 col-lg-2 mb-3">
         <div class="card tool-card shadow-sm h-100"
              role="button" tabindex="0"
              onclick="window.location.hash='#mibs'"
              onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.hash='#mibs';}">
-            <div class="card-body text-center py-3">
-                <div class="tool-icon bg-info bg-opacity-10 mx-auto">
+            <div class="card-body d-flex align-items-center gap-3 py-2 px-3">
+                <div class="tool-icon bg-info bg-opacity-10 flex-shrink-0" style="margin-bottom:0;">
                     <i class="fas fa-database fa-lg text-info"></i>
                 </div>
-                <h6 class="mt-2 mb-1">MIB Manager</h6>
-                <p class="text-muted small mb-0">Upload, validate, and manage MIB files</p>
+                <div class="text-start">
+                    <h6 class="mb-0">MIB Manager</h6>
+                    <p class="text-muted mb-0 d-none d-md-block" style="font-size:0.75rem;">Upload &amp; manage MIBs</p>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- Settings -->
-    <div class="col-md-4 mb-3">
+    <div class="col-md-3 col-lg-2 mb-3">
         <div class="card tool-card shadow-sm h-100"
              role="button" tabindex="0"
              onclick="window.location.hash='#settings'"
              onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.hash='#settings';}">
-            <div class="card-body text-center py-3">
-                <div class="tool-icon bg-secondary bg-opacity-10 mx-auto">
+            <div class="card-body d-flex align-items-center gap-3 py-2 px-3">
+                <div class="tool-icon bg-secondary bg-opacity-10 flex-shrink-0" style="margin-bottom:0;">
                     <i class="fas fa-cog fa-lg text-secondary"></i>
                 </div>
-                <h6 class="mt-2 mb-1">Settings</h6>
-                <p class="text-muted small mb-0">Configure authentication and preferences</p>
+                <div class="text-start">
+                    <h6 class="mb-0">Settings</h6>
+                    <p class="text-muted mb-0 d-none d-md-block" style="font-size:0.75rem;">Auth &amp; preferences</p>
+                </div>
             </div>
         </div>
     </div>
