@@ -1,0 +1,378 @@
+Here is a complete handoff summary — paste this at the start of your next chat:
+
+Trishul SNMP — Frontend Improvements Handoff
+Repo
+Repo: https://github.com/tosumitdhaka/trishul-snmp
+
+Base branch: backend-improvements (already merged backend changes — WebSocket + stats APIs)
+
+Working branch: frontend-improvements (already created from backend-improvements, commit 1f9c72e)
+
+What Was Done in Backend (backend-improvements) — Already Complete
+Component	File	What it does
+WebSocket endpoint	backend/api/routers/ws.py	GET /api/ws?token= — auth via query param, sends full_state on connect, status on lifecycle change, trap on new trap, stats on counter write
+WS Manager	backend/core/ws_manager.py	Connection pool + UDP side-channel listener; exposes manager.broadcast(payload)
+Stats API	backend/api/routers/stats.py	GET /api/stats/ — all modules enriched with runtime fields
+Stats Store	backend/core/stats_store.py	Persisted counters (see schema below)
+Main app	backend/main.py	Registers ws.router and stats.router; starts WS UDP listener in lifespan
+WS Protocol (backend already implements)
+text
+Client connects:   ws://host/api/ws?token=<session_token>
+On connect:        server sends { type: "full_state", simulator, traps, stats }
+Client keepalive:  client sends text "ping" every 30s
+Server:            replies text "pong"
+Auth failure:      server closes with code 4001
+
+Message types server pushes:
+  { type: "full_state", simulator, traps, stats }   — on connect
+  { type: "status",     simulator, traps }           — on lifecycle change
+  { type: "trap",       trap: {...} }                — new trap arrives
+  { type: "stats",      data: {...} }                — after any stats write
+stats_store.py — Exact Persisted Fields
+python
+DEFAULT_STATS = {
+    "simulator": {
+        "start_count": 0, "stop_count": 0, "restart_count": 0,
+        "oids_loaded": 0, "total_oids_simulated": 0,
+        "snmp_requests_served": 0, "simulator_run_seconds": 0
+    },
+    "traps": {
+        "receiver_start_count": 0, "receiver_stop_count": 0,
+        "traps_received_total": 0, "traps_sent_total": 0,
+        "traps_cleared_count": 0, "receiver_run_seconds": 0
+    },
+    "walker": {
+        "walks_executed": 0, "walks_failed": 0, "oids_returned": 0
+    },
+    "mibs": {
+        "reload_count": 0, "upload_count": 0, "delete_count": 0
+    }
+}
+# NOT persisted (runtime-enriched only):
+# mibs:      loaded_mibs, failed_mibs, total_mibs  ← mib_service.get_status()
+# simulator: running, pid, port, community          ← SimulatorManager.status()
+# traps:     running, pid                           ← trap_manager.get_status()
+What Exists in Frontend (backend-improvements) — Needs Changes
+Key files already read
+frontend/src/js/app.js
+
+Token stored in: sessionStorage.getItem("snmp_token")
+
+Login flow: handleLogin() → sessionStorage.setItem("snmp_token", data.token) → showApp()
+
+Page reload with valid token: initAuth() → validates /api/settings/check → showApp()
+
+Logout: window.logout() → calls /api/settings/logout → sessionStorage.removeItem("snmp_token") → window.location.reload()
+
+Health/meta: updateBackendStatus() runs once on load and every 60s via setInterval → KEEP AS-IS
+
+Existing backend status badge: id="backend-status" (badge, green/red "Online"/"Offline")
+
+frontend/src/js/modules/dashboard.js
+
+Currently polls every 30s via setInterval(() => this.loadStats(), 30000)
+
+Makes 3 parallel REST calls: /api/mibs/status, /api/simulator/status, /api/traps/status
+
+Updates DOM elements: stat-mibs, stat-traps, stat-simulator, stat-receiver
+
+destroy() clears the interval — needs updating to remove WS listeners too
+
+frontend/src/dashboard.html
+
+Has 4 stat cards: MIBs Loaded (stat-mibs), Traps Available (stat-traps), Simulator (stat-simulator), Trap Receiver (stat-receiver)
+
+Frontend file structure:
+
+text
+frontend/src/
+  index.html            ← main layout (contains #backend-status badge)
+  dashboard.html        ← dashboard partial (loaded dynamically)
+  js/
+    app.js              ← global app, auth, routing
+    modules/
+      dashboard.js      ← dashboard module (polling lives here)
+      traps.js          ← trap manager module
+      simulator.js      ← simulator module
+      walker.js         ← walker module
+      browser.js        ← MIB browser module
+      mibs.js           ← MIB manager module
+      settings.js       ← settings module
+Decisions Made
+Decision	Choice
+App-level 60s health/meta polling	Keep as-is
+Dashboard polling (30s REST)	Remove — replace with WS events
+WS connection scope	Global in app.js (not per-module)
+WS indicator placement	Dot next to existing #backend-status badge
+MIBs Loaded + Traps Available (no polling)	Option B — extend backend WS full_state to include MIB summary + add {type:"mibs", mibs:{...}} WS broadcast from MIB mutation endpoints
+Stats/metrics cards on dashboard	Deferred to later — Phase 2 is WS/polling changes only
+Phase 2 — Exact Commits To Be Done on frontend-improvements
+Commit 1 — Backend: extend WS full_state + add MIB broadcasts
+Files to change:
+
+backend/api/routers/ws.py — in _build_full_state(), add "mibs" key:
+
+python
+mib_status = get_mib_service().get_status()
+mibs_summary = {
+    "loaded":           mib_status.get("loaded", 0),
+    "failed":           mib_status.get("failed", 0),
+    "total":            mib_status.get("loaded", 0) + mib_status.get("failed", 0),
+    "traps_available":  sum(m.get("traps", 0) for m in mib_status.get("mibs", []))
+}
+return { "type": "full_state", "simulator": ..., "traps": ..., "stats": ..., "mibs": mibs_summary }
+backend/api/routers/mibs.py — after upload, delete, reload endpoints: broadcast {"type": "mibs", "mibs": <mibs_summary>} using asyncio.create_task(manager.broadcast(payload))
+
+Need to read backend/api/routers/mibs.py and backend/services/mib_service.py first to get exact method names + route structure
+
+Helper function to add (can be in ws.py or mibs.py):
+
+python
+async def _build_mibs_payload() -> dict:
+    mib_status = get_mib_service().get_status()
+    return {
+        "type": "mibs",
+        "mibs": {
+            "loaded":          mib_status.get("loaded", 0),
+            "failed":          mib_status.get("failed", 0),
+            "total":           mib_status.get("loaded", 0) + mib_status.get("failed", 0),
+            "traps_available": sum(m.get("traps", 0) for m in mib_status.get("mibs", []))
+        }
+    }
+Commit 2 — Frontend: new ws-client.js + wire into app.js + WS dot
+New file: frontend/src/js/modules/ws-client.js
+
+javascript
+window.WsClient = (function () {
+    const PING_MS = 30000, BACKOFF_BASE = 1000, BACKOFF_MAX = 30000, PONG_TIMEOUT = 5000;
+    let _ws, _token, _pingTimer, _pongTimer, _reconnTimer;
+    let _reconnDelay = BACKOFF_BASE, _intentional = false;
+
+    function _url(t) {
+        const p = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${p}//${location.host}/api/ws?token=${encodeURIComponent(t)}`;
+    }
+    function _dot(state) {
+        const el = document.getElementById('ws-status-dot');
+        if (!el) return;
+        el.className = 'ws-dot ws-dot-' + state;
+        const labels = { connecting:'WS: Connecting…', online:'WS: Live', offline:'WS: Offline', unauthorized:'WS: Unauthorized' };
+        el.title = labels[state] || '';
+    }
+    function _emit(type, detail) {
+        window.dispatchEvent(new CustomEvent('trishul:ws:' + type, { detail }));
+    }
+    function _startPing() {
+        _stopPing();
+        _pingTimer = setInterval(() => {
+            if (_ws?.readyState === WebSocket.OPEN) {
+                _ws.send('ping');
+                _pongTimer = setTimeout(() => { _ws?.close(4000, 'pong timeout'); }, PONG_TIMEOUT);
+            }
+        }, PING_MS);
+    }
+    function _stopPing() {
+        clearInterval(_pingTimer); clearTimeout(_pongTimer);
+        _pingTimer = _pongTimer = null;
+    }
+    function _scheduleReconnect() {
+        if (_intentional) return;
+        clearTimeout(_reconnTimer);
+        _reconnTimer = setTimeout(() => { if (_token) _connect(_token); }, _reconnDelay);
+        _reconnDelay = Math.min(_reconnDelay * 2, BACKOFF_MAX);
+    }
+    function _connect(token) {
+        _dot('connecting');
+        try { _ws = new WebSocket(_url(token)); } catch(e) { _scheduleReconnect(); return; }
+        _ws.onopen = () => {
+            _reconnDelay = BACKOFF_BASE;
+            _dot('online');
+            _startPing();
+            _emit('open', null);
+        };
+        _ws.onmessage = (evt) => {
+            if (evt.data === 'pong') { clearTimeout(_pongTimer); _pongTimer = null; return; }
+            try {
+                const msg = JSON.parse(evt.data);
+                if (msg?.type) _emit(msg.type, msg);
+            } catch(e) {}
+        };
+        _ws.onclose = (evt) => {
+            _stopPing();
+            _dot(evt.code === 4001 ? 'unauthorized' : 'offline');
+            _emit('close', { code: evt.code, reason: evt.reason });
+            if (evt.code !== 4001) _scheduleReconnect();
+        };
+        _ws.onerror = () => {};
+    }
+    return {
+        connect(token) {
+            if (!token) return;
+            _token = token; _intentional = false;
+            if (_ws && _ws.readyState !== WebSocket.CLOSED) _ws.close(1000, 'reconnect');
+            _connect(token);
+        },
+        disconnect() {
+            _intentional = true; _token = null;
+            _stopPing(); clearTimeout(_reconnTimer);
+            _ws?.close(1000, 'logout'); _ws = null;
+            _dot('offline');
+        },
+        isConnected: () => _ws?.readyState === WebSocket.OPEN
+    };
+})();
+CSS to add (in index.html <style> or global CSS):
+
+css
+.ws-dot { display:inline-block; width:10px; height:10px; border-radius:50%;
+          margin-left:6px; vertical-align:middle; background:#9ca3af; }
+.ws-dot-connecting { background:#f59e0b; animation: ws-pulse 1.2s infinite; }
+.ws-dot-online     { background:#22c55e; }
+.ws-dot-offline    { background:#9ca3af; }
+.ws-dot-unauthorized { background:#ef4444; }
+@keyframes ws-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+HTML to add in index.html next to #backend-status:
+
+xml
+<span id="backend-status" class="badge bg-success">Online</span>
+<span id="ws-status-dot" class="ws-dot ws-dot-connecting" title="WS: Connecting…"></span>
+Add <script> tag in index.html (before app.js):
+
+xml
+<script src="js/modules/ws-client.js"></script>
+Changes to frontend/src/js/app.js:
+
+javascript
+// In showApp() — add at the end, after initializeAppLogic():
+const _wsToken = sessionStorage.getItem("snmp_token");
+if (window.WsClient && _wsToken) WsClient.connect(_wsToken);
+
+// In window.logout() — add BEFORE sessionStorage.removeItem():
+if (window.WsClient) WsClient.disconnect();
+Commit 3 — Frontend: remove dashboard polling → WS-driven
+Replace entire frontend/src/js/modules/dashboard.js:
+
+javascript
+window.DashboardModule = {
+    _listeners: [],
+
+    init: function () {
+        this._registerListeners();
+        // Seed immediately from WS if already connected, else one REST fallback
+        if (window.WsClient && WsClient.isConnected()) {
+            // full_state will arrive automatically; REST fallback for MIBs
+            this._loadMibsViaRest();
+        } else {
+            this._loadAllViaRest();
+        }
+    },
+
+    destroy: function () {
+        this._listeners.forEach(([type, fn]) => window.removeEventListener(type, fn));
+        this._listeners = [];
+    },
+
+    _on: function (type, fn) {
+        window.addEventListener(type, fn);
+        this._listeners.push([type, fn]);
+    },
+
+    _registerListeners: function () {
+        this._on('trishul:ws:full_state', (e) => {
+            this._applyStatus(e.detail.simulator, e.detail.traps);
+            if (e.detail.mibs) this._applyMibs(e.detail.mibs);
+        });
+        this._on('trishul:ws:status', (e) => {
+            this._applyStatus(e.detail.simulator, e.detail.traps);
+        });
+        this._on('trishul:ws:mibs', (e) => {
+            if (e.detail.mibs) this._applyMibs(e.detail.mibs);
+        });
+        // Re-seed after reconnect
+        this._on('trishul:ws:open', () => this._loadMibsViaRest());
+    },
+
+    _applyStatus: function (sim, trap) {
+        const simEl = document.getElementById('stat-simulator');
+        const recEl = document.getElementById('stat-receiver');
+        if (simEl) {
+            simEl.textContent = sim?.running ? 'Online' : 'Offline';
+            simEl.className = 'mb-0 ' + (sim?.running ? 'text-success fw-bold' : 'text-secondary');
+        }
+        if (recEl) {
+            recEl.textContent = trap?.running ? 'Running' : 'Stopped';
+            recEl.className = 'mb-0 ' + (trap?.running ? 'text-info fw-bold' : 'text-secondary');
+        }
+    },
+
+    _applyMibs: function (mibs) {
+        const mibEl  = document.getElementById('stat-mibs');
+        const trapEl = document.getElementById('stat-traps');
+        if (mibEl)  { mibEl.textContent = mibs.loaded ?? 0; mibEl.className = 'mb-0'; }
+        if (trapEl) { trapEl.textContent = mibs.traps_available ?? 0; trapEl.className = 'mb-0'; }
+    },
+
+    // Fallback REST — only used when WS unavailable or on reconnect
+    _loadAllViaRest: async function () {
+        try {
+            const [mibRes, simRes, trapRes] = await Promise.all([
+                fetch('/api/mibs/status').catch(() => null),
+                fetch('/api/simulator/status').catch(() => null),
+                fetch('/api/traps/status').catch(() => null)
+            ]);
+            if (simRes?.ok && trapRes?.ok) {
+                this._applyStatus(await simRes.json(), await trapRes.json());
+            }
+            if (mibRes?.ok) {
+                const d = await mibRes.json();
+                const trapsAvail = (d.mibs || []).reduce((s, m) => s + (m.traps || 0), 0);
+                this._applyMibs({ loaded: d.loaded || 0, traps_available: trapsAvail });
+            }
+        } catch (e) { console.error('Dashboard REST fallback error:', e); }
+    },
+
+    _loadMibsViaRest: async function () {
+        try {
+            const res = await fetch('/api/mibs/status');
+            if (!res.ok) return;
+            const d = await res.json();
+            const trapsAvail = (d.mibs || []).reduce((s, m) => s + (m.traps || 0), 0);
+            this._applyMibs({ loaded: d.loaded || 0, traps_available: trapsAvail });
+        } catch (e) {}
+    },
+
+    showError: function (elementId, text) {
+        const el = document.getElementById(elementId);
+        if (el) { el.textContent = text; el.className = 'mb-0 text-danger'; }
+    }
+};
+Files Still Needed (to complete Commit 1 — backend)
+backend/api/routers/mibs.py — to find upload/delete/reload route functions and add manager.broadcast() calls
+
+backend/services/mib_service.py — to verify get_status() returns {"loaded": N, "failed": N, "mibs": [{"traps": N, ...}]}
+
+backend/core/ws_manager.py — to verify the signature of manager.broadcast() is async def broadcast(payload: dict)
+
+Test Checklist (after all 3 commits)
+Login → browser Network tab shows 101 Switching Protocols to /api/ws
+
+WS dot turns green (Online) next to backend badge
+
+Start Simulator → stat-simulator card updates to "Online" without page refresh
+
+Stop Simulator → stat-simulator → "Offline" without refresh
+
+Start/Stop Trap Receiver → stat-receiver updates live
+
+Upload a MIB → stat-mibs + stat-traps update without REST polling
+
+Logout → WS closes cleanly (code 1000), dot goes grey
+
+Kill backend mid-session → dot turns grey, auto-reconnect fires, card values restored on reconnect
+
+Bad token (manually set wrong value) → WS closes with 4001, dot turns red, no infinite retry
+
+What's Deferred (NOT in Phase 2)
+Dashboard "Activity Metrics" row (Traps Received, Walks Executed, Sim Starts, MIBs Uploaded sourced from stats_store) — planned for Phase 3 after testing Phase 2
+
+traps.js real-time trap feed via trishul:ws:trap events — Phase 3
