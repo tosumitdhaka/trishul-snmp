@@ -4,6 +4,8 @@
 #   C2: added healthcheck on backend — frontend waits for FastAPI to be ready
 #       before nginx starts proxying, preventing 502 on first page load
 #   C3: use python urllib for healthcheck — curl not present in python:3.10-slim
+#   C4: increased healthcheck interval 10s→30s — 10s was generating excessive
+#       uvicorn access log noise with no operational benefit post-startup
 
 services:
   backend:
@@ -36,11 +38,11 @@ services:
       # Auto-Start flags (Part A)
       - AUTO_START_SIMULATOR=${AUTO_START_SIMULATOR:-true}
       - AUTO_START_TRAP_RECEIVER=${AUTO_START_TRAP_RECEIVER:-true}
-    # C2/C3: healthcheck using python stdlib — no curl needed in slim image
-    # start_period covers MIB download + FastAPI lifespan startup time
+    # C2/C3/C4: healthcheck using python stdlib — no curl needed in slim image.
+    # interval: 30s is plenty for a running container; start_period handles startup.
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 5
       start_period: 30s
