@@ -131,6 +131,10 @@ function showApp() {
     }
 
     initializeAppLogic();
+
+    // Connect WebSocket after app is initialised
+    const _wsToken = sessionStorage.getItem("snmp_token");
+    if (window.WsClient && _wsToken) WsClient.connect(_wsToken);
 }
 
 // ==================== Logout ====================
@@ -139,6 +143,8 @@ window.logout = async function(callApi = true) {
     if (callApi) {
         try { await fetch('/api/settings/logout', { method: 'POST' }); } catch(e){}
     }
+    // Cleanly close WS before clearing token
+    if (window.WsClient) WsClient.disconnect();
     sessionStorage.removeItem("snmp_token");
     window.location.reload();
 };
