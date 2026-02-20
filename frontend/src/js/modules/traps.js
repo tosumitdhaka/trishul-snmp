@@ -1,5 +1,5 @@
 window.TrapsModule = {
-    pollInterval: null,
+    _listeners: [],
     vbCount: 0,
     allTraps: [],
     allObjects: [],
@@ -9,12 +9,13 @@ window.TrapsModule = {
 
     init: function() {
         this.loadPersistedTraps();
+
+        // Replace 3s setInterval with WS event listeners
+        this._registerListeners();
+
+        // REST seed on first paint
         this.checkStatus();
         this.loadTraps();
-        this.pollInterval = setInterval(() => { 
-            this.checkStatus(); 
-            this.loadTraps(); 
-        }, 3000);
         
         this.loadTrapList();
         
@@ -55,8 +56,58 @@ window.TrapsModule = {
     },
 
     destroy: function() {
-        if (this.pollInterval) clearInterval(this.pollInterval);
+        this._listeners.forEach(function(pair) {
+            window.removeEventListener(pair[0], pair[1]);
+        });
+        this._listeners = [];
         this.persistTraps();
+    },
+
+    _on: function(type, fn) {
+        window.addEventListener(type, fn);
+        this._listeners.push([type, fn]);
+    },
+
+    _registerListeners: function() {
+        var self = this;
+
+        // Receiver status from full state on WS (re)connect
+        this._on('trishul:ws:full_state', function(e) {
+            if (e.detail && e.detail.traps) {
+                self.updateStatusUI(e.detail.traps);
+            }
+        });
+
+        // Receiver start / stop lifecycle push
+        this._on('trishul:ws:status', function(e) {
+            if (e.detail && e.detail.traps) {
+                self.updateStatusUI(e.detail.traps);
+            }
+        });
+
+        // Live trap push from worker subprocess via UDP loopback -> WS broadcast
+        this._on('trishul:ws:trap', function(e) {
+            if (e.detail && e.detail.trap) {
+                self._prependTrap(e.detail.trap);
+            }
+        });
+
+        // REST re-seed after WS reconnect
+        this._on('trishul:ws:open', function() {
+            self.checkStatus();
+            self.loadTraps();
+        });
+    },
+
+    // Prepend a single live trap without doing a full REST reload.
+    _prependTrap: function(trap) {
+        // Deduplicate by timestamp
+        if (this.receivedTraps.find(function(t) { return t.timestamp === trap.timestamp; })) return;
+        this.receivedTraps.unshift(trap);
+        if (this.receivedTraps.length > 100) this.receivedTraps.pop();
+        this.persistTraps();
+        this.renderTraps();
+        this.updateMetrics();
     },
 
     // ==================== Persistence ====================
@@ -448,10 +499,8 @@ window.TrapsModule = {
             if (res.ok) {
                 const data = await res.json();
                 this.showNotification(`✓ Trap sent to ${data.target}:${data.port}`, 'success');
-                
-                if (payload.target === "127.0.0.1" || payload.target === "localhost") {
-                    setTimeout(() => this.loadTraps(), 500); 
-                }
+                // WS trap push will update the table if target is local;
+                // no manual setTimeout reload needed.
             } else {
                 const errorData = await res.json();
                 const errorMsg = errorData.detail || 'Unknown error';
@@ -521,6 +570,8 @@ window.TrapsModule = {
             })
         });
         
+        // WS status push from trap_manager will update the badge;
+        // this call is a REST fallback for any timing gap.
         this.checkStatus();
         this.showNotification('Trap receiver started', 'success');
     },

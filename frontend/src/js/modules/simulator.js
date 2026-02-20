@@ -1,5 +1,5 @@
 window.SimulatorModule = {
-    intervalId: null,
+    _listeners: [],
     lastSavedJson: '{}',
     filteredLogs: [],
 
@@ -33,15 +33,48 @@ window.SimulatorModule = {
         this.attachEditorEvents();
         this.updateLogStats();
 
+        // Replace 10s setInterval with WS event listeners
+        this._registerListeners();
+
+        // REST seed: populates UI before the first WS push arrives
         this.fetchStatus();
-        this.intervalId = setInterval(() => this.fetchStatus(), 10000);
     },
 
     destroy: function() {
-        if (this.intervalId) {
-            clearInterval(this.intervalId);
-            this.intervalId = null;
-        }
+        this._listeners.forEach(function(pair) {
+            window.removeEventListener(pair[0], pair[1]);
+        });
+        this._listeners = [];
+    },
+
+    _on: function(type, fn) {
+        window.addEventListener(type, fn);
+        this._listeners.push([type, fn]);
+    },
+
+    _registerListeners: function() {
+        var self = this;
+
+        // Full simulator state pushed on every WS (re)connect
+        this._on('trishul:ws:full_state', function(e) {
+            if (e.detail && e.detail.simulator) {
+                window.AppState.simulator = e.detail.simulator;
+                self.updateUI(e.detail.simulator);
+            }
+        });
+
+        // Lightweight push on start / stop / restart lifecycle changes
+        this._on('trishul:ws:status', function(e) {
+            if (e.detail && e.detail.simulator) {
+                window.AppState.simulator = e.detail.simulator;
+                self.updateUI(e.detail.simulator);
+            }
+        });
+
+        // REST re-seed after WS reconnect
+        this._on('trishul:ws:open', function() {
+            self.fetchStatus();
+        });
     },
 
     // ==================== Log Persistence ====================
@@ -242,6 +275,8 @@ window.SimulatorModule = {
                 this.showToast(data.message || 'Simulator is already running', 'warning');
             }
             
+            // WS status push will update the UI; this call is a fallback
+            // for the rare case the WS message races with the REST response.
             this.fetchStatus();
         } catch (e) {
             console.error('Start error:', e);
@@ -342,7 +377,6 @@ window.SimulatorModule = {
                 metrics.classList.remove('d-none');
                 uptimeEl.textContent = data.uptime || '--';
                 reqEl.textContent = data.requests || 0;
-                // Format as relative time
                 lastActEl.textContent = this.formatRelativeTime(data.last_activity);
             }
         } else {
@@ -413,7 +447,6 @@ window.SimulatorModule = {
         window.AppState.logs.push(html);
         if (window.AppState.logs.length > 500) window.AppState.logs.shift();
 
-        // Persist to localStorage
         this.saveLogsToStorage();
 
         if (area) {
