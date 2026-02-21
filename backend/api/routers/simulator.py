@@ -10,8 +10,9 @@ Fixes:
   BUG-12 : single restart code path
   Part-B : _restart_simulator_with_stats() shared helper
   Phase-9: broadcast status + stats after start/stop/restart
-  Phase-10: _enrich_sim_status() — uptime_seconds, requests, last_activity
-             surfaced on GET /status and all WS broadcasts
+  Phase-10: GET /status now returns uptime_seconds (int), requests and
+            last_activity surfaced from stats_store so frontend metrics
+            panel is fully populated
 """
 
 import os
@@ -58,37 +59,14 @@ def _record_stop_stats() -> None:
     })
 
 
-def _enrich_sim_status() -> dict:
-    """
-    Return SimulatorManager.status() enriched with:
-      uptime_seconds  – integer seconds since last start (None when stopped)
-      requests        – cumulative SNMP requests served (from stats_store)
-      last_activity   – ISO timestamp of last SNMP request (from stats_store)
-
-    Used by GET /status AND WS broadcasts so all consumers see the same shape.
-    """
-    status = SimulatorManager.status()
-    if status.get("running") and _sim_start_time:
-        status["uptime_seconds"] = int(
-            (datetime.now(timezone.utc) - _sim_start_time).total_seconds()
-        )
-    else:
-        status["uptime_seconds"] = None
-
-    s = stats_store.load()
-    status["requests"]      = s["simulator"]["snmp_requests_served"]
-    status["last_activity"] = s["simulator"].get("last_request_at")
-    return status
-
-
 async def _broadcast_status() -> None:
-    """Push enriched simulator + trap status to all WS clients."""
+    """Push current simulator+trap status to all WS clients."""
     try:
         from core.ws_manager import manager
         from services.trap_manager import trap_manager
         await manager.broadcast({
             "type":      "status",
-            "simulator": _enrich_sim_status(),
+            "simulator": SimulatorManager.status(),
             "traps":     trap_manager.get_status(),
         })
     except Exception as e:
@@ -132,7 +110,17 @@ def _restart_simulator_with_stats() -> dict:
 
 @router.get("/status")
 def get_status():
-    return _enrich_sim_status()
+    status = SimulatorManager.status()
+    if status.get("running") and _sim_start_time:
+        delta = datetime.now(timezone.utc) - _sim_start_time
+        status["uptime_seconds"] = int(delta.total_seconds())
+    else:
+        status["uptime_seconds"] = None
+    # Surface persisted counters so the frontend metrics panel is fully populated
+    s = stats_store.load()
+    status["requests"]      = s["simulator"]["snmp_requests_served"]
+    status["last_activity"] = s["simulator"].get("last_request_at")
+    return status
 
 
 @router.post("/start")

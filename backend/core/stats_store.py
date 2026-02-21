@@ -13,8 +13,7 @@ Thread safety:
   - API process: _lock (threading.Lock) guards all reads + writes.
   - Worker subprocesses (snmp_simulator, trap_receiver): they write directly
     to the JSON file using atomic rename (tempfile + os.replace) via
-    worker_increment() / worker_set_field() / worker_update_fields() to avoid
-    partial-write corruption.
+    worker_increment() / worker_set_field() to avoid partial-write corruption.
   - Cross-process safety relies on os.replace() being atomic on POSIX.
 """
 
@@ -227,26 +226,27 @@ def worker_update_module(stats_file: str, module: str, updates: dict) -> None:
         pass
 
 
-def worker_update_fields(
+def worker_update_stats(
     stats_file: str,
     module: str,
     increments: dict = None,
     sets: dict = None,
 ) -> None:
     """
-    Atomically apply counter increments AND absolute field sets in one
-    read-modify-write cycle. Preferred over calling worker_increment +
-    worker_set_field separately (halves the number of file writes).
+    Increment counters and/or set fields in a single atomic read-modify-write.
+    Worker-safe.  Use this instead of multiple worker_increment() calls to
+    reduce file I/O and keep all related fields consistent.
 
-      increments: {key: delta}   – adds delta to the stored counter value
-      sets:       {key: value}   – overwrites the field directly (timestamps, gauges)
+    Args:
+        increments: dict of {key: delta} -- added to existing values
+        sets:       dict of {key: value} -- written as absolute values
     """
     try:
         stats = _worker_load(stats_file)
         stats.setdefault(module, {})
         if increments:
-            for key, delta in increments.items():
-                stats[module][key] = stats[module].get(key, 0) + delta
+            for k, v in increments.items():
+                stats[module][k] = stats[module].get(k, 0) + v
         if sets:
             stats[module].update(sets)
         _worker_save(stats_file, stats)
