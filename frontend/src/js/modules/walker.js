@@ -17,7 +17,7 @@ window.WalkerModule = {
         if (browserOid) {
             document.getElementById("walk-oid").value = browserOid;
             sessionStorage.removeItem('walkerOid');
-            this.showNotification(`OID loaded from browser: ${browserOid}`, 'info');
+            TrishulUtils.showNotification(`OID loaded from browser: ${browserOid}`, 'info');
         }
         
         // Restore last result if exists
@@ -119,7 +119,7 @@ window.WalkerModule = {
         listEl.classList.remove('d-none');
         
         listEl.innerHTML = this.walkHistory.map(item => {
-            const timeAgo = this.formatRelativeTime(item.timestamp);
+            const timeAgo = TrishulUtils.formatRelativeTime(item.timestamp);
             const targetDisplay = `${item.target}:${item.port}`;
             const oidDisplay = item.oid.length > 30 ? item.oid.substring(0, 30) + '...' : item.oid;
             
@@ -177,7 +177,7 @@ window.WalkerModule = {
         this.lastDisplayMode = item.mode;
         this.restoreLastResult();
         
-        this.showNotification('Walk history loaded', 'info');
+        TrishulUtils.showNotification('Walk history loaded', 'info');
     },
 
     deleteHistoryItem: function(id) {
@@ -202,26 +202,6 @@ window.WalkerModule = {
         this.renderHistory();
     },
 
-    // ==================== Utility Functions ====================
-
-    formatRelativeTime: function(isoTimestamp) {
-        if (!isoTimestamp) return '--';
-        
-        try {
-            const date = new Date(isoTimestamp);
-            const now = new Date();
-            const diffSec = Math.floor((now - date) / 1000);
-            
-            if (diffSec < 5) return 'just now';
-            if (diffSec < 60) return `${diffSec}s ago`;
-            if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
-            if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
-            return `${Math.floor(diffSec / 86400)}d ago`;
-        } catch (e) {
-            return '--';
-        }
-    },
-
     // ==================== UI Functions ====================
 
     browseOid: function() {
@@ -230,33 +210,6 @@ window.WalkerModule = {
             sessionStorage.setItem('browserSearchOid', currentOid);
         }
         window.location.hash = '#browser';
-    },
-
-    showNotification: function(message, type = 'info') {
-        const banner = document.createElement('div');
-        let icon = 'fa-info-circle';
-        let cls = 'alert-info';
-
-        if (type === 'success') {
-            icon = 'fa-check-circle';
-            cls = 'alert-success';
-        } else if (type === 'error') {
-            icon = 'fa-exclamation-circle';
-            cls = 'alert-danger';
-        } else if (type === 'warning') {
-            icon = 'fa-exclamation-triangle';
-            cls = 'alert-warning';
-        }
-
-        banner.className = `alert ${cls} alert-dismissible fade show position-fixed`;
-        banner.style.cssText = 'top: 80px; right: 20px; z-index: 9999; min-width: 300px;';
-        banner.innerHTML = `
-            <i class="fas ${icon} me-2"></i> ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-        document.body.appendChild(banner);
-        
-        setTimeout(() => banner.remove(), 3000);
     },
 
     toggleOptions: function() {
@@ -368,7 +321,7 @@ window.WalkerModule = {
             }
 
             this.saveWalkHistory(target, port, oid, data.data, data.mode, data.count);
-            this.showNotification(`Walk complete: ${data.count} items found`, 'success');
+            TrishulUtils.showNotification(`Walk complete: ${data.count} items found`, 'success');
 
         } catch (e) {
             console.error("Walker Error:", e);
@@ -380,7 +333,7 @@ window.WalkerModule = {
             this.lastData = null;
             this.lastDisplayMode = null;
             this.lastRawLines = null;
-            this.showNotification(e.message, 'error');
+            TrishulUtils.showNotification(e.message, 'error');
         } finally {
             btn.innerHTML = originalText;
             btn.disabled = false;
@@ -499,20 +452,20 @@ window.WalkerModule = {
     copyToClipboard: function() {
         const text = document.getElementById("walk-output").textContent;
         if (text === "No data yet. Run a walk to see results." || text.startsWith("Error:")) {
-            this.showNotification("No data to copy", "warning");
+            TrishulUtils.showNotification("No data to copy", "warning");
             return;
         }
         
         navigator.clipboard.writeText(text).then(() => {
-            this.showNotification("Copied to clipboard", "success");
+            TrishulUtils.showNotification("Copied to clipboard", "success");
         }).catch(() => {
-            this.showNotification("Failed to copy", "error");
+            TrishulUtils.showNotification("Failed to copy", "error");
         });
     },
     
     download: function(format) {
         if (!this.lastData) {
-            this.showNotification("No data to export", "warning");
+            TrishulUtils.showNotification("No data to export", "warning");
             return;
         }
         

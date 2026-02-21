@@ -485,31 +485,16 @@ window.MibsModule = {
             await this.loadStatus();
             await this.loadTraps();
             
-            this.showNotification(`Reloaded: ${data.loaded} loaded, ${data.failed} failed`, 'success');
+            TrishulUtils.showNotification(`Reloaded: ${data.loaded} loaded, ${data.failed} failed`, 'success');
         } catch (e) {
             console.error('Reload failed', e);
-            this.showNotification('Reload failed: ' + e.message, 'error');
+            TrishulUtils.showNotification('Reload failed: ' + e.message, 'error');
         } finally {
             if (reloadBtn) {
                 reloadBtn.innerHTML = originalHtml;
                 reloadBtn.disabled = false;
             }
         }
-    },
-
-    showNotification: function(message, type = 'info') {
-        const banner = document.createElement('div');
-        banner.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-        banner.style.cssText = 'top: 80px; right: 20px; z-index: 9999; min-width: 300px;';
-        banner.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-        document.body.appendChild(banner);
-        
-        setTimeout(() => {
-            banner.remove();
-        }, 4000);
     },
 	
     deleteMib: async function(filename) {
@@ -527,7 +512,7 @@ window.MibsModule = {
                 throw new Error(errorData.detail || 'Delete failed');
             }
             
-            this.showNotification(`Deleted ${filename}`, 'success');
+            TrishulUtils.showNotification(`Deleted ${filename}`, 'success');
             await this.reloadMibs();
             
         } catch (e) {
