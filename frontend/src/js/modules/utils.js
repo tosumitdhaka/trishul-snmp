@@ -8,39 +8,59 @@
 window.TrishulUtils = {
 
     /**
-     * Convert an ISO timestamp string to a human-readable relative time.
+     * Convert an ISO timestamp string OR Unix timestamp to a human-readable
+     * relative time string.
      * Returns strings like: 'just now', '34s ago', '5m ago', '2h ago',
      * '3d ago', or a locale date string for anything older than a week.
      *
      * Edge cases handled:
-     *   null / undefined / ''  → '--'
-     *   Unix epoch (0 ms)      → '--'  (backend returns 0 for "never received")
-     *   NaN / unparseable      → '--'
+     *   null / undefined / ''       → '--'
+     *   Unix epoch (0 ms)           → '--'  (backend returns 0 for "never received")
+     *   NaN / unparseable           → '--'
+     *   Unix seconds as number      → auto-detected and converted to ms
+     *     (backend may send integer seconds, e.g. 1737000000, rather than ms;
+     *      new Date(1737000000) in JS = Jan 21 1970 because JS expects ms)
      *
-     * @param {string|number|null} dateString  ISO 8601 timestamp, Unix ms, or null
+     * Detection rule:
+     *   number < 1e10  → Unix seconds  (current epoch ~1.74e9)
+     *   number ≥ 1e10  → Unix milliseconds
+     *   string          → passed to new Date() as-is (ISO 8601 etc.)
+     *
+     * @param {string|number|null} dateString  ISO 8601 timestamp, Unix seconds,
+     *                                         Unix ms, or null
      * @returns {string}
      */
     formatRelativeTime: function(dateString) {
-        if (!dateString && dateString !== 0) return '--';
+        if (dateString == null || dateString === '') return '--';
         try {
-            const date   = new Date(dateString);
-            const timeMs = date.getTime();
+            var date;
+            if (typeof dateString === 'number') {
+                // Distinguish Unix seconds from Unix milliseconds.
+                // Current time in seconds is ~1.74e9; in ms ~1.74e12.
+                // Threshold 1e10 safely separates them for dates until year 2286.
+                date = dateString < 1e10 ? new Date(dateString * 1000)
+                                         : new Date(dateString);
+            } else {
+                date = new Date(dateString);
+            }
+
+            var timeMs = date.getTime();
 
             // Treat unparseable dates or Unix epoch as "never"
             if (isNaN(timeMs) || timeMs < 1000) return '--';
 
-            const now     = new Date();
-            const diffMs  = now - date;
-            const diffSec = Math.floor(diffMs / 1000);
-            const diffMin = Math.floor(diffSec / 60);
-            const diffHr  = Math.floor(diffMin / 60);
-            const diffDay = Math.floor(diffHr  / 24);
+            var now     = new Date();
+            var diffMs  = now - date;
+            var diffSec = Math.floor(diffMs / 1000);
+            var diffMin = Math.floor(diffSec / 60);
+            var diffHr  = Math.floor(diffMin / 60);
+            var diffDay = Math.floor(diffHr  / 24);
 
             if (diffSec < 5)   return 'just now';
-            if (diffSec < 60)  return `${diffSec}s ago`;
-            if (diffMin < 60)  return `${diffMin}m ago`;
-            if (diffHr  < 24)  return `${diffHr}h ago`;
-            if (diffDay < 7)   return `${diffDay}d ago`;
+            if (diffSec < 60)  return diffSec + 's ago';
+            if (diffMin < 60)  return diffMin + 'm ago';
+            if (diffHr  < 24)  return diffHr  + 'h ago';
+            if (diffDay < 7)   return diffDay  + 'd ago';
             return date.toLocaleDateString();
         } catch (_) {
             return '--';
@@ -64,21 +84,21 @@ window.TrishulUtils = {
         if (seconds == null || seconds < 0) return '--';
         seconds = Math.floor(seconds);
         if (seconds < 60) {
-            return `${seconds}s`;
+            return seconds + 's';
         }
         if (seconds < 3600) {
-            const m = Math.floor(seconds / 60);
-            const s = seconds % 60;
-            return s > 0 ? `${m}m ${s}s` : `${m}m`;
+            var m = Math.floor(seconds / 60);
+            var s = seconds % 60;
+            return s > 0 ? (m + 'm ' + s + 's') : (m + 'm');
         }
         if (seconds < 86400) {
-            const h = Math.floor(seconds / 3600);
-            const m = Math.floor((seconds % 3600) / 60);
-            return m > 0 ? `${h}h ${m}m` : `${h}h`;
+            var h = Math.floor(seconds / 3600);
+            var m = Math.floor((seconds % 3600) / 60);
+            return m > 0 ? (h + 'h ' + m + 'm') : (h + 'h');
         }
-        const d = Math.floor(seconds / 86400);
-        const h = Math.floor((seconds % 86400) / 3600);
-        return h > 0 ? `${d}d ${h}h` : `${d}d`;
+        var d = Math.floor(seconds / 86400);
+        var h = Math.floor((seconds % 86400) / 3600);
+        return h > 0 ? (d + 'd ' + h + 'h') : (d + 'd');
     },
 
     /**
