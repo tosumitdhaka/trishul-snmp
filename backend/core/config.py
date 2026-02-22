@@ -1,5 +1,6 @@
 import os
 import json
+import shutil
 from pathlib import Path
 
 
@@ -10,6 +11,7 @@ class Settings:
     MIB_DIR    = DATA_DIR / "mibs"
     CONFIG_DIR = DATA_DIR / "configs"
     LOG_DIR    = DATA_DIR / "logs"
+    BUNDLED_MIBS_DIR = BASE_DIR / "mibs_bundled"  # git-tracked starter MIBs
 
     # SNMP Settings
     SNMP_PORT  = int(os.getenv("SNMP_PORT",  "1061"))
@@ -62,12 +64,28 @@ class Settings:
         if not self.TRAPS_FILE.exists():
             self.TRAPS_FILE.touch()
 
-        # Load app_settings.json overrides.
-        # These win over env defaults but NOT over explicit env vars set in docker-compose.
-        # Priority order: env vars (class attrs) > app_settings.json > hardcoded defaults.
-        # Since class attrs are already resolved from env, we only override here if the
-        # env var was NOT explicitly set (i.e. still at its default value).
+        self._copy_bundled_mibs()
+
         self._apply_app_settings()
+
+    def _copy_bundled_mibs(self):
+        """Copy bundled starter MIBs to data/mibs/ on first run.
+
+        Rules:
+        - Only copies if destination file does NOT already exist (copy-if-absent).
+        - Accepts .txt, .mib, .my extensions.
+        - Silently skips on any error to never block startup.
+        """
+        if not self.BUNDLED_MIBS_DIR.exists():
+            return
+        try:
+            for mib_file in sorted(self.BUNDLED_MIBS_DIR.iterdir()):
+                if mib_file.is_file() and mib_file.suffix in ('.txt', '.mib', '.my'):
+                    dest = self.MIB_DIR / mib_file.name
+                    if not dest.exists():
+                        shutil.copy2(mib_file, dest)
+        except Exception:
+            pass  # Never block startup due to MIB copy failure
 
     def _apply_app_settings(self):
         """Apply persisted app_settings.json on top of env defaults at startup."""
