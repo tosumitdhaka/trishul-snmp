@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.5] - 2026-02-22
+
+### Added
+- **MIB Manager** - Drag-and-drop MIB file upload onto the MIB Library card
+- **MIB Manager** - Auto-validation on file selection; validation runs immediately on file pick or drag-and-drop without clicking Validate
+- **UI** - Dark mode toggle in navbar; preference persisted to `localStorage`, survives page refresh
+
+### Changed
+- **MIB Manager** - Removed manual "Validate" button from upload modal; Upload & Reload button auto-enables after validation passes
+
+### Fixed
+- **MIB Manager** - Race condition in drag-and-drop handler: dropped files were cleared by `showUploadModal()` before `validateFiles()` ran; fixed by re-assigning via `DataTransfer` after modal reset
+
+---
+
 ## [1.2.4] - 2026-02-22
 
 ### Added
@@ -225,6 +240,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.2.5]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.2.1...v1.2.2

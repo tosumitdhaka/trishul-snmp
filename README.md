@@ -173,7 +173,7 @@ Manage authentication and system preferences.
 ```
 ┌───────────────────────────────────────────────────┐
 │           Web Browser (Port 8080)                 │
-│  Dashboard │ Simulator │ Walker │ Traps │ MIBs    │
+│  Dashboard │ Simulator │ Walker │ Traps │ MIB    │
 └─────────────────────┬───────────────────────────┘
                       │ HTTP / WebSocket
                       │
@@ -349,18 +349,27 @@ Trishul-SNMP is **100% free and open-source** (MIT License).
 
 ## 🚀 Roadmap
 
-### ✅ v1.2.4 (Current)
+### ✅ v1.2.5 (Current)
+- [x] Dark mode implementation (persisted to local storage)
+- [x] Drag-and-drop MIB file uploads
+- [x] Auto-validation on MIB file selection
 - [x] WebSocket real-time push (dashboard, simulator, traps)
 - [x] Activity stats dashboard (8 live counters)
 - [x] App behaviour settings (auto-start, session timeout)
 - [x] Stats export / reset from Settings page
 
 ### 📋 v1.3.0 (Planned)
+- [ ] Auto-fetch missing MIB dependencies from remote repositories
 - [ ] SNMPv3 authentication (MD5, SHA, AES)
 - [ ] Tree export to JSON/CSV
-- [ ] Dark mode
 
-### 📋 Planned
+### 📋 v1.2.4
+- [x] WebSocket real-time push (dashboard, simulator, traps)
+- [x] Activity stats dashboard (8 live counters)
+- [x] App behaviour settings (auto-start, session timeout)
+- [x] Stats export / reset from Settings page
+
+### 📋 Planned (Future)
 - [ ] Scheduled SNMP walks
 - [ ] Device/Agent management
 - [ ] Multi-language support

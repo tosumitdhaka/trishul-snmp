@@ -2,7 +2,15 @@
     <!-- LEFT: MIB Library -->
     <div class="col-md-4">
         <!-- MIB Library Card -->
-        <div class="card shadow-sm mb-3">
+        <div class="card shadow-sm mb-3 position-relative" id="mib-dropzone">
+            
+            <div id="drop-overlay" class="position-absolute top-0 start-0 w-100 h-100 d-none justify-content-center align-items-center rounded" style="background: rgba(59, 130, 246, 0.95); z-index: 50; border: 2px dashed #fff;">
+                <div class="text-center text-white">
+                    <i class="fas fa-file-import fa-3x mb-2"></i>
+                    <h5 class="mb-0 fw-bold">Drop MIB files here</h5>
+                </div>
+            </div>
+
             <div class="card-header">
                 <span><i class="fas fa-book me-2 text-primary"></i> MIB Library</span>
                 <div class="d-flex gap-2">
@@ -110,8 +118,15 @@
                     <label class="form-label small fw-bold">Select MIB Files</label>
                     <input type="file" class="form-control form-control-sm" id="mib-upload-input" multiple
                            accept=".mib,.txt,.my">
-                    <div class="form-text small">Supported formats: .mib, .txt, .my</div>
+                    <div class="form-text small">Supported formats: .mib, .txt, .my &mdash; <span class="text-primary"><i class="fas fa-magic fa-xs"></i> Validation runs automatically on file select</span></div>
                 </div>
+
+                <!-- Auto-validate loading indicator -->
+                <div id="validating-indicator" class="d-none text-center py-3">
+                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                    <span class="small text-muted">Validating files...</span>
+                </div>
+
                 <div id="upload-validation-results" class="d-none">
                     <hr>
                     <h6 class="fw-bold">Validation Results</h6>
@@ -130,9 +145,6 @@
             </div>
             <div class="modal-footer py-2">
                 <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-sm btn-primary" id="btn-validate" onclick="MibsModule.validateFiles()">
-                    <i class="fas fa-check"></i> Validate
-                </button>
                 <button type="button" class="btn btn-sm btn-success" id="btn-upload" onclick="MibsModule.uploadFiles()" disabled>
                     <i class="fas fa-upload"></i> Upload &amp; Reload
                 </button>

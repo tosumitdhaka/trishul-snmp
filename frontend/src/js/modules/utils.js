@@ -7,37 +7,39 @@
  */
 window.TrishulUtils = {
 
+    toggleTheme: function() {
+        const htmlEl = document.documentElement;
+        const currentTheme = htmlEl.getAttribute('data-bs-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        
+        htmlEl.setAttribute('data-bs-theme', newTheme);
+        localStorage.setItem('trishul_theme', newTheme);
+        
+        const icon = document.querySelector('#theme-toggle i');
+        if (icon) {
+            icon.className = newTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+        }
+    },
+
+    initTheme: function() {
+        const savedTheme = localStorage.getItem('trishul_theme') || 'light';
+        document.documentElement.setAttribute('data-bs-theme', savedTheme);
+        
+        const icon = document.querySelector('#theme-toggle i');
+        if (icon) {
+            icon.className = savedTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+        }
+    },
+
     /**
      * Convert an ISO timestamp string OR Unix timestamp to a human-readable
      * relative time string.
-     * Returns strings like: 'just now', '34s ago', '5m ago', '2h ago',
-     * '3d ago', or a locale date string for anything older than a week.
-     *
-     * Edge cases handled:
-     *   null / undefined / ''       → '--'
-     *   Unix epoch (0 ms)           → '--'  (backend returns 0 for "never received")
-     *   NaN / unparseable           → '--'
-     *   Unix seconds as number      → auto-detected and converted to ms
-     *     (backend may send integer seconds, e.g. 1737000000, rather than ms;
-     *      new Date(1737000000) in JS = Jan 21 1970 because JS expects ms)
-     *
-     * Detection rule:
-     *   number < 1e10  → Unix seconds  (current epoch ~1.74e9)
-     *   number ≥ 1e10  → Unix milliseconds
-     *   string          → passed to new Date() as-is (ISO 8601 etc.)
-     *
-     * @param {string|number|null} dateString  ISO 8601 timestamp, Unix seconds,
-     *                                         Unix ms, or null
-     * @returns {string}
      */
     formatRelativeTime: function(dateString) {
         if (dateString == null || dateString === '') return '--';
         try {
             var date;
             if (typeof dateString === 'number') {
-                // Distinguish Unix seconds from Unix milliseconds.
-                // Current time in seconds is ~1.74e9; in ms ~1.74e12.
-                // Threshold 1e10 safely separates them for dates until year 2286.
                 date = dateString < 1e10 ? new Date(dateString * 1000)
                                          : new Date(dateString);
             } else {
@@ -69,16 +71,6 @@ window.TrishulUtils = {
 
     /**
      * Convert a duration in whole seconds to a compact human-readable string.
-     * Examples:
-     *   45      → '45s'
-     *   125     → '2m 5s'
-     *   3600    → '1h'
-     *   3900    → '1h 5m'
-     *   90000   → '1d 1h'
-     *   86400   → '1d'
-     *
-     * @param {number|null} seconds  Duration in seconds (null/undefined → '--')
-     * @returns {string}
      */
     formatUptime: function(seconds) {
         if (seconds == null || seconds < 0) return '--';
@@ -103,14 +95,6 @@ window.TrishulUtils = {
 
     /**
      * Show a dismissible toast-style notification banner at top-right.
-     * Auto-removes after `duration` ms.
-     *
-     * Replaces the per-module showNotification copies in walker.js,
-     * mibs.js, and browser.js — call as TrishulUtils.showNotification(...).
-     *
-     * @param {string} message   Text to display (HTML is allowed)
-     * @param {string} type      'info' | 'success' | 'error' | 'warning'
-     * @param {number} duration  Auto-dismiss delay in ms (default 3000)
      */
     showNotification: function(message, type, duration) {
         type     = type     || 'info';
@@ -133,3 +117,9 @@ window.TrishulUtils = {
         setTimeout(function() { if (banner.parentNode) banner.remove(); }, duration);
     },
 };
+
+document.addEventListener('DOMContentLoaded', () => {
+    if (window.TrishulUtils && TrishulUtils.initTheme) {
+        TrishulUtils.initTheme();
+    }
+});
