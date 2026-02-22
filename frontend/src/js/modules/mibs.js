@@ -3,7 +3,7 @@ window.MibsModule = {
     uploadModal: null,
     trapDetailsModal: null,
     allTraps: [],
-    currentStatus: null, // Track current status
+    currentStatus: null,
 
     init: function() {
         this.uploadModal = new bootstrap.Modal(document.getElementById('uploadModal'));
@@ -16,12 +16,17 @@ window.MibsModule = {
             this.filterTraps(e.target.value);
         });
 
+        // Auto-validate whenever user selects files via the file picker
+        document.getElementById('mib-upload-input').addEventListener('change', () => {
+            this.validateFiles();
+        });
+
         this.initDropzone();
     },
 
     initDropzone: function() {
         const dropzone = document.getElementById('mib-dropzone');
-        const overlay = document.getElementById('drop-overlay');
+        const overlay  = document.getElementById('drop-overlay');
         const fileInput = document.getElementById('mib-upload-input');
 
         if (!dropzone || !overlay || !fileInput) return;
@@ -34,14 +39,14 @@ window.MibsModule = {
         });
 
         let dragCounter = 0;
-        
-        dropzone.addEventListener('dragenter', (e) => {
+
+        dropzone.addEventListener('dragenter', () => {
             dragCounter++;
             overlay.classList.remove('d-none');
             overlay.classList.add('d-flex');
         });
 
-        dropzone.addEventListener('dragleave', (e) => {
+        dropzone.addEventListener('dragleave', () => {
             dragCounter--;
             if (dragCounter === 0) {
                 overlay.classList.add('d-none');
@@ -54,20 +59,19 @@ window.MibsModule = {
             overlay.classList.add('d-none');
             overlay.classList.remove('d-flex');
 
-            const dt = e.dataTransfer;
-            const files = dt.files;
+            const files = e.dataTransfer.files;
 
             if (files && files.length > 0) {
-                // 1. Open modal FIRST — this internally clears the input
+                // 1. Open modal first — this resets the form fields
                 MibsModule.showUploadModal();
 
-                // 2. Re-assign files AFTER modal has cleared the input
-                // DataTransfer is required because FileList is read-only
+                // 2. Re-assign dropped files via DataTransfer (FileList is read-only)
                 const transfer = new DataTransfer();
                 Array.from(files).forEach(f => transfer.items.add(f));
                 fileInput.files = transfer.files;
 
-                // 3. Trigger validation after files are safely set
+                // 3. Auto-validate after files are safely set
+                // Slight delay ensures modal is visible and DOM is ready
                 setTimeout(() => MibsModule.validateFiles(), 100);
             }
         });
@@ -75,21 +79,19 @@ window.MibsModule = {
 
     loadStatus: async function() {
         try {
-            const res = await fetch('/api/mibs/status');
+            const res  = await fetch('/api/mibs/status');
             const data = await res.json();
-            
-            // Store status for use in renderTraps
+
             this.currentStatus = data;
-            
+
             document.getElementById('mib-count-loaded').textContent = data.loaded;
             document.getElementById('mib-count-failed').textContent = data.failed;
-            
-            // Count traps from loaded MIBs only
+
             const loadedTraps = data.mibs.reduce((sum, mib) => sum + mib.traps, 0);
             document.getElementById('mib-count-traps').textContent = loadedTraps;
-            
+
             this.renderMibList(data.mibs);
-            
+
             const failedCard = document.getElementById('failed-mibs-card');
             if (data.errors.length > 0) {
                 this.renderFailedMibs(data.errors);
@@ -104,7 +106,7 @@ window.MibsModule = {
 
     renderMibList: function(mibs) {
         const list = document.getElementById('mib-list');
-        
+
         if (mibs.length === 0) {
             list.innerHTML = '<li class="list-group-item text-center text-muted">No MIBs loaded</li>';
             return;
@@ -160,20 +162,17 @@ window.MibsModule = {
             </li>
         `).join('');
     },
-	
+
     loadTraps: async function() {
         try {
-            const res = await fetch('/api/mibs/traps');
+            const res  = await fetch('/api/mibs/traps');
             const data = await res.json();
-            
+
             this.allTraps = data.traps || [];
-            
-            // Update total count badge
+
             const totalBadge = document.getElementById('trap-total-count');
-            if (totalBadge) {
-                totalBadge.textContent = this.allTraps.length;
-            }
-            
+            if (totalBadge) totalBadge.textContent = this.allTraps.length;
+
             this.renderTraps(this.allTraps);
         } catch (e) {
             console.error('Failed to load traps', e);
@@ -187,22 +186,17 @@ window.MibsModule = {
             tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted p-3">No traps found</td></tr>';
             return;
         }
-        
-        // Get list of loaded MIB modules from currentStatus
-        const loadedModules = new Set();
+
+        const loadedModules  = new Set();
         if (this.currentStatus && this.currentStatus.mibs) {
-            this.currentStatus.mibs.forEach(mib => {
-                loadedModules.add(mib.name);
-            });
+            this.currentStatus.mibs.forEach(mib => loadedModules.add(mib.name));
         }
-        
-        // Known system MIBs (only mark as system if NOT in loaded modules)
+
         const knownSystemMibs = ['SNMPv2-MIB', 'SNMPv2-SMI', 'RMON-MIB', 'SNMP-FRAMEWORK-MIB'];
 
         tbody.innerHTML = traps.map(trap => {
-            // Only mark as system if it's a known system MIB AND not explicitly loaded
             const isSystemMib = knownSystemMibs.includes(trap.module) && !loadedModules.has(trap.module);
-            
+
             return `
             <tr ${isSystemMib ? 'class="table-secondary"' : ''}>
                 <td title="${trap.name}">
@@ -213,9 +207,7 @@ window.MibsModule = {
                     </div>
                 </td>
                 <td title="${trap.oid}">
-                    <code class="small text-muted text-truncate d-block" style="font-size: 0.7rem;">
-                        ${trap.oid}
-                    </code>
+                    <code class="small text-muted text-truncate d-block" style="font-size: 0.7rem;">${trap.oid}</code>
                 </td>
                 <td class="text-center">
                     <span class="badge ${isSystemMib ? 'bg-secondary' : 'bg-primary'}" style="font-size: 0.7rem;">${trap.module}</span>
@@ -225,50 +217,44 @@ window.MibsModule = {
                 </td>
                 <td class="text-center">
                     <div class="btn-group btn-group-sm" role="group">
-                        <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" 
-                                onclick='MibsModule.showTrapDetails(${JSON.stringify(trap).replace(/'/g, "&apos;")})' 
+                        <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2"
+                                onclick='MibsModule.showTrapDetails(${JSON.stringify(trap).replace(/'/g, "&apos;")})'
                                 title="View Details">
                             <i class="fas fa-info-circle"></i>
                         </button>
-                        <button type="button" class="btn btn-success btn-sm py-0 px-2" 
-                                onclick='MibsModule.useTrapDirectly(${JSON.stringify(trap).replace(/'/g, "&apos;")})' 
+                        <button type="button" class="btn btn-success btn-sm py-0 px-2"
+                                onclick='MibsModule.useTrapDirectly(${JSON.stringify(trap).replace(/'/g, "&apos;")})'
                                 title="Send Trap">
                             <i class="fas fa-paper-plane"></i>
                         </button>
                     </div>
                 </td>
-            </tr>
-        `;
+            </tr>`;
         }).join('');
     },
 
-    // Send trap directly without modal
     useTrapDirectly: function(trap) {
         sessionStorage.setItem('selectedTrap', JSON.stringify(trap));
         window.location.hash = '#traps';
     },
 
-
     filterTraps: function(query) {
         if (!this.allTraps) return;
-
         const filtered = this.allTraps.filter(trap => {
             const searchStr = `${trap.name} ${trap.module} ${trap.oid} ${trap.description}`.toLowerCase();
             return searchStr.includes(query.toLowerCase());
         });
-
         this.renderTraps(filtered);
     },
 
     showTrapDetails: function(trap) {
         this.currentTrapData = trap;
-    
+
         const title = document.getElementById('trap-detail-title');
-        const body = document.getElementById('trap-detail-body');
-    
+        const body  = document.getElementById('trap-detail-body');
+
         title.textContent = trap.full_name;
-    
-        // Escape single quotes in OID to avoid breaking onclick attr
+
         const safeOid = (trap.oid || '').replace(/'/g, "\\'");
 
         body.innerHTML = `
@@ -284,7 +270,8 @@ window.MibsModule = {
                 <label class="fw-bold">OID:</label>
                 <div>
                     <code>${trap.oid}</code>
-                    <button type="button" class="btn btn-xs btn-outline-secondary ms-2" onclick="navigator.clipboard.writeText('${safeOid}')">
+                    <button type="button" class="btn btn-xs btn-outline-secondary ms-2"
+                            onclick="navigator.clipboard.writeText('${safeOid}')">
                         <i class="fas fa-copy"></i> Copy
                     </button>
                 </div>
@@ -314,13 +301,12 @@ window.MibsModule = {
                 ` : '<div class="text-muted">No associated objects defined</div>'}
             </div>
         `;
-    
+
         this.trapDetailsModal.show();
     },
 
     useTrapInSender: function() {
         if (!this.currentTrapData) return;
-
         sessionStorage.setItem('selectedTrap', JSON.stringify(this.currentTrapData));
         window.location.hash = '#traps';
         this.trapDetailsModal.hide();
@@ -330,9 +316,8 @@ window.MibsModule = {
         document.getElementById('mib-upload-input').value = '';
         document.getElementById('upload-validation-results').classList.add('d-none');
         document.getElementById('dependency-alert').classList.add('d-none');
-        document.getElementById('btn-validate').disabled = false;
+        document.getElementById('validating-indicator').classList.add('d-none');
         document.getElementById('btn-upload').disabled = true;
-
         this.uploadModal.show();
     },
 
@@ -343,35 +328,31 @@ window.MibsModule = {
             return;
         }
 
-        const btn = document.getElementById('btn-validate');
-        const originalText = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Validating...';
-        btn.disabled = true;
-
+        // Show loading spinner, hide previous results
+        const indicator  = document.getElementById('validating-indicator');
         const resultsDiv = document.getElementById('upload-validation-results');
+        const depAlert   = document.getElementById('dependency-alert');
+        const depList    = document.getElementById('dependency-list');
         const validationList = document.getElementById('validation-list');
-        const depAlert = document.getElementById('dependency-alert');
-        const depList = document.getElementById('dependency-list');
+
+        indicator.classList.remove('d-none');
+        resultsDiv.classList.add('d-none');
+        depAlert.classList.add('d-none');
+        document.getElementById('btn-upload').disabled = true;
 
         try {
             const formData = new FormData();
-            for (let file of input.files) {
-                formData.append('files', file);
-            }
+            for (let file of input.files) formData.append('files', file);
 
-            const res = await fetch('/api/mibs/validate-batch', {
-                method: 'POST',
-                body: formData
-            });
-
+            const res  = await fetch('/api/mibs/validate-batch', { method: 'POST', body: formData });
             const data = await res.json();
 
             validationList.innerHTML = data.files.map(r => {
                 const hasLocalMissing = r.missing_deps.length > 0;
-                const statusClass = r.valid ? 'border-success' : 'border-danger';
-                const statusBadge = r.valid ? 
-                    '<span class="badge bg-success">✓ Valid</span>' : 
-                    '<span class="badge bg-danger">✗ Invalid</span>';
+                const statusClass  = r.valid ? 'border-success' : 'border-danger';
+                const statusBadge  = r.valid
+                    ? '<span class="badge bg-success">✓ Valid</span>'
+                    : '<span class="badge bg-danger">✗ Invalid</span>';
 
                 return `
                     <div class="card mb-2 ${statusClass}">
@@ -383,29 +364,21 @@ window.MibsModule = {
                                 </div>
                                 ${statusBadge}
                             </div>
-                            
                             ${r.errors.length > 0 ? `
                                 <div class="alert alert-danger py-1 px-2 mt-2 mb-0 small">
-                                    <strong>Errors:</strong><br>
-                                    ${r.errors.join('<br>')}
-                                </div>
-                            ` : ''}
-                            
+                                    <strong>Errors:</strong><br>${r.errors.join('<br>')}
+                                </div>` : ''}
                             ${r.imports.length > 0 ? `
                                 <div class="text-muted small mt-2">
                                     <strong>Imports:</strong> ${r.imports.join(', ')}
-                                </div>
-                            ` : ''}
-                            
+                                </div>` : ''}
                             ${hasLocalMissing ? `
                                 <div class="alert alert-warning py-1 px-2 mt-2 mb-0 small">
                                     <i class="fas fa-exclamation-triangle"></i>
                                     <strong>Missing:</strong> ${r.missing_deps.join(', ')}
-                                </div>
-                            ` : ''}
+                                </div>` : ''}
                         </div>
-                    </div>
-                `;
+                    </div>`;
             }).join('');
 
             resultsDiv.classList.remove('d-none');
@@ -414,57 +387,44 @@ window.MibsModule = {
                 depList.innerHTML = `
                     <p class="mb-2">The following dependencies are not available:</p>
                     <ul class="mb-2">
-                        ${data.global_missing_deps.map(dep => `
-                            <li><code>${dep}</code></li>
-                        `).join('')}
+                        ${data.global_missing_deps.map(dep => `<li><code>${dep}</code></li>`).join('')}
                     </ul>
                     <p class="mb-0 small">
                         <strong>Options:</strong><br>
                         • Upload these MIBs in a separate batch first<br>
                         • Continue anyway (affected MIBs will fail to load)
-                    </p>
-                `;
+                    </p>`;
                 depAlert.classList.remove('d-none');
             } else {
                 depAlert.classList.add('d-none');
             }
 
-            document.getElementById('btn-upload').disabled = !data.can_upload;
-
-            if (data.can_upload) {
-                document.getElementById('btn-upload').innerHTML = 
-                    '<i class="fas fa-upload"></i> Upload & Reload';
-            } else {
-                document.getElementById('btn-upload').innerHTML = 
-                    '<i class="fas fa-ban"></i> Cannot Upload (Fix Errors)';
-            }
+            const uploadBtn = document.getElementById('btn-upload');
+            uploadBtn.disabled = !data.can_upload;
+            uploadBtn.innerHTML = data.can_upload
+                ? '<i class="fas fa-upload"></i> Upload &amp; Reload'
+                : '<i class="fas fa-ban"></i> Cannot Upload (Fix Errors)';
 
         } catch (e) {
             console.error('Validation error:', e);
             alert('Validation failed: ' + e.message);
         } finally {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
+            indicator.classList.add('d-none');
         }
     },
 
     uploadFiles: async function() {
         const input = document.getElementById('mib-upload-input');
-        const btn = document.getElementById('btn-upload');
+        const btn   = document.getElementById('btn-upload');
         const originalText = btn.innerHTML;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
-        btn.disabled = true;
+        btn.disabled  = true;
 
         try {
             const formData = new FormData();
-            for (let file of input.files) {
-                formData.append('files', file);
-            }
+            for (let file of input.files) formData.append('files', file);
 
-            const res = await fetch('/api/mibs/upload', {
-                method: 'POST',
-                body: formData
-            });
+            const res = await fetch('/api/mibs/upload', { method: 'POST', body: formData });
 
             if (!res.ok) {
                 const errorText = await res.text();
@@ -481,66 +441,45 @@ window.MibsModule = {
             const failed = data.results.filter(r => r.status === 'failed').length;
             const errors = data.results.filter(r => r.status === 'error').length;
 
-            let message = `Upload Complete!\\n\\n`;
-            message += `✓ Successfully loaded: ${loaded}\\n`;
-            
-            if (failed > 0) {
-                message += `⚠ Failed to load: ${failed}\\n`;
-            }
-            
-            if (errors > 0) {
-                message += `✗ Upload errors: ${errors}\\n`;
-            }
+            let message = `Upload Complete!\n\n✓ Successfully loaded: ${loaded}\n`;
+            if (failed > 0) message += `⚠ Failed to load: ${failed}\n`;
+            if (errors > 0) message += `✗ Upload errors: ${errors}\n`;
 
-            const problemFiles = data.results.filter(r => 
-                r.status === 'failed' || r.status === 'error'
-            );
-            
+            const problemFiles = data.results.filter(r => r.status === 'failed' || r.status === 'error');
             if (problemFiles.length > 0) {
-                message += `\\nDetails:\\n`;
-                problemFiles.forEach(r => {
-                    message += `• ${r.filename}: ${r.error || 'Unknown error'}\\n`;
-                });
+                message += `\nDetails:\n`;
+                problemFiles.forEach(r => { message += `• ${r.filename}: ${r.error || 'Unknown error'}\n`; });
             }
 
             alert(message);
-
             await this.loadStatus();
             await this.loadTraps();
-
             this.uploadModal.hide();
 
         } catch (e) {
             console.error('Upload error:', e);
-            alert('Upload failed:\\n\\n' + e.message);
+            alert('Upload failed:\n\n' + e.message);
         } finally {
             btn.innerHTML = originalText;
-            btn.disabled = false;
+            btn.disabled  = false;
         }
     },
-
 
     reloadMibs: async function() {
         const reloadBtn = document.querySelector('button[onclick*="reloadMibs"]');
         const originalHtml = reloadBtn ? reloadBtn.innerHTML : '';
-        
+
         if (reloadBtn) {
             reloadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-            reloadBtn.disabled = true;
+            reloadBtn.disabled  = true;
         }
-        
+
         try {
             const res = await fetch('/api/mibs/reload', { method: 'POST' });
-            
-            if (!res.ok) {
-                throw new Error(`HTTP ${res.status}`);
-            }
-            
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
-            
             await this.loadStatus();
             await this.loadTraps();
-            
             TrishulUtils.showNotification(`Reloaded: ${data.loaded} loaded, ${data.failed} failed`, 'success');
         } catch (e) {
             console.error('Reload failed', e);
@@ -548,29 +487,22 @@ window.MibsModule = {
         } finally {
             if (reloadBtn) {
                 reloadBtn.innerHTML = originalHtml;
-                reloadBtn.disabled = false;
+                reloadBtn.disabled  = false;
             }
         }
     },
-	
+
     deleteMib: async function(filename) {
-        if (!confirm(`Delete ${filename}?\\n\\nThis will remove the MIB file and reload all MIBs.`)) {
-            return;
-        }
-        
+        if (!confirm(`Delete ${filename}?\n\nThis will remove the MIB file and reload all MIBs.`)) return;
+
         try {
-            const res = await fetch(`/api/mibs/${filename}`, { 
-                method: 'DELETE'
-            });
-            
+            const res = await fetch(`/api/mibs/${filename}`, { method: 'DELETE' });
             if (!res.ok) {
                 const errorData = await res.json();
                 throw new Error(errorData.detail || 'Delete failed');
             }
-            
             TrishulUtils.showNotification(`Deleted ${filename}`, 'success');
             await this.reloadMibs();
-            
         } catch (e) {
             console.error('Delete failed:', e);
             alert(`Delete failed: ${e.message}`);
@@ -579,12 +511,12 @@ window.MibsModule = {
 
     showDependencyHelp: function() {
         alert(
-            'How to resolve missing dependencies:\\n\\n' +
-            '1. Download the required MIB files from vendor websites or mibs.pysnmp.com\\n' +
-            '2. Upload them using this same dialog\\n' +
-            '3. Re-upload the original MIB after dependencies are loaded\\n\\n' +
-            'Common sources:\\n' +
-            '- Standard MIBs: https://www.iana.org/assignments/ianaiftype-mib\\n' +
+            'How to resolve missing dependencies:\n\n' +
+            '1. Download the required MIB files from vendor websites or mibs.pysnmp.com\n' +
+            '2. Upload them using this same dialog\n' +
+            '3. Re-upload the original MIB after dependencies are loaded\n\n' +
+            'Common sources:\n' +
+            '- Standard MIBs: https://www.iana.org/assignments/ianaiftype-mib\n' +
             '- Vendor MIBs: Check manufacturer support pages'
         );
     }
