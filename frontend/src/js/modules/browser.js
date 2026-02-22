@@ -24,6 +24,13 @@ window.BrowserModule = {
         const filterType = sessionStorage.getItem('browserFilterType');
         
         if (searchOid) {
+            // Clear any pending restore state — previous session's tree selection
+            // must not conflict with this new programmatic search.  The node being
+            // searched may not be in the (unexpanded) tree yet, which would trigger
+            // a spurious "Could not find node" console.warn.
+            this.pendingSelectedOid   = null;
+            this.pendingExpandedNodes = [];
+
             document.getElementById('browser-search-input').value = searchOid;
             
             if (filterType) {
@@ -33,7 +40,7 @@ window.BrowserModule = {
             
             setTimeout(() => {
                 this.search();
-                this.showNotification(`Searching for: ${searchOid}`, 'info');
+                TrishulUtils.showNotification(`Searching for: ${searchOid}`, 'info');
             }, 300);
             
             sessionStorage.removeItem('browserSearchOid');
@@ -254,17 +261,8 @@ window.BrowserModule = {
                 }
             }
         } else {
-            console.warn(`Could not find node to restore: ${this.pendingSelectedOid}`);
-            const panel = document.getElementById('browser-details-panel');
-            if (panel) {
-                panel.innerHTML = `
-                    <div class="text-center text-muted p-5">
-                        <i class="fas fa-info-circle fa-3x mb-3"></i>
-                        <p>Previous selection not available</p>
-                        <p class="small">Select an OID from the tree to view details</p>
-                    </div>
-                `;
-            }
+            // Node not found — clear silently, no console.warn needed
+            this.pendingSelectedOid = null;
         }
     },
 
@@ -741,19 +739,19 @@ window.BrowserModule = {
                     await this.expandNodeRecursively(node, maxDepth);
                     count++;
                 }
-                this.showNotification(`Expanded ${count} module(s) to ${maxDepth} level(s)`, 'success');
+                TrishulUtils.showNotification(`Expanded ${count} module(s) to ${maxDepth} level(s)`, 'success');
             } else {
                 const rootNode = document.querySelector('.tree-node[data-oid="1.3.6.1"]');
                 if (rootNode) {
                     await this.expandNodeRecursively(rootNode, maxDepth);
-                    this.showNotification(`Expanded OID tree to ${maxDepth} level(s)`, 'success');
+                    TrishulUtils.showNotification(`Expanded OID tree to ${maxDepth} level(s)`, 'success');
                 } else {
-                    this.showNotification('Root node not found', 'warning');
+                    TrishulUtils.showNotification('Root node not found', 'warning');
                 }
             }
         } catch (e) {
             console.error('Failed to expand tree:', e);
-            this.showNotification('Failed to expand tree', 'error');
+            TrishulUtils.showNotification('Failed to expand tree', 'error');
         } finally {
             if (expandBtn) {
                 expandBtn.innerHTML = originalHtml;
@@ -779,7 +777,7 @@ window.BrowserModule = {
         });
         
         if (count > 0) {
-            this.showNotification(`Collapsed ${count} node(s)`, 'info');
+            TrishulUtils.showNotification(`Collapsed ${count} node(s)`, 'info');
         }
     },
 
@@ -1021,7 +1019,7 @@ window.BrowserModule = {
                             <div class="d-flex align-items-center">
                                 <code class="flex-grow-1 text-truncate" title="${node.full_name}">${node.full_name}</code>
                                 <button type="button" class="btn btn-xs btn-outline-secondary ms-2" 
-                                        onclick="navigator.clipboard.writeText('${node.full_name}'); BrowserModule.showNotification('Copied!', 'success')">
+                                        onclick="navigator.clipboard.writeText('${node.full_name}'); TrishulUtils.showNotification('Copied!', 'success')">
                                     <i class="fas fa-copy"></i>
                                 </button>
                             </div>
@@ -1033,7 +1031,7 @@ window.BrowserModule = {
                             <div class="d-flex align-items-center">
                                 <code class="flex-grow-1 text-truncate" title="${node.oid}">${node.oid}</code>
                                 <button type="button" class="btn btn-xs btn-outline-secondary ms-2" 
-                                        onclick="navigator.clipboard.writeText('${node.oid}'); BrowserModule.showNotification('Copied!', 'success')">
+                                        onclick="navigator.clipboard.writeText('${node.oid}'); TrishulUtils.showNotification('Copied!', 'success')">
                                     <i class="fas fa-copy"></i>
                                 </button>
                             </div>
@@ -1134,20 +1132,5 @@ window.BrowserModule = {
             sessionStorage.setItem('selectedTrap', JSON.stringify(trapData));
         }
         window.location.hash = '#traps';
-    },
-    
-    showNotification: function(message, type = 'info') {
-        const banner = document.createElement('div');
-        banner.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-        banner.style.cssText = 'top: 80px; right: 20px; z-index: 9999; min-width: 300px;';
-        banner.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-        document.body.appendChild(banner);
-        
-        setTimeout(() => {
-            banner.remove();
-        }, 3000);
     }
 };

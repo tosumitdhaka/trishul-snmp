@@ -131,6 +131,10 @@ function showApp() {
     }
 
     initializeAppLogic();
+
+    // Connect WebSocket after app is initialised
+    const _wsToken = sessionStorage.getItem("snmp_token");
+    if (window.WsClient && _wsToken) WsClient.connect(_wsToken);
 }
 
 // ==================== Logout ====================
@@ -139,6 +143,8 @@ window.logout = async function(callApi = true) {
     if (callApi) {
         try { await fetch('/api/settings/logout', { method: 'POST' }); } catch(e){}
     }
+    // Cleanly close WS before clearing token
+    if (window.WsClient) WsClient.disconnect();
     sessionStorage.removeItem("snmp_token");
     window.location.reload();
 };
@@ -161,19 +167,35 @@ function initializeAppLogic() {
         });
     }
 
-    // Initial metadata + health check
+    // One-shot REST call: populates app version/title on first paint.
+    // Subsequent connectivity state comes from WS events — no setInterval needed.
     updateBackendStatus();
 
-    // Periodic health check every 60s
-    setInterval(updateBackendStatus, 60000);
+    // WS-driven badge: online/offline reflected instantly without any polling.
+    window.addEventListener('trishul:ws:open', () => {
+        const badge = document.getElementById("backend-status");
+        if (badge) {
+            badge.className   = "badge bg-success";
+            badge.textContent = "Online";
+        }
+    });
+
+    window.addEventListener('trishul:ws:close', () => {
+        const badge = document.getElementById("backend-status");
+        if (badge) {
+            badge.className   = "badge bg-danger";
+            badge.textContent = "Offline";
+        }
+    });
 
     // Routing
     window.addEventListener('hashchange', handleRouting);
     handleRouting();
 }
 
-// ==================== Backend Status (deduplicated) ====================
-// Replaces separate loadAppMetadata() + checkBackendHealth() — same endpoint, same logic.
+// ==================== Backend Status ====================
+// Called once on startup to populate app version/title metadata.
+// The badge itself is kept in sync by WS open/close listeners above.
 
 async function updateBackendStatus() {
     const badge     = document.getElementById("backend-status");
@@ -203,7 +225,7 @@ async function updateBackendStatus() {
                 author:      data.author,
                 description: data.description
             };
-            console.log(`🔱 ${data.name} v${data.version} loaded successfully`);
+            console.log(`\uD83D\uDD31 ${data.name} v${data.version} loaded successfully`);
         }
 
     } catch (e) {

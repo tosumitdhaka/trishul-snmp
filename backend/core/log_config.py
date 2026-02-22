@@ -9,10 +9,13 @@ def setup_logging():
     - format: [Timestamp] [Level] [Module] - Message
     - handlers: Console (stdout)
     - loggers: Root, Uvicorn, FastAPI
+
+    NOTE: This file was renamed from core/logging.py to core/log_config.py
+    to avoid shadowing the Python stdlib `logging` module.
     """
-    
+
     log_level = settings.LOG_LEVEL.upper()
-    
+
     LOGGING_CONFIG = {
         "version": 1,
         "disable_existing_loggers": False,
@@ -30,16 +33,16 @@ def setup_logging():
             },
         },
         "loggers": {
-            # The Root Logger (catches your app logs)
+            # Root logger — catches all app logs
             "": {
                 "handlers": ["console"],
                 "level": log_level,
                 "propagate": True
             },
-            # Uvicorn (Server logs) - Override to match our format
+            # Uvicorn — override to match our format
             "uvicorn": {
                 "handlers": ["console"],
-                "level": "INFO", 
+                "level": "INFO",
                 "propagate": False
             },
             "uvicorn.access": {
