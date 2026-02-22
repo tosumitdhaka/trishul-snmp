@@ -58,8 +58,16 @@ window.MibsModule = {
             const files = dt.files;
 
             if (files && files.length > 0) {
-                fileInput.files = files;
+                // 1. Open modal FIRST — this internally clears the input
                 MibsModule.showUploadModal();
+
+                // 2. Re-assign files AFTER modal has cleared the input
+                // DataTransfer is required because FileList is read-only
+                const transfer = new DataTransfer();
+                Array.from(files).forEach(f => transfer.items.add(f));
+                fileInput.files = transfer.files;
+
+                // 3. Trigger validation after files are safely set
                 setTimeout(() => MibsModule.validateFiles(), 100);
             }
         });
