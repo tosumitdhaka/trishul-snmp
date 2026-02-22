@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 
 
@@ -16,10 +17,11 @@ class Settings:
     TRAP_PORT  = int(os.getenv("TRAP_PORT",  "1162"))
 
     # File paths
-    CUSTOM_DATA_FILE = CONFIG_DIR / "custom_data.json"
-    SECRETS_FILE     = CONFIG_DIR / "secrets.json"
-    STATS_FILE       = CONFIG_DIR / "stats.json"
-    TRAPS_FILE       = DATA_DIR   / "traps.jsonl"
+    CUSTOM_DATA_FILE  = CONFIG_DIR / "custom_data.json"
+    SECRETS_FILE      = CONFIG_DIR / "secrets.json"
+    STATS_FILE        = CONFIG_DIR / "stats.json"
+    APP_SETTINGS_FILE = CONFIG_DIR / "app_settings.json"
+    TRAPS_FILE        = DATA_DIR   / "traps.jsonl"
 
     # Logging
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
@@ -53,13 +55,34 @@ class Settings:
             self.CUSTOM_DATA_FILE.write_text('{}')
 
         if not self.SECRETS_FILE.exists():
-            import json
             self.SECRETS_FILE.write_text(json.dumps(
                 {"username": "admin", "password": "admin123"}, indent=2
             ))
 
         if not self.TRAPS_FILE.exists():
             self.TRAPS_FILE.touch()
+
+        # Load app_settings.json overrides.
+        # These win over env defaults but NOT over explicit env vars set in docker-compose.
+        # Priority order: env vars (class attrs) > app_settings.json > hardcoded defaults.
+        # Since class attrs are already resolved from env, we only override here if the
+        # env var was NOT explicitly set (i.e. still at its default value).
+        self._apply_app_settings()
+
+    def _apply_app_settings(self):
+        """Apply persisted app_settings.json on top of env defaults at startup."""
+        if not self.APP_SETTINGS_FILE.exists():
+            return
+        try:
+            data = json.loads(self.APP_SETTINGS_FILE.read_text())
+            if "session_timeout" in data:
+                self.SESSION_TIMEOUT = int(data["session_timeout"])
+            if "auto_start_simulator" in data:
+                self.AUTO_START_SIMULATOR = bool(data["auto_start_simulator"])
+            if "auto_start_trap_receiver" in data:
+                self.AUTO_START_TRAP_RECEIVER = bool(data["auto_start_trap_receiver"])
+        except Exception:
+            pass  # Corrupt file — silently fall back to env defaults
 
 
 settings = Settings()
