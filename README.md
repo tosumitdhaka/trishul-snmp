@@ -26,6 +26,8 @@ A web-based SNMP toolkit for network engineers and administrators. Simulate SNMP
 - 🌐 **Modern UI** - Clean, responsive interface built with Bootstrap 5
 - 📊 **Export Data** - JSON/CSV export for walks and trap data
 - 🔄 **Real-time** - Live trap receiver with instant OID resolution
+- ⚡ **WebSocket Push** - Live status and stats updates via WS — zero polling
+- 📊 **Activity Stats** - Dashboard counters for SNMP requests, traps, walks, MIB reloads — all real-time
 
 ---
 
@@ -155,9 +157,10 @@ Interactive tree explorer for navigating OID hierarchies and understanding MIB s
 Manage authentication and system preferences.
 
 **Key features:**
-- Change admin password
-- Session management
-- System information
+- Credential management (username + password with strength indicator)
+- Auto-start toggles and session timeout (persisted to `app_settings.json`)
+- Export or reset activity stats
+- System info (version, author, description)
 
 ---
 
@@ -167,16 +170,16 @@ Manage authentication and system preferences.
 ┌───────────────────────────────────────────────────┐
 │           Web Browser (Port 8080)                 │
 │  Dashboard │ Simulator │ Walker │ Traps │ MIBs    │
-└─────────────────────┬─────────────────────────────┘
-                      │ HTTP/HTTPS
+└─────────────────────┬───────────────────────────┘
+                      │ HTTP / WebSocket
                       │
-         ┌────────────▼────────────┐
+         ┌────────────▼────────┐
          │   Nginx (Frontend)      │
          │   Static Files + Proxy  │
-         └────────────┬────────────┘
-                      │ REST API
+         └────────────┬────────┘
+                      │ REST API + WebSocket
                       │
-         ┌────────────▼─────────────────────────┐
+         ┌────────────▼──────────────────────────┐
          │   FastAPI Backend (Port 8000)        │
          │                                      │
          │  ┌────────────────────────────────┐  │
@@ -201,7 +204,7 @@ Manage authentication and system preferences.
          └──────────────┬───────────────────────┘
                         │ SNMP (UDP)
                         │
-         ┌──────────────┴──────────────┐
+         ┌─────────────┴─────────────┐
          │                             │
     ┌────▼─────┐               ┌───────▼────┐
     │  Test    │               │   Test     │
@@ -324,7 +327,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [Development Setup](https://github.co
 
 ---
 
-## 💖 Support This Project
+## 💶 Support This Project
 
 Trishul-SNMP is **100% free and open-source** (MIT License).
 
@@ -342,13 +345,13 @@ Trishul-SNMP is **100% free and open-source** (MIT License).
 
 ## 🚀 Roadmap
 
-### ✅ v1.2.0 (Current)
-- [x] MIB Browser with tree navigation
-- [x] Search and filter OIDs
-- [x] State persistence
-- [x] Trap library (24+ traps)
+### ✅ v1.2.4 (Current)
+- [x] WebSocket real-time push (dashboard, simulator, traps)
+- [x] Activity stats dashboard (8 live counters)
+- [x] App behaviour settings (auto-start, session timeout)
+- [x] Stats export / reset from Settings page
 
-### 🚧 v1.3.0 (In Progress)
+### 📋 v1.3.0 (Planned)
 - [ ] SNMPv3 authentication (MD5, SHA, AES)
 - [ ] Tree export to JSON/CSV
 - [ ] Dark mode

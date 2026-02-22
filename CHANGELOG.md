@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.4] - 2026-02-22
+
+### Added
+- **WebSocket** - `ws-client.js` browser client with auto-reconnect, token auth via `?token=` query param, and a navbar live-connection dot indicator.
+- **UI / Utils** - `TrishulUtils.formatRelativeTime`, `formatUptime` helpers (epoch-safe, 1970 guard); consolidated `showNotification` replacing all per-module toast implementations.
+- **Dashboard** - 8-counter Activity Stats row: SNMP Requests, OIDs Loaded, Traps Received, Traps Sent, Walks Executed, OIDs Returned, MIBs Uploaded, Times Reloaded — all WS-driven, zero polling.
+- **Settings / App Behaviour** - New card: Auto-Start toggles (Simulator + Trap Receiver) and Session Timeout field, persisted to `data/configs/app_settings.json`; yellow “Restart required” badge on save.
+- **Settings / Stats Management** - New card: Export Stats (downloads `trishul-stats-YYYY-MM-DD.json`) and Reset Stats (confirm dialog).
+- **Settings / About** - New read-only card showing app name, version, author, and description from `/api/meta`.
+- **Backend** - `GET /api/settings/app` and `POST /api/settings/app` endpoints; `AppSettingsUpdate` Pydantic model with `ge`/`le` validation on session timeout (60–86400 s).
+- **Core/Config** - `APP_SETTINGS_FILE` path constant; `_apply_app_settings()` loads `app_settings.json` overrides at startup (`SESSION_TIMEOUT`, `AUTO_START_*`).
+
+### Changed
+- **Dashboard, Simulator, Traps** - All real-time data switched from HTTP polling to WebSocket push (`full_state` snapshot on connect + incremental events).
+- **Docker** - Backend healthcheck interval 10 s → 30 s; `app.js` periodic meta poll removed (data sourced from WS `full_state` on connect).
+- **Traps page** - Receiver table “Port” column replaced with “Uptime” column.
+- **Settings page** - Restructured to 2 × 2 card grid (Auth + App Behaviour top row; Stats Management + About bottom row).
+
+### Fixed
+- **WebSocket** - Backend crash on client connect caused by missing `_enrich_sim_status` call; resolved by adding helper to simulator service.
+- **Traps** - `_broadcast_stats` now fires after trap send (was before), fixing Traps Sent counter undercount on the dashboard.
+- **Dashboard** - Service status cards showed loading spinner indefinitely on page switch; fixed by triggering status refresh on page activation.
+- **Dashboard** - Service status icon used wrong colour class (purple → secondary).
+- **Utils** - `formatRelativeTime` returned “56 years ago” for epoch `0` / `null`; added explicit guard returning `—`.
+- **Browser** - State restore on page switch conflicted with live WS updates; resolved sequencing.
+
+---
+
 ## [1.2.3] - 2026-02-18
 
 ### Added
@@ -23,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Nginx** - Added `/api/ws` location block (WS upgrade + long read timeout); added proxy_redirect, gzip, real-IP forwarding headers, and increased proxy timeouts.
 
 ### Fixed
-- **Docker** - Healthcheck now uses Python `urllib` instead of `curl` (not present in `python:3.10-slim`), fixing “backend unhealthy” startup blocking.
+- **Docker** - Healthcheck now uses Python `urllib` instead of `curl` (not present in `python:3.10-slim`), fixing "backend unhealthy" startup blocking.
 - **Simulator** - Restart-chain stats: indirect restarts now increment `restart_count` via shared helper.
 - **Traps** - Receiver status uses configured port (not hardcoded `1162`); `clear_traps()` uses context manager; `SnmpEngine` singleton avoids repeated engine init.
 - **Walker** - Validate inputs before walk; preserve `HTTPException` messages; label-only walk returns correct `mode`.
@@ -197,6 +225,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.2.4]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/tosumitdhaka/trishul-snmp/compare/v1.2.0...v1.2.1
