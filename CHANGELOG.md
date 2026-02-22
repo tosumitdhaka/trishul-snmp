@@ -10,15 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.5] - 2026-02-22
 
 ### Added
-- **UI** - Dark mode toggle in navbar; preference persisted to `localStorage` and survives page refresh across all pages.
-- **MIB Manager** - Drag-and-drop MIB file upload onto the MIB Library card; blue overlay appears on drag-enter with `Drop MIB files here` prompt.
-- **MIB Manager** - Auto-validation on file selection; validation runs immediately on file pick or drag-and-drop without requiring a manual Validate button click.
+- **MIB Manager** - Drag-and-drop MIB file upload onto the MIB Library card
+- **MIB Manager** - Auto-validation on file selection; validation runs immediately on file pick or drag-and-drop without clicking Validate
+- **UI** - Dark mode toggle in navbar; preference persisted to `localStorage`, survives page refresh
 
 ### Changed
-- **MIB Manager** - Removed manual "Validate" button from upload modal footer; `Upload & Reload` auto-enables once validation passes.
+- **MIB Manager** - Removed manual "Validate" button from upload modal; Upload & Reload button auto-enables after validation passes
 
 ### Fixed
-- **MIB Manager** - Race condition in drag-and-drop handler: dropped files were silently cleared by `showUploadModal()` before `validateFiles()` ran; fixed by re-assigning files via a fresh `DataTransfer` object after modal reset.
+- **MIB Manager** - Race condition in drag-and-drop handler: dropped files were cleared by `showUploadModal()` before `validateFiles()` ran; fixed by re-assigning via `DataTransfer` after modal reset
 
 ---
 
@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **WebSocket** - `ws-client.js` browser client with auto-reconnect, token auth via `?token=` query param, and a navbar live-connection dot indicator.
 - **UI / Utils** - `TrishulUtils.formatRelativeTime`, `formatUptime` helpers (epoch-safe, 1970 guard); consolidated `showNotification` replacing all per-module toast implementations.
 - **Dashboard** - 8-counter Activity Stats row: SNMP Requests, OIDs Loaded, Traps Received, Traps Sent, Walks Executed, OIDs Returned, MIBs Uploaded, Times Reloaded — all WS-driven, zero polling.
-- **Settings / App Behaviour** - New card: Auto-Start toggles (Simulator + Trap Receiver) and Session Timeout field, persisted to `data/configs/app_settings.json`; yellow "Restart required" badge on save.
+- **Settings / App Behaviour** - New card: Auto-Start toggles (Simulator + Trap Receiver) and Session Timeout field, persisted to `data/configs/app_settings.json`; yellow “Restart required” badge on save.
 - **Settings / Stats Management** - New card: Export Stats (downloads `trishul-stats-YYYY-MM-DD.json`) and Reset Stats (confirm dialog).
 - **Settings / About** - New read-only card showing app name, version, author, and description from `/api/meta`.
 - **Backend** - `GET /api/settings/app` and `POST /api/settings/app` endpoints; `AppSettingsUpdate` Pydantic model with `ge`/`le` validation on session timeout (60–86400 s).
@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Dashboard, Simulator, Traps** - All real-time data switched from HTTP polling to WebSocket push (`full_state` snapshot on connect + incremental events).
 - **Docker** - Backend healthcheck interval 10 s → 30 s; `app.js` periodic meta poll removed (data sourced from WS `full_state` on connect).
-- **Traps page** - Receiver table "Port" column replaced with "Uptime" column.
+- **Traps page** - Receiver table “Port” column replaced with “Uptime” column.
 - **Settings page** - Restructured to 2 × 2 card grid (Auth + App Behaviour top row; Stats Management + About bottom row).
 
 ### Fixed
@@ -45,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Traps** - `_broadcast_stats` now fires after trap send (was before), fixing Traps Sent counter undercount on the dashboard.
 - **Dashboard** - Service status cards showed loading spinner indefinitely on page switch; fixed by triggering status refresh on page activation.
 - **Dashboard** - Service status icon used wrong colour class (purple → secondary).
-- **Utils** - `formatRelativeTime` returned "56 years ago" for epoch `0` / `null`; added explicit guard returning `—`.
+- **Utils** - `formatRelativeTime` returned “56 years ago” for epoch `0` / `null`; added explicit guard returning `—`.
 - **Browser** - State restore on page switch conflicted with live WS updates; resolved sequencing.
 
 ---

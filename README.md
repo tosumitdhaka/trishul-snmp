@@ -28,7 +28,6 @@ A web-based SNMP toolkit for network engineers and administrators. Simulate SNMP
 - 🔐 **Secure** - Session-based authentication with credential management
 - 🐳 **Containerized** - One-command Docker deployment with host network support
 - 🌐 **Modern UI** - Clean, responsive interface built with Bootstrap 5
-- 🌙 **Dark Mode** - Toggle between light and dark themes, persisted across sessions
 - 📊 **Export Data** - JSON/CSV export for walks and trap data
 - 🔄 **Real-time** - Live trap receiver with instant OID resolution
 - ⚡ **WebSocket Push** - Live status and stats updates via WS — zero polling
@@ -128,7 +127,7 @@ Send and receive SNMP traps with real-time monitoring and MIB-based trap browsin
 Upload, validate, and manage MIB files with automatic dependency resolution.
 
 **Key features:**
-- Drag-and-drop upload with auto-validation
+- Drag-and-drop upload
 - Syntax validation
 - Dependency resolution
 - Trap enumeration
@@ -174,7 +173,7 @@ Manage authentication and system preferences.
 ```
 ┌───────────────────────────────────────────────────┐
 │           Web Browser (Port 8080)                 │
-│  Dashboard │ Simulator │ Walker │ Traps │ MIBs    │
+│  Dashboard │ Simulator │ Walker │ Traps │ MIB    │
 └─────────────────────┬───────────────────────────┘
                       │ HTTP / WebSocket
                       │
@@ -354,8 +353,6 @@ Trishul-SNMP is **100% free and open-source** (MIT License).
 - [x] Dark mode implementation (persisted to local storage)
 - [x] Drag-and-drop MIB file uploads
 - [x] Auto-validation on MIB file selection
-
-### ✅ v1.2.4
 - [x] WebSocket real-time push (dashboard, simulator, traps)
 - [x] Activity stats dashboard (8 live counters)
 - [x] App behaviour settings (auto-start, session timeout)
@@ -366,10 +363,17 @@ Trishul-SNMP is **100% free and open-source** (MIT License).
 - [ ] SNMPv3 authentication (MD5, SHA, AES)
 - [ ] Tree export to JSON/CSV
 
-### 📋 Planned
+### 📋 v1.2.4
+- [x] WebSocket real-time push (dashboard, simulator, traps)
+- [x] Activity stats dashboard (8 live counters)
+- [x] App behaviour settings (auto-start, session timeout)
+- [x] Stats export / reset from Settings page
+
+### 📋 Planned (Future)
 - [ ] Scheduled SNMP walks
 - [ ] Device/Agent management
 - [ ] Multi-language support
+      
 
 [Vote on features →](https://github.com/tosumitdhaka/trishul-snmp/issues)
 
@@ -421,4 +425,17 @@ Built with:
 
 ---
 
-<div align="center": 
+<div align="center">
+
+**Made with 🔱 by [Sumit Dhaka](https://github.com/tosumitdhaka)**
+
+*Trishul-SNMP - Modern SNMP Management Made Simple*
+
+If this project helps you, please consider [⭐ starring it](https://github.com/tosumitdhaka/trishul-snmp) and [💰 sponsoring](https://github.com/sponsors/tosumitdhaka)!
+
+[![GitHub](https://img.shields.io/badge/GitHub-tosumitdhaka-181717?style=for-the-badge&logo=github)](https://github.com/tosumitdhaka)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/in/sumit-dhaka-a5a796b3/)
+
+**[⬆ Back to Top](#-trishul-snmp)**
+
+</div>
