@@ -1,10 +1,11 @@
 <div class="row g-3 mb-3">
 
-    <!-- Authentication (existing) -->
+    <!-- Authentication -->
     <div class="col-md-6">
         <div class="card shadow-sm h-100">
             <div class="card-header py-2">
-                <i class="fas fa-user-shield me-2 text-primary"></i> Authentication
+                <!-- title wrapped in <span> so icon+text = one flex item (space-between rule) -->
+                <span><i class="fas fa-user-shield me-2 text-primary"></i> Authentication</span>
             </div>
             <div class="card-body">
                 <p class="text-muted small">Update the login credentials for the application.</p>
@@ -128,7 +129,7 @@
     <div class="col-md-6">
         <div class="card shadow-sm">
             <div class="card-header py-2">
-                <i class="fas fa-chart-bar me-2 text-info"></i> Stats Management
+                <span><i class="fas fa-chart-bar me-2 text-info"></i> Stats Management</span>
             </div>
             <div class="card-body">
                 <p class="text-muted small">Export current activity counters as JSON, or reset all counters to zero.</p>
@@ -148,7 +149,7 @@
     <div class="col-md-6">
         <div class="card shadow-sm">
             <div class="card-header py-2">
-                <i class="fas fa-info-circle me-2 text-secondary"></i> About
+                <span><i class="fas fa-info-circle me-2 text-secondary"></i> About</span>
             </div>
             <div class="card-body">
                 <dl class="row small mb-0">

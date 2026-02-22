@@ -174,13 +174,12 @@ pre {
     display: flex;
     align-items: center;
     /*
-     * Default: flex-start so bare inline content (icon + text node) stays
-     * left-aligned as two sibling flex items without splitting across the header.
-     * Headers that intentionally need title-left / action-right layout should
-     * use Bootstrap's justify-content-between utility class in HTML, which
-     * carries !important and overrides this safely.
+     * space-between: title (left span) vs action(s) (right).
+     * RULE: every .card-header child that is a title MUST be wrapped in <span>
+     * so icon + text form ONE flex item. A bare <i> + text node would split
+     * into two items and push text to the right edge.
      */
-    justify-content: flex-start;
+    justify-content: space-between;
     gap: 0.5rem;
 }
 
