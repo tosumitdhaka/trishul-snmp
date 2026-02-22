@@ -27,7 +27,7 @@
 body {
     font-size: 14px;
     overflow-x: hidden;
-    background-color: #f1f5f9;
+    background-color: var(--bs-body-bg);
     font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     margin: 0;
 }
@@ -152,13 +152,11 @@ pre {
 /* ==================== Cards ==================== */
 
 .card {
-    /* Visible border: one step darker than page bg (#f1f5f9) for clear card edges */
     border: 1px solid #cbd5e1;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     margin-bottom: 1rem;
 }
 
-/* Dashboard stat cards — same border, kept explicit for clarity */
 .card-bordered {
     border: 1px solid #cbd5e1 !important;
 }
@@ -168,22 +166,14 @@ pre {
     color: var(--header-text);
     font-weight: 600;
     border-bottom: 1px solid rgba(255,255,255,0.12);
-    /* Unified height: all headers same minimum, consistent vertical rhythm */
     min-height: 44px;
     padding: 0 1rem;
     display: flex;
     align-items: center;
-    /*
-     * space-between: title (left span) vs action(s) (right).
-     * RULE: every .card-header child that is a title MUST be wrapped in <span>
-     * so icon + text form ONE flex item. A bare <i> + text node would split
-     * into two items and push text to the right edge.
-     */
     justify-content: space-between;
     gap: 0.5rem;
 }
 
-/* Ensure badges/code inside dark card headers remain readable */
 .card-header .badge {
     background-color: rgba(255,255,255,0.15) !important;
     color: #fff !important;
@@ -232,13 +222,7 @@ pre {
 }
 
 /* ==================== Unified Button Sizes ==================== */
-/*
-  Site-wide button scale:
-    .btn-xs  — icon-only or tight inline actions  (12px font, 2px/6px pad)
-    .btn-sm  — standard small action buttons      (13px font, 4px/10px pad)
-  All header action buttons should use btn-sm.
-  All inline table/row action buttons should use btn-xs.
-*/
+
 .btn-xs {
     padding: 0.15rem 0.4rem;
     font-size: 0.75rem;
@@ -512,12 +496,11 @@ table {
     align-items: center;
     justify-content: center;
     color: #94a3b8;
-    font-family: system-ui, -apple-system, sans-serif; /* override monospace for placeholder */
+    font-family: system-ui, -apple-system, sans-serif;
     background-color: #f8fafc;
 }
 
 /* ==================== Received Traps Section Header ==================== */
-/* Mimics .card-header for the inline div header in traps.html */
 .section-header {
     background-color: var(--header-bg);
     color: var(--header-text);
@@ -528,7 +511,7 @@ table {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border-radius: calc(0.375rem - 1px) calc(0.375rem - 1px) 0 0; /* match Bootstrap card-header radius */
+    border-radius: calc(0.375rem - 1px) calc(0.375rem - 1px) 0 0; 
 }
 
 .section-header .badge {
@@ -553,4 +536,56 @@ table {
     border-color: rgba(255,255,255,0.4);
     box-shadow: none;
     color: #fff;
+}
+
+/* ==================== Dark Mode Overrides ==================== */
+[data-bs-theme="dark"] .card, 
+[data-bs-theme="dark"] .tool-card,
+[data-bs-theme="dark"] .card-bordered {
+    border-color: #334155 !important;
+    background-color: #1e293b;
+}
+
+[data-bs-theme="dark"] .bg-light {
+    background-color: rgba(255,255,255,0.05) !important;
+}
+
+[data-bs-theme="dark"] .table-light {
+    --bs-table-bg: #1e293b;
+    --bs-table-color: #f8fafc;
+}
+[data-bs-theme="dark"] .table {
+    --bs-table-color: #cbd5e1;
+}
+[data-bs-theme="dark"] .text-muted {
+    color: #94a3b8 !important;
+}
+[data-bs-theme="dark"] #wrapper .bg-white {
+    background-color: #1e293b !important;
+}
+[data-bs-theme="dark"] .list-group-item {
+    background-color: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+[data-bs-theme="dark"] .modal-content {
+    background-color: #1e293b;
+    border-color: #334155;
+}
+[data-bs-theme="dark"] .modal-header,
+[data-bs-theme="dark"] .modal-footer {
+    border-color: #334155;
+}
+[data-bs-theme="dark"] .form-control {
+    background-color: #0f172a;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+[data-bs-theme="dark"] .form-control:focus {
+    background-color: #0f172a;
+    color: #e2e8f0;
+}
+[data-bs-theme="dark"] #browser-details-panel code {
+    background-color: #0f172a;
+    color: #f8fafc;
 }

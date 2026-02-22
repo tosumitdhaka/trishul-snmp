@@ -15,6 +15,54 @@ window.MibsModule = {
         document.getElementById('trap-search').addEventListener('input', (e) => {
             this.filterTraps(e.target.value);
         });
+
+        this.initDropzone();
+    },
+
+    initDropzone: function() {
+        const dropzone = document.getElementById('mib-dropzone');
+        const overlay = document.getElementById('drop-overlay');
+        const fileInput = document.getElementById('mib-upload-input');
+
+        if (!dropzone || !overlay || !fileInput) return;
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropzone.addEventListener(eventName, e => {
+                e.preventDefault();
+                e.stopPropagation();
+            }, false);
+        });
+
+        let dragCounter = 0;
+        
+        dropzone.addEventListener('dragenter', (e) => {
+            dragCounter++;
+            overlay.classList.remove('d-none');
+            overlay.classList.add('d-flex');
+        });
+
+        dropzone.addEventListener('dragleave', (e) => {
+            dragCounter--;
+            if (dragCounter === 0) {
+                overlay.classList.add('d-none');
+                overlay.classList.remove('d-flex');
+            }
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            dragCounter = 0;
+            overlay.classList.add('d-none');
+            overlay.classList.remove('d-flex');
+
+            const dt = e.dataTransfer;
+            const files = dt.files;
+
+            if (files && files.length > 0) {
+                fileInput.files = files;
+                MibsModule.showUploadModal();
+                setTimeout(() => MibsModule.validateFiles(), 100);
+            }
+        });
     },
 
     loadStatus: async function() {
@@ -425,15 +473,15 @@ window.MibsModule = {
             const failed = data.results.filter(r => r.status === 'failed').length;
             const errors = data.results.filter(r => r.status === 'error').length;
 
-            let message = `Upload Complete!\n\n`;
-            message += `✓ Successfully loaded: ${loaded}\n`;
+            let message = `Upload Complete!\\n\\n`;
+            message += `✓ Successfully loaded: ${loaded}\\n`;
             
             if (failed > 0) {
-                message += `⚠ Failed to load: ${failed}\n`;
+                message += `⚠ Failed to load: ${failed}\\n`;
             }
             
             if (errors > 0) {
-                message += `✗ Upload errors: ${errors}\n`;
+                message += `✗ Upload errors: ${errors}\\n`;
             }
 
             const problemFiles = data.results.filter(r => 
@@ -441,9 +489,9 @@ window.MibsModule = {
             );
             
             if (problemFiles.length > 0) {
-                message += `\nDetails:\n`;
+                message += `\\nDetails:\\n`;
                 problemFiles.forEach(r => {
-                    message += `• ${r.filename}: ${r.error || 'Unknown error'}\n`;
+                    message += `• ${r.filename}: ${r.error || 'Unknown error'}\\n`;
                 });
             }
 
@@ -456,7 +504,7 @@ window.MibsModule = {
 
         } catch (e) {
             console.error('Upload error:', e);
-            alert('Upload failed:\n\n' + e.message);
+            alert('Upload failed:\\n\\n' + e.message);
         } finally {
             btn.innerHTML = originalText;
             btn.disabled = false;
@@ -498,7 +546,7 @@ window.MibsModule = {
     },
 	
     deleteMib: async function(filename) {
-        if (!confirm(`Delete ${filename}?\n\nThis will remove the MIB file and reload all MIBs.`)) {
+        if (!confirm(`Delete ${filename}?\\n\\nThis will remove the MIB file and reload all MIBs.`)) {
             return;
         }
         
@@ -523,12 +571,12 @@ window.MibsModule = {
 
     showDependencyHelp: function() {
         alert(
-            'How to resolve missing dependencies:\n\n' +
-            '1. Download the required MIB files from vendor websites or mibs.pysnmp.com\n' +
-            '2. Upload them using this same dialog\n' +
-            '3. Re-upload the original MIB after dependencies are loaded\n\n' +
-            'Common sources:\n' +
-            '- Standard MIBs: https://www.iana.org/assignments/ianaiftype-mib\n' +
+            'How to resolve missing dependencies:\\n\\n' +
+            '1. Download the required MIB files from vendor websites or mibs.pysnmp.com\\n' +
+            '2. Upload them using this same dialog\\n' +
+            '3. Re-upload the original MIB after dependencies are loaded\\n\\n' +
+            'Common sources:\\n' +
+            '- Standard MIBs: https://www.iana.org/assignments/ianaiftype-mib\\n' +
             '- Vendor MIBs: Check manufacturer support pages'
         );
     }
