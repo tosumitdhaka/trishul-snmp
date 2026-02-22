@@ -14,6 +14,10 @@ A web-based SNMP toolkit for network engineers and administrators. Simulate SNMP
 
 ---
 
+![Trishul SNMP Studio Demo](./assets/trishul_snmp_demo.gif)
+
+---
+
 ## ✨ Features
 
 - 🖥️ **SNMP Simulator** - Run configurable SNMP agent with custom OID values
