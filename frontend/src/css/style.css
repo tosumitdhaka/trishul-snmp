@@ -173,7 +173,15 @@ pre {
     padding: 0 1rem;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    /*
+     * Default: flex-start so bare inline content (icon + text node) stays
+     * left-aligned as two sibling flex items without splitting across the header.
+     * Headers that intentionally need title-left / action-right layout should
+     * use Bootstrap's justify-content-between utility class in HTML, which
+     * carries !important and overrides this safely.
+     */
+    justify-content: flex-start;
+    gap: 0.5rem;
 }
 
 /* Ensure badges/code inside dark card headers remain readable */
