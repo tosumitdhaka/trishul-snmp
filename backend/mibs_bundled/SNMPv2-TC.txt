@@ -1,0 +1,136 @@
+SNMPv2-TC DEFINITIONS ::= BEGIN
+
+IMPORTS
+    INTEGER, OCTET STRING, OBJECT IDENTIFIER
+        FROM SNMPv2-SMI;
+
+TEXTUAL-CONVENTION MACRO ::=
+BEGIN
+    TYPE NOTATION ::=
+                  DisplayPart
+                  "STATUS" Status
+                  "DESCRIPTION" Text
+                  ReferPart
+                  "SYNTAX" Syntax
+
+    VALUE NOTATION ::=
+                  value(VALUE Syntax)
+
+    DisplayPart ::=
+                  "DISPLAY-HINT" Text
+                | empty
+
+    Status ::=
+                  "current"
+                | "deprecated"
+                | "obsolete"
+
+    ReferPart ::=
+                  "REFERENCE" Text
+                | empty
+
+    Text ::= value(IA5String)
+
+    Syntax ::=   type
+                 | "BITS" "{" NamedBits "}"
+
+    NamedBits ::= NamedBit
+                | NamedBits "," NamedBit
+
+    NamedBit ::=  identifier "(" number ")"
+END
+
+DisplayString ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "255a"
+    STATUS       current
+    DESCRIPTION  "NVT ASCII string, max 255 chars."
+    SYNTAX       OCTET STRING (SIZE (0..255))
+
+PhysAddress ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "1x:"
+    STATUS       current
+    DESCRIPTION  "Media/physical address."
+    SYNTAX       OCTET STRING
+
+MacAddress ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "1x:"
+    STATUS       current
+    DESCRIPTION  "802 MAC address in canonical order."
+    SYNTAX       OCTET STRING (SIZE (6))
+
+TruthValue ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "Boolean value."
+    SYNTAX       INTEGER { true(1), false(2) }
+
+TestAndIncr ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "Atomic integer for test-and-increment operations."
+    SYNTAX       INTEGER (0..2147483647)
+
+AutonomousType ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "Independently extensible type identification."
+    SYNTAX       OBJECT IDENTIFIER
+
+VariablePointer ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "Pointer to a specific object instance."
+    SYNTAX       OBJECT IDENTIFIER
+
+RowPointer ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "Pointer to a conceptual row."
+    SYNTAX       OBJECT IDENTIFIER
+
+RowStatus ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "Used to manage creation and deletion of conceptual rows."
+    SYNTAX   INTEGER {
+                 active(1),
+                 notInService(2),
+                 notReady(3),
+                 createAndGo(4),
+                 createAndWait(5),
+                 destroy(6)
+             }
+
+TimeStamp ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "Value of sysUpTime at which a specific occurrence happened."
+    SYNTAX       TimeTicks
+
+TimeInterval ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "d"
+    STATUS       current
+    DESCRIPTION  "Period of time in units of 0.01 seconds."
+    SYNTAX       INTEGER (0..2147483647)
+
+DateAndTime ::= TEXTUAL-CONVENTION
+    DISPLAY-HINT "2d-1d-1d,1d:1d:1d.1d,1a1d:1d"
+    STATUS       current
+    DESCRIPTION  "A date-time specification."
+    SYNTAX       OCTET STRING (SIZE (8 | 11))
+
+StorageType ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "Memory realization of a conceptual row."
+    SYNTAX   INTEGER {
+                 other(1),
+                 volatile(2),
+                 nonVolatile(3),
+                 permanent(4),
+                 readOnly(5)
+             }
+
+TDomain ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "Denotes a kind of transport service."
+    SYNTAX       OBJECT IDENTIFIER
+
+TAddress ::= TEXTUAL-CONVENTION
+    STATUS       current
+    DESCRIPTION  "Denotes a transport service address."
+    SYNTAX       OCTET STRING (SIZE (1..255))
+
+END
