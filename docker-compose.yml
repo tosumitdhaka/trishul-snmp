@@ -4,12 +4,16 @@
 #   C2: added healthcheck on backend — frontend waits for FastAPI to be ready
 #       before nginx starts proxying, preventing 502 on first page load
 #   C3: use python urllib for healthcheck — curl not present in python:3.10-slim
-#   C4: increased healthcheck interval 10s→30s — 10s was generating excessive
+#   C4: increased healthcheck interval 10s->30s — 10s was generating excessive
 #       uvicorn access log noise with no operational benefit post-startup
+# Platform fix:
+#   Added platform: linux/arm64 — ensures native execution on Apple Silicon / ARM hosts
+#   without QEMU emulation, preventing container crash-loop (exit 255)
 
 services:
   backend:
-    build: ./backend
+    image: ghcr.io/tosumitdhaka/trishul-snmp-backend:latest
+    platform: linux/arm64
     container_name: trishul-snmp-backend
     env_file:
       - .env
@@ -38,8 +42,6 @@ services:
       # Auto-Start flags (Part A)
       - AUTO_START_SIMULATOR=${AUTO_START_SIMULATOR:-true}
       - AUTO_START_TRAP_RECEIVER=${AUTO_START_TRAP_RECEIVER:-true}
-    # C2/C3/C4: healthcheck using python stdlib — no curl needed in slim image.
-    # interval: 30s is plenty for a running container; start_period handles startup.
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 30s
@@ -49,11 +51,11 @@ services:
     restart: always
 
   frontend:
-    build: ./frontend
+    image: ghcr.io/tosumitdhaka/trishul-snmp-frontend:latest
+    platform: linux/arm64
     container_name: trishul-snmp-frontend
     ports:
       - "8080:80"
-    # C2: wait for backend to pass healthcheck before starting nginx
     depends_on:
       backend:
         condition: service_healthy
