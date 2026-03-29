@@ -530,11 +530,12 @@ window.TrapsModule = {
     },
 
     updateStatusUI: function(status) {
-        const badge        = document.getElementById("tr-status-badge");
-        const detail       = document.getElementById("tr-status-detail");
-        const btnStart     = document.getElementById("btn-tr-start");
-        const btnStop      = document.getElementById("btn-tr-stop");
-        const metricsPanel = document.getElementById("tr-metrics");
+        const badge         = document.getElementById("tr-status-badge");
+        const detail        = document.getElementById("tr-status-detail");
+        const btnStart      = document.getElementById("btn-tr-start");
+        const btnStop       = document.getElementById("btn-tr-stop");
+        const metricsPanel  = document.getElementById("tr-metrics");
+        const resolveToggle = document.getElementById("tr-resolve-toggle");
         
         if (!badge) return;
         
@@ -543,6 +544,11 @@ window.TrapsModule = {
             badge.textContent = "RUNNING";
             if (detail) {
                 detail.textContent = `Port ${status.port || '--'} | ${status.resolve_mibs ? 'Resolved' : 'Raw'}`;
+            }
+            // Fix #26: sync the resolve toggle checkbox to the actual running state
+            // so that any user opening the page sees the correct value, not the HTML default.
+            if (resolveToggle && status.resolve_mibs != null) {
+                resolveToggle.checked = status.resolve_mibs;
             }
             // Cache uptime_seconds for updateMetrics()
             this._receiverUptime = status.uptime_seconds != null ? status.uptime_seconds : null;
@@ -553,6 +559,11 @@ window.TrapsModule = {
             badge.className   = "badge bg-secondary";
             badge.textContent = "STOPPED";
             if (detail) detail.textContent = "";
+            // Fix #26: also sync toggle when stopped, using last known resolve_mibs
+            // value returned by the backend (resolve_mibs is non-null even when stopped).
+            if (resolveToggle && status.resolve_mibs != null) {
+                resolveToggle.checked = status.resolve_mibs;
+            }
             this._receiverUptime = null;
             if (metricsPanel) metricsPanel.classList.add('d-none');
             btnStart.disabled = false;
