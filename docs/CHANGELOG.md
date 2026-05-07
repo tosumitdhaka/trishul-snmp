@@ -10,6 +10,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.1.1] — 2026-05-07
+
+### Added
+
+- **Live benchmark harness** — `scripts/benchmark_snmpd.py` compares raw vs enriched API and CLI paths against a live SNMP agent.
+- **Alias-policy regression fixtures** — dedicated tests now separate `tsmi` sidecar contract validation from `tsnmp` display-policy behavior.
+
+### Changed
+
+- **Canonical display rendering for scalar instance aliases** — numeric translation and enrichment now prefer `MODULE::symbol.0` when an exact `.0` alias is an `OBJECT IDENTIFIER` for a scalar `OBJECT-TYPE`, without changing low-level exact lookup semantics.
+
+---
+
 ## [0.1.0] — 2026-05-07
 
 ### Added

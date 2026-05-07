@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from trishul_snmp import __version__
 from trishul_snmp.cli.main import _handle_translate, main, run
 from trishul_snmp.types import ErrorStatus, OctetStringValue, Response, VarBind
 
@@ -172,7 +173,7 @@ def test_cli_version(capsys) -> None:
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert captured.out.strip() == "0.1.0"
+    assert captured.out.strip() == __version__
 
 
 def test_cli_translate_with_single_module_bundle(tmp_path: Path, capsys) -> None:

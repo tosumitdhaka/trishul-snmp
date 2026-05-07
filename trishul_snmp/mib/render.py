@@ -34,11 +34,17 @@ def enrich_varbinds(bundle: MibBundle | None, varbinds: tuple[VarBind, ...]) -> 
                 oid=varbind.oid,
                 value=varbind.value,
                 match=match,
-                display_name=match.symbolic if match is not None else None,
+                display_name=_render_name(bundle, match=match),
                 display_value=_render_value(bundle, varbind, match=match),
             )
         )
     return tuple(enriched)
+
+
+def _render_name(bundle: MibBundle, *, match: OidMatch | None) -> str | None:
+    if match is None:
+        return None
+    return bundle.display_symbolic_from_match(match)
 
 
 def _render_value(bundle: MibBundle, varbind: VarBind, *, match: OidMatch | None) -> str:

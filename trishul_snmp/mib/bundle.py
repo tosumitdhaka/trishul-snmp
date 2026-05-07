@@ -25,6 +25,14 @@ class MibBundle:
         """Translate symbolic targets to numeric OIDs and vice versa."""
         return self._registry.translate(target)
 
+    def display_symbolic(self, target: str | Sequence[int]) -> str:
+        """Render a numeric OID using user-facing symbolic display policy."""
+        return self._registry.display_symbolic(target)
+
+    def display_symbolic_from_match(self, match: OidMatch) -> str:
+        """Render a resolved OID match using user-facing symbolic display policy."""
+        return self._registry.display_symbolic_from_match(match)
+
     def resolve(self, target: str) -> tuple[int, ...]:
         """Resolve MODULE::symbol[.suffix] to a numeric OID tuple."""
         return self._registry.resolve_symbolic(target)

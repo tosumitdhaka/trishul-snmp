@@ -5,6 +5,16 @@ Status: `planned` | `in progress` | `done` | `deferred`
 
 ---
 
+## v0.1.1 — shipped 2026-05-07
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | Canonical display rendering for scalar instance aliases | done | Numeric translation and enrichment prefer `MODULE::symbol.0` for scalar `.0` display without changing exact lookup semantics. |
+| 2 | Live benchmark harness | done | `scripts/benchmark_snmpd.py` compares raw vs enriched API and CLI paths against a live SNMP agent. |
+| 3 | Alias-policy regression fixtures | done | Synthetic bundle fixtures isolate `tsmi` sidecar contract validation from `tsnmp` display-policy behavior. |
+
+---
+
 ## v0.1.0 — shipped 2026-05-07
 
 | # | Item | Status | Notes |

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "trishul-snmp"
-version = "0.1.0"
+version = "0.1.1"
 description = "A modern SNMP runtime and manager with optional tsmi-powered MIB enrichment"
 readme = "README.md"
 license = { text = "MIT" }

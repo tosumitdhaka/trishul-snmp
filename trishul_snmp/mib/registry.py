@@ -158,8 +158,16 @@ class MibRegistry:
         if isinstance(target, str) and not is_numeric_oid_text(target) and "::" in target:
             return oid_to_string(self.resolve_symbolic(target))
 
-        match = self.lookup_oid(target)
-        return match.symbolic
+        return self.display_symbolic(target)
+
+    def display_symbolic(self, value: str | Sequence[int]) -> str:
+        """Render a numeric OID using user-facing symbolic display policy."""
+        match = self.lookup_oid(value)
+        return self.display_symbolic_from_match(match)
+
+    def display_symbolic_from_match(self, match: OidMatch) -> str:
+        """Render *match* using user-facing symbolic display policy."""
+        return self._display_match(match).symbolic
 
     def resolve_type(self, module: str, type_name: str) -> MibTypeRecord | None:
         """Return a type record from the local module or imported modules."""
@@ -181,6 +189,30 @@ class MibRegistry:
         if entry is None:
             return None
         return self._symbol_index.get((entry.module, entry.symbol))
+
+    def _display_match(self, match: OidMatch) -> OidMatch:
+        if (
+            match.suffix
+            or match.object_type != "OBJECT IDENTIFIER"
+            or not match.oid
+            or match.oid[-1] != 0
+        ):
+            return match
+
+        parent = self._exact_oid_index.get(match.oid[:-1])
+        if parent is None or parent.object_type != "OBJECT-TYPE" or parent.nodetype != "scalar":
+            return match
+
+        return OidMatch(
+            oid=match.oid,
+            module=parent.module,
+            symbol=parent.name,
+            matched_oid=parent.oid,
+            suffix=(0,),
+            class_name=parent.class_name,
+            object_type=parent.object_type,
+            nodetype=parent.nodetype,
+        )
 
 
 def validate_module_record(module: MibModuleRecord, *, path: Path) -> None:
