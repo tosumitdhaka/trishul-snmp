@@ -14,6 +14,7 @@ repository and community entrypoints live under [`.github/`](../.github/).
 | Document | Description |
 |---|---|
 | [Getting Started](getting-started.md) | Install, first requests, and end-to-end runtime flows |
+| [Ecosystem and Compatibility](ecosystem.md) | `tsnmp`/`tsmi` split, tested version pairing, supported bundle inputs, ecosystem status |
 | [Python API](python-api.md) | `V2cManager`, `load_bundle`, public types, and usage patterns |
 | [CLI Reference](cli.md) | Commands, common options, exit codes, and examples |
 | [Configuration](configuration.md) | Manager constructor fields, bundle loading inputs, and CLI/runtime knobs |
@@ -32,6 +33,7 @@ repository and community entrypoints live under [`.github/`](../.github/).
 ## Quick links
 
 - **Install:** `pip install trishul-snmp`
+- **Ecosystem status:** [Ecosystem and Compatibility](ecosystem.md)
 - **Repository:** https://github.com/tosumitdhaka/trishul-snmp
 - **Issues:** https://github.com/tosumitdhaka/trishul-snmp/issues
 - **GitHub Contributing Entry:** [`.github/CONTRIBUTING.md`](../.github/CONTRIBUTING.md)

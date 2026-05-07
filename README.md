@@ -13,6 +13,9 @@
 It keeps the protocol runtime independent from MIB compilation and uses compiled
 JSON artifacts only when symbolic enrichment is desired.
 
+For the canonical `tsnmp`/`tsmi` split, tested version pairing, and current
+ecosystem status, see [Ecosystem and Compatibility](docs/ecosystem.md).
+
 The split with `trishul-smi` (`tsmi`) is intentional:
 
 - `tsnmp`
@@ -124,6 +127,7 @@ asyncio.run(main())
 
 - [Documentation Index](docs/index.md) — entry point for package docs
 - [Getting Started](docs/getting-started.md) — install, first requests, and runtime flows
+- [Ecosystem and Compatibility](docs/ecosystem.md) — `tsnmp`/`tsmi` split, tested pairing, bundle inputs, ecosystem status
 - [Python API](docs/python-api.md) — `V2cManager`, `load_bundle`, and public types
 - [CLI Reference](docs/cli.md) — commands, options, exit codes, and examples
 - [Configuration](docs/configuration.md) — manager constructor and bundle/runtime knobs
