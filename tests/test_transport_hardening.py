@@ -227,6 +227,32 @@ def test_udp_client_receive_wraps_timeout(monkeypatch) -> None:
     asyncio.run(scenario())
 
 
+def test_udp_client_receive_wraps_distinct_asyncio_timeout(monkeypatch) -> None:
+    class _AsyncTimeoutError(Exception):
+        pass
+
+    loop = _HappyLoop()
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
+    monkeypatch.setattr(asyncio, "TimeoutError", _AsyncTimeoutError)
+
+    async def _raise_timeout(awaitable, *, timeout: float):
+        del timeout
+        close = getattr(awaitable, "close", None)
+        if close is not None:
+            close()
+        raise _AsyncTimeoutError("timed out")
+
+    monkeypatch.setattr(asyncio, "wait_for", _raise_timeout)
+    client = UdpClient("127.0.0.1", 161)
+    client._socket = _FakeSocket()
+
+    async def scenario() -> None:
+        with pytest.raises(RequestTimeoutError, match="timed out waiting for a response"):
+            await client.receive(timeout=0.1)
+
+    asyncio.run(scenario())
+
+
 def test_udp_client_receive_wraps_socket_oserror(monkeypatch) -> None:
     loop = _ReceiveFailLoop()
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)

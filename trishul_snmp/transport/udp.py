@@ -76,7 +76,7 @@ class UdpClient:
                 loop.sock_recv(self._socket, self._max_datagram_size),
                 timeout=timeout,
             )
-        except TimeoutError as exc:
+        except (asyncio.TimeoutError, TimeoutError) as exc:
             raise RequestTimeoutError("SNMP request timed out waiting for a response") from exc
         except OSError as exc:
             raise TransportError("Failed to receive UDP datagram") from exc
