@@ -10,7 +10,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.1.0a0] — 2026-05-06
+## [0.1.0] — 2026-05-07
 
 ### Added
 
@@ -32,5 +32,5 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - no raw MIB ingestion or runtime compiler dependency
 - no public generic JSON normalization layer for foreign schemas
 
-See [v0.1.0a0 alpha release notes](archive/v0.1.0a0-alpha.md) for the fuller
+See [v0.1.0 release notes](archive/v0.1.0.md) for the fuller
 release summary.

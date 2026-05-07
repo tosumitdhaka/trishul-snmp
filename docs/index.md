@@ -24,7 +24,7 @@ repository and community entrypoints live under [`.github/`](../.github/).
 | [Roadmap](roadmap.md) | Shipped scope, next milestones, and deferred work |
 | [Release Checklist](release-checklist.md) | Maintainer checklist for cutting and verifying a release |
 | [Changelog](CHANGELOG.md) | Version history and release notes |
-| [Archived Alpha Notes](archive/v0.1.0a0-alpha.md) | Detailed notes for the v0.1.0a0 alpha cut |
+| [Archived v0.1.0 Release Notes](archive/v0.1.0.md) | Detailed notes for the initial v0.1.0 release |
 | [Archived v0.1 Design](archive/tsnmp-v0.1-design.md) | Historical v0.1 planning and design document |
 
 ---

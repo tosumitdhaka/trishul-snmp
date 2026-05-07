@@ -132,7 +132,7 @@ asyncio.run(main())
 - [Roadmap](docs/roadmap.md) — shipped scope and deferred work
 - [Contributing](docs/contributing.md) — dev setup and quality gates
 - [Changelog](docs/CHANGELOG.md) — version history
-- [v0.1.0a0 Alpha Release Notes](docs/archive/v0.1.0a0-alpha.md) — archived alpha notes
+- [v0.1.0 Release Notes](docs/archive/v0.1.0.md) — archived initial release notes
 - [v0.1 Design Plan](docs/archive/tsnmp-v0.1-design.md) — historical planning and design doc
 
 ## Repository Layout

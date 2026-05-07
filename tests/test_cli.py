@@ -172,7 +172,7 @@ def test_cli_version(capsys) -> None:
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert captured.out.strip() == "0.1.0a0"
+    assert captured.out.strip() == "0.1.0"
 
 
 def test_cli_translate_with_single_module_bundle(tmp_path: Path, capsys) -> None:

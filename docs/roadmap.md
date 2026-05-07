@@ -5,7 +5,7 @@ Status: `planned` | `in progress` | `done` | `deferred`
 
 ---
 
-## v0.1.0a0 — shipped 2026-05-06
+## v0.1.0 — shipped 2026-05-07
 
 | # | Item | Status | Notes |
 |---|---|---|---|
