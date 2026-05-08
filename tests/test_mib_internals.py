@@ -19,7 +19,7 @@ from trishul_snmp import (
 )
 from trishul_snmp.errors import InvalidOidError
 from trishul_snmp.mib.bundle import MibBundle
-from trishul_snmp.mib.models import MibNode
+from trishul_snmp.mib.models import MibMemberRef, MibNode
 from trishul_snmp.mib.registry import MibRegistry
 from trishul_snmp.types import OidMatch
 
@@ -178,6 +178,8 @@ def test_mibnode_symbolic_and_enrich_varbinds_without_bundle() -> None:
         status="current",
         index=None,
         augments=None,
+        description=None,
+        members=None,
         constraints=None,
     )
 
@@ -189,6 +191,37 @@ def test_mibnode_symbolic_and_enrich_varbinds_without_bundle() -> None:
     assert node.symbolic == "APP-MIB::status"
     assert enriched[0].display_name is None
     assert enriched[0].display_value == "7"
+
+
+def test_normalize_node_map_retains_description_and_members() -> None:
+    normalized = mib_registry.normalize_node_map(
+        {
+            "statusNotice": {
+                "oid": "1.3.6.1.4.1.99999.10",
+                "oid_path": [1, 3, 6, 1, 4, 1, 99999, 10],
+                "object_type": "NOTIFICATION-TYPE",
+                "class": "notificationtype",
+                "status": "current",
+                "description": "Status changed notification.",
+                "members": [
+                    {"module": "APP-MIB", "object": "status"},
+                    {"module": "APP-MIB", "object": "peerTarget"},
+                ],
+            },
+        },
+        module_name="APP-MIB",
+        path=Path("/virtual/APP-MIB.json"),
+        default_nodetype="notification",
+    )
+
+    node = normalized["statusNotice"]
+
+    assert node.nodetype == "notification"
+    assert node.description == "Status changed notification."
+    assert node.members == (
+        MibMemberRef(module="APP-MIB", object="status"),
+        MibMemberRef(module="APP-MIB", object="peerTarget"),
+    )
 
 
 def test_rendering_falls_back_for_unknown_oid_lookup_and_untranslated_oid_value() -> None:
@@ -300,6 +333,24 @@ def test_normalize_node_map_validation_errors(tmp_path: Path) -> None:
     with pytest.raises(BundleValidationError):
         mib_registry.normalize_node_map(
             {"node": _valid_node(constraints=["bad"])},
+            module_name="APP-MIB",
+            path=path,
+        )
+    with pytest.raises(BundleValidationError):
+        mib_registry.normalize_node_map(
+            {"node": _valid_node(description=1)},
+            module_name="APP-MIB",
+            path=path,
+        )
+    with pytest.raises(BundleValidationError):
+        mib_registry.normalize_node_map(
+            {"node": _valid_node(members="bad")},
+            module_name="APP-MIB",
+            path=path,
+        )
+    with pytest.raises(BundleValidationError):
+        mib_registry.normalize_node_map(
+            {"node": _valid_node(members=[{"module": "APP-MIB", "object": 1}])},
             module_name="APP-MIB",
             path=path,
         )

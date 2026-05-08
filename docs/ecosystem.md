@@ -4,8 +4,8 @@
 `tsmi` is the optional compiler/enrichment producer.
 
 This page is the canonical summary of how those two packages fit together,
-what compatibility is expected today, and where the current ecosystem edges
-still are.
+what compatibility is expected today, and what the current producer/runtime
+contract looks like.
 
 ---
 
@@ -24,14 +24,14 @@ numeric OIDs are used.
 
 ---
 
-## Current tested pairing
+## Current released pairing
 
-Latest known tested released pairing:
+Latest known released pairing for the current documented contract:
 
 | Package | Version |
 |---|---|
 | `trishul-snmp` | `0.1.1` |
-| `trishul-smi` | `0.4.2` |
+| `trishul-smi` | `0.4.3` |
 
 What this pairing currently means in practice:
 
@@ -39,6 +39,7 @@ What this pairing currently means in practice:
 - compiled JSON enrichment works when you explicitly load artifacts with `load_bundle(...)`
 - a single compiled module JSON file is valid runtime input
 - directory sidecars are optional for correctness
+- published `tsmi` CLI and Python API can both emit optional bundle sidecars
 
 This is a compatibility window, not a forever-implicit promise for every future
 JSON shape. If upstream JSON IR versioning changes, `tsnmp` should accept that
@@ -121,24 +122,22 @@ This is the better fit when you want:
 
 ---
 
-## Current producer gap
+## Current producer status
 
-The main ecosystem gap is now on the `tsmi` CLI surface, not on the `tsnmp`
-runtime surface.
+The main `tsnmp`/`tsmi` producer/runtime contract is now in a healthier state.
 
-Current state with `trishul-smi 0.4.2`:
+Current state with `trishul-smi 0.4.3`:
 
-- published Python API can emit `manifest.json`
-- published Python API can emit `oid_index.json`
-- published CLI compile path emits module JSON files only
+- published Python API can emit standalone module JSON, `manifest.json`, and `oid_index.json`
+- published CLI can emit standalone module JSON and can optionally emit `manifest.json` and `oid_index.json`
+- module JSON remains the atomic downstream runtime artifact
+- grammar updates in `0.4.3` improve real-world compile coverage, but they do not change the `tsnmp` runtime input contract
 
 So:
 
 - runtime consumption is in good shape
-- CLI producer ergonomics are still incomplete
-
-This is tracked upstream in
-[`trishul-smi#9`](https://github.com/tosumitdhaka/trishul-smi/issues/9).
+- published producer ergonomics are materially better than in `0.4.2`
+- `tsnmp` still should not make sidecars mandatory or couple itself to compiler internals
 
 ---
 
@@ -165,7 +164,8 @@ At the current released pairing, the ecosystem is in a usable state:
 - runtime usage is viable today
 - single-file JSON and directory bundle flows both work
 - sidecars improve ergonomics/performance but do not gate correctness
-- the main remaining gap is exposing sidecar emission on the published `tsmi` CLI
+- published `tsmi` CLI now matches the optional-sidecar bundle contract expected by `tsnmp`
+- parser/grammar improvements in `tsmi 0.4.3` increase upstream compile coverage without widening the `tsnmp` runtime scope
 
 For deeper details, see:
 

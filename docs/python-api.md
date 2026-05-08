@@ -10,10 +10,18 @@ same package surface.
 | Symbol | Kind | Purpose |
 |---|---|---|
 | `V2cManager` | class | Async SNMPv2c manager client |
+| `V2cNotifier` | class | Async SNMPv2c trap and inform sender |
+| `V2cNotificationListener` | class | Async SNMPv2c trap and inform listener |
+| `V2cResponder` | class | Async SNMPv2c read-only responder for simulator-style use |
+| `decode_notification(data, *, bundle=None, source_address=None)` | function | Offline decode for BER-encoded SNMPv2c traps and informs |
 | `load_bundle(path)` | function | Load a compiled module JSON file or bundle directory |
 | `MibBundle` | class | Bundle translation and enrichment handle |
+| `InMemoryObjectSource` | class | Mutable in-memory responder object source |
+| `CallbackObjectSource` | class | Callback-backed responder object source |
 | `Response` | dataclass | Result for `get`, `get_next`, and `get_bulk` |
 | `VarBind` | dataclass | OID/value pair plus optional enrichment fields |
+| `NotificationEvent` | dataclass | Structured inbound notification event |
+| `NotificationMemberBinding` | dataclass | Declared notification member paired with the received varbind |
 
 Important public enums and value models:
 
@@ -164,6 +172,7 @@ Main bundle methods:
 - `translate()`
 - `resolve()`
 - `lookup()`
+- `resolve_node()`
 - `resolve_type()`
 - `modules`
 
@@ -194,3 +203,244 @@ Runtime and protocol errors:
 - Bundle-backed translation happens at the API edge before send.
 - Bundle-backed enrichment happens after receive.
 - `tsnmp` does not require `trishul-smi` to be installed at runtime.
+
+---
+
+## `V2cNotifier`
+
+```python
+from trishul_snmp import V2cNotifier
+
+notifier = V2cNotifier(
+    host="10.0.0.20",
+    community="public",
+    port=162,
+    timeout=2.0,
+    retries=1,
+    bundle=None,
+    max_datagram_size=65535,
+)
+```
+
+Use it as an async context manager just like `V2cManager`.
+
+Available methods:
+
+| Method | Returns | Notes |
+|---|---|---|
+| `send_trap(notification, *, varbinds=(), uptime=0)` | `int` | Fire-and-forget SNMPv2c trap send; returns the assigned request id |
+| `send_inform(notification, *, varbinds=(), uptime=0)` | `Response` | Sends an SNMPv2c inform and waits for the matching response |
+
+Input rules:
+
+- `notification` accepts numeric OIDs or `MODULE::symbol` when a bundle is loaded
+- `varbinds` accepts `(target, value)` pairs where `target` is numeric or symbolic
+- `sysUpTime.0` and `snmpTrapOID.0` are auto-populated if not provided explicitly
+
+Example:
+
+```python
+from trishul_snmp import IntegerValue, V2cNotifier, load_bundle
+
+bundle = load_bundle("./mibs-json")
+
+async with V2cNotifier(host="10.0.0.20", community="public", bundle=bundle) as notifier:
+    await notifier.send_trap(
+        "IF-MIB::linkDown",
+        varbinds=[("IF-MIB::ifIndex.7", IntegerValue(7))],
+        uptime=123,
+    )
+```
+
+---
+
+## `V2cNotificationListener`
+
+```python
+from trishul_snmp import V2cNotificationListener
+
+listener = V2cNotificationListener(
+    host="0.0.0.0",
+    port=162,
+    communities=["public"],
+    bundle=None,
+)
+```
+
+Use it as an async context manager, then either call `receive()` directly or
+iterate over it asynchronously.
+
+Available methods and properties:
+
+| Symbol | Returns | Notes |
+|---|---|---|
+| `receive()` | `NotificationEvent` | Waits for the next matching trap or inform |
+| `local_address` | `SocketAddress \| None` | Bound local address once the listener is open |
+| `__aiter__()` | async iterator | Async iterator-first consumption model |
+
+Behavior:
+
+- trap PDUs are surfaced as events
+- inform PDUs are acknowledged automatically before the event is returned
+- `communities=None` accepts any SNMPv2c community
+- `communities=[...]` acts as an allowlist
+
+Example:
+
+```python
+from trishul_snmp import V2cNotificationListener
+
+async with V2cNotificationListener(host="127.0.0.1", port=9162, communities=["public"]) as listener:
+    event = await listener.receive()
+    print(event.pdu_type, event.community, event.source_address)
+```
+
+`NotificationEvent` currently exposes:
+
+| Field | Description |
+|---|---|
+| `request_id` | SNMP request identifier carried by the trap or inform |
+| `community` | Source SNMPv2c community string |
+| `source_address` | Remote UDP source address tuple, or `None` for offline decode |
+| `pdu_type` | `"snmpv2-trap"` or `"inform-request"` |
+| `varbinds` | Tuple of decoded `VarBind` objects |
+| `notification_oid` | Numeric notification OID extracted from `snmpTrapOID.0` when present |
+| `notification_name` | Bundle-backed symbolic notification name when available |
+| `notification_description` | Retained notification description when available |
+| `uptime` | Numeric `sysUpTime.0` value when present |
+| `member_bindings` | Declared notification members paired with received varbinds |
+
+Convenience properties:
+
+- `source_host`
+- `source_port`
+- `is_inform`
+- `declared_members`
+
+`NotificationMemberBinding` exposes:
+
+| Field | Description |
+|---|---|
+| `member` | Retained `MibMemberRef` from the compiled JSON notification metadata |
+| `varbind` | Matching decoded `VarBind`, or `None` when the notification omitted it |
+
+Convenience property:
+
+- `symbolic`
+
+---
+
+## Offline notification decode
+
+```python
+from trishul_snmp import decode_notification, load_bundle
+
+bundle = load_bundle("./mibs-json")
+event = decode_notification(raw_bytes, bundle=bundle)
+
+print(event.notification_name)
+print(event.member_bindings)
+```
+
+`decode_notification()` accepts a BER-encoded SNMPv2c trap or inform message and
+returns the same `NotificationEvent` model used by the live listener API.
+
+Notes:
+
+- `source_address` is optional because offline payloads may not have transport metadata
+- bundle-backed enrichment is optional; numeric decode still works with no bundle
+
+---
+
+## `V2cResponder`
+
+```python
+from trishul_snmp import V2cResponder
+
+responder = V2cResponder(
+    host="127.0.0.1",
+    port=1161,
+    communities=["public"],
+)
+```
+
+`V2cResponder` is a narrow read-only responder meant for tests, demos, and
+simulator-style use. It handles `GET`, `GET_NEXT`, and `GET_BULK`.
+
+Constructor fields:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `host` | `str` | `0.0.0.0` | Listener bind hostname or IP address |
+| `port` | `int` | `161` | Listener UDP port |
+| `communities` | `Sequence[str] \| None` | `None` | Optional SNMPv2c community allowlist |
+| `source` | `ResponderSource \| None` | `None` | Optional custom data source |
+| `objects` | iterable | empty | Initial object seed when using the default in-memory source |
+| `bundle` | `MibBundle \| None` | `None` | Optional bundle for symbolic object registration in the default in-memory source |
+
+Available methods and properties:
+
+| Symbol | Returns | Notes |
+|---|---|---|
+| `serve(count=0)` | `int` | Serves up to `count` requests, or runs until closed when `count=0` |
+| `serve_forever()` | `None` | Infinite serve loop until closed |
+| `handle_request()` | `None` | Handles the next supported request |
+| `local_address` | `SocketAddress \| None` | Bound local address once open |
+| `source` | `ResponderSource` | Active data source object |
+| `set_object(...)` | `OID` | Convenience mutator for the default in-memory source only |
+| `set_objects(...)` | `tuple[OID, ...]` | Convenience bulk mutator for the default in-memory source only |
+| `clear_objects()` | `None` | Clears the default in-memory source only |
+
+Behavior:
+
+- `GET` missing objects return `noSuchObject`
+- `GET_NEXT` and `GET_BULK` return `endOfMibView` at the end of the object set
+- `SET` requests are rejected as `notWritable`
+- unsupported inbound PDU types are ignored
+
+Example:
+
+```python
+import asyncio
+
+from trishul_snmp import IntegerValue, OctetStringValue, V2cResponder, load_bundle
+
+bundle = load_bundle("./mibs-json")
+
+
+async def main() -> None:
+    async with V2cResponder(
+        host="127.0.0.1",
+        port=1161,
+        communities=["public"],
+        bundle=bundle,
+    ) as responder:
+        responder.set_objects(
+            [
+                ("IF-MIB::ifIndex.1", IntegerValue(1)),
+                ("IF-MIB::ifDescr.1", OctetStringValue(b"eth0")),
+            ]
+        )
+        await responder.serve_forever()
+
+
+asyncio.run(main())
+```
+
+---
+
+## Responder sources
+
+`V2cResponder` uses a small read-only source interface:
+
+- `lookup_exact(oid)` -> `SnmpValueType | None`
+- `lookup_next(oid)` -> `tuple[OID, SnmpValueType] | None`
+
+Included helpers:
+
+- `InMemoryObjectSource`
+- `CallbackObjectSource`
+
+`InMemoryObjectSource` accepts numeric or symbolic targets when constructed with a
+bundle. `CallbackObjectSource` is useful when the simulated values need to be
+derived dynamically rather than stored in a static table.

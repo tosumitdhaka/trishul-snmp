@@ -7,7 +7,7 @@ import pytest
 from trishul_snmp.errors import ProtocolError, RequestTimeoutError
 from trishul_snmp.transport.dispatcher import RequestDispatcher
 from trishul_snmp.types import NullValue
-from trishul_snmp.wire.message import SnmpMessage, encode_message
+from trishul_snmp.wire.message import SnmpMessage, decode_message, encode_message
 from trishul_snmp.wire.pdu import Pdu, PduType, RawVarBind
 
 
@@ -119,6 +119,32 @@ def test_dispatcher_raises_after_retry_budget_exhausted() -> None:
     with pytest.raises(RequestTimeoutError, match="timed out"):
         asyncio.run(scenario())
     assert len(client.sent) == 2
+
+
+def test_dispatcher_prepare_request_and_send_only_helpers() -> None:
+    client = FakeUdpClient([])
+    dispatcher = RequestDispatcher(client, community="public", timeout=0.5, retries=0)
+    request = dispatcher.prepare_request(
+        PduType.GET,
+        (RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 3, 0), value=NullValue()),),
+    )
+    next_request = dispatcher.prepare_request(
+        PduType.GET_NEXT,
+        (RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1), value=NullValue()),),
+    )
+
+    decoded = decode_message(request.encoded_message)
+
+    async def scenario() -> None:
+        await dispatcher.send_only(request)
+
+    asyncio.run(scenario())
+
+    assert request.request_id == 1
+    assert next_request.request_id == 2
+    assert decoded.community == "public"
+    assert decoded.pdu.pdu_type is PduType.GET
+    assert client.sent == [request.encoded_message]
 
 
 def test_dispatcher_validates_timeout_and_retries() -> None:

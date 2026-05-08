@@ -1,23 +1,27 @@
 # trishul-snmp — Architecture
 
-> **Last updated:** 2026-05-07
+> **Last updated:** 2026-05-08
 
 ---
 
 ## 1. Overview
 
-`trishul-snmp` is a package-first SNMP manager runtime. The core runtime handles
-wire codec, UDP transport, request dispatch, and manager operations with no MIB
-compiler dependency. Optional compiled-JSON artifacts add symbolic translation
-and richer display.
+`trishul-snmp` is a package-first SNMP runtime. The core runtime handles wire
+codec, UDP transport, request dispatch, manager operations, outbound
+notification send, inbound notification receive, and a narrow read-only
+responder with no MIB compiler dependency. Optional compiled-JSON artifacts add
+symbolic translation and richer display.
 
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
 │                       Python API / CLI                             │
-│                 V2cManager + load_bundle()                         │
+│ V2cManager + V2cNotifier + V2cNotificationListener + V2cResponder │
+│                     + decode_notification()                        │
 ├────────────────────────────────────────────────────────────────────┤
 │ manager/      target normalization, request shaping, walk logic    │
-│ transport/    UDP client, request/response matching, retries       │
+│ notify/       send, listen, and offline notification decode        │
+│ responder/    read-only request handling and simulator sources     │
+│ transport/    UDP client/server, request matching, retries         │
 │ wire/         BER / ASN.1 / SNMPv2c message + PDU codec            │
 │ mib/          optional bundle loading, registry, rendering         │
 └────────────────────────────────────────────────────────────────────┘
@@ -51,6 +55,17 @@ trishul_snmp/
 │   ├── operations.py    ← target normalization and response shaping
 │   └── walk.py          ← subtree walk stop rules and iteration
 │
+├── notify/
+│   ├── client.py        ← V2cNotifier public send API
+│   ├── listener.py      ← V2cNotificationListener public receive API
+│   ├── events.py        ← notification event model + live/offline decode
+│   └── __init__.py      ← notification package export
+│
+├── responder/
+│   ├── server.py        ← V2cResponder public API
+│   ├── sources.py       ← in-memory and callback-backed data sources
+│   └── __init__.py      ← responder package export
+│
 ├── mib/
 │   ├── loader.py        ← bundle file/directory loading
 │   ├── bundle.py        ← public MibBundle abstraction
@@ -60,8 +75,8 @@ trishul_snmp/
 │
 └── cli/
     ├── main.py          ← argument parser and command handlers
-    ├── common.py        ← shared options and bundle loading
-    └── output.py        ← text and JSON rendering
+    ├── common.py        ← shared options, bundle loading, value parsing
+    └── output.py        ← manager and notification text/JSON rendering
 ```
 
 ---
@@ -86,10 +101,10 @@ Non-responsibilities:
 
 Owns request/response transport behavior:
 
-- UDP socket open/close/send/receive
-- timeout and retry handling
-- community-string filtering
-- request-id matching
+- connected UDP client behavior for manager/notifier flows
+- bound UDP server behavior for listener/responder flows
+- timeout and retry handling for request/response paths
+- request-id matching in dispatcher-managed flows
 
 ### 3.3 `manager/`
 
@@ -101,7 +116,31 @@ Owns the public runtime behavior:
 - implement subtree walk logic and stop rules
 - shape public `Response` and `VarBind` models
 
-### 3.4 `mib/`
+### 3.4 `notify/`
+
+Owns notification-specific runtime behavior:
+
+- normalize numeric or symbolic notification OIDs
+- normalize explicit varbind OIDs for outbound notifications
+- auto-populate `sysUpTime.0` and `snmpTrapOID.0`
+- send traps as fire-and-forget
+- send informs and wait for matching responses
+- receive trap and inform PDUs as structured events
+- decode BER-encoded trap/inform messages offline into the same public event model
+- auto-acknowledge informs on the listener path
+- apply optional community allowlists on the listener path
+- map notification member metadata to received varbinds when a bundle is present
+
+### 3.5 `responder/`
+
+Owns the narrow read-only simulator behavior:
+
+- receive `GET`, `GET_NEXT`, and `GET_BULK` over UDP
+- resolve exact and next lexicographic objects from a pluggable source
+- synthesize `noSuchObject` and `endOfMibView` where appropriate
+- keep source interfaces small enough for fixtures and callback-backed simulation
+
+### 3.6 `mib/`
 
 Owns optional symbolic services:
 
@@ -111,7 +150,7 @@ Owns optional symbolic services:
 - reverse-lookup numeric OIDs for enrichment
 - render display names and values
 
-### 3.5 `cli/`
+### 3.7 `cli/`
 
 Owns command-line UX only:
 
@@ -154,6 +193,40 @@ Owns command-line UX only:
 2. `bundle.translate()`, `bundle.resolve()`, and `bundle.lookup()` operate with no network I/O.
 3. A single module JSON file is sufficient for narrow translation use cases.
 
+### 4.5 Outbound trap/inform send
+
+1. Caller invokes `await notifier.send_trap(...)` or `await notifier.send_inform(...)`.
+2. Numeric or symbolic notification OIDs are normalized at the API edge.
+3. `sysUpTime.0` and `snmpTrapOID.0` are inserted first unless explicitly provided.
+4. The notification PDU is encoded and sent over UDP.
+5. Trap send stops after send; inform send waits for a matching `RESPONSE` PDU.
+
+### 4.6 Inbound trap/inform receive
+
+1. Caller opens `V2cNotificationListener(...)`.
+2. `UdpServer` binds the requested host and port.
+3. The listener receives inbound datagrams and decodes SNMP messages.
+4. Non-notification PDUs and filtered communities are ignored.
+5. Informs are acknowledged automatically with a matching `RESPONSE` PDU.
+6. The listener returns a `NotificationEvent` carrying source address, community, PDU kind, decoded varbinds, notification metadata, and optional declared-member bindings.
+
+### 4.7 Offline trap/inform decode
+
+1. Caller invokes `decode_notification(raw_bytes, bundle=...)`.
+2. `decode_message()` decodes the SNMPv2c envelope and notification PDU.
+3. `notification_event_from_message()` builds the public `NotificationEvent`.
+4. If a bundle is loaded, `snmpTrapOID.0` is reverse-looked-up into `notification_name` and declared `member_bindings`.
+5. No UDP transport or dispatcher code is involved.
+
+### 4.8 Read-only responder flow
+
+1. Caller configures `V2cResponder` with an in-memory or callback-backed source.
+2. `UdpServer` binds the requested host and port.
+3. The responder receives inbound SNMPv2c messages and filters by community.
+4. `GET`, `GET_NEXT`, and `GET_BULK` are answered from the configured source using lexicographic OID ordering.
+5. Missing exact objects become `noSuchObject`; next/bulk exhaustion becomes `endOfMibView`.
+6. The responder sends a matching `RESPONSE` PDU back to the request source address.
+
 ---
 
 ## 5. Bundle boundary
@@ -173,13 +246,13 @@ actually need.
 
 ## 6. Scope guardrails
 
-`v0.1` is intentionally narrow:
+The current main-branch scope is still intentionally narrower than a full SNMP
+stack:
 
-- manager-only
 - SNMPv2c-only
-- read-only operations only
 - async-first package API first, CLI second
-- not attempting a full `pysnmp` replacement in the first release
+- manager operations plus notification send/receive and narrow read-only response
+- not attempting a full `pysnmp` replacement
 
-Raw MIB ingestion, compiler workflows, `set`, SNMPv3, traps/listener behavior,
-and agent/responder support remain outside the current architecture.
+Raw MIB ingestion, compiler workflows, writable `set`, SNMPv3, and full
+agent framework support remain outside the current implemented architecture.

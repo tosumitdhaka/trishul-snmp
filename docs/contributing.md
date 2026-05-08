@@ -67,7 +67,7 @@ Please do not introduce these without explicit design discussion:
 - `pysnmp` compatibility shims
 - SNMPv3 support
 - `set`
-- traps/listener or agent functionality
+- full agent framework or writable responder functionality
 
 Those are not rejected forever, but they are outside the current baseline.
 

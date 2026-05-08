@@ -106,6 +106,38 @@ def test_load_bundle_from_single_module_json_file(tmp_path: Path) -> None:
     assert match.symbolic == "IF-MIB::ifIndex.7"
 
 
+def test_load_bundle_retains_description_and_members_metadata(tmp_path: Path) -> None:
+    payload = _if_mib_payload()
+    payload["objects"]["ifDescr"]["description"] = "A textual description of the interface."
+    payload["notifications"] = {
+        "linkDown": {
+            "oid": "1.3.6.1.6.3.1.1.5.3",
+            "oid_path": [1, 3, 6, 1, 6, 3, 1, 1, 5, 3],
+            "object_type": "NOTIFICATION-TYPE",
+            "class": "notificationtype",
+            "status": "current",
+            "description": "The agent has detected that the ifOperStatus object is down.",
+            "members": [
+                {"module": "IF-MIB", "object": "ifIndex"},
+                {"module": "IF-MIB", "object": "ifDescr"},
+            ],
+        }
+    }
+    module_path = tmp_path / "IF-MIB.json"
+    _write_json(module_path, payload)
+
+    bundle = load_bundle(module_path)
+    if_descr = bundle.modules["IF-MIB"].objects["ifDescr"]
+    link_down = bundle.modules["IF-MIB"].notifications["linkDown"]
+
+    assert if_descr.description == "A textual description of the interface."
+    assert link_down.description == "The agent has detected that the ifOperStatus object is down."
+    assert [member.symbolic for member in link_down.members or ()] == [
+        "IF-MIB::ifIndex",
+        "IF-MIB::ifDescr",
+    ]
+
+
 def test_directory_bundle_uses_manifest_inventory(tmp_path: Path) -> None:
     _write_json(tmp_path / "IF-MIB.json", _if_mib_payload())
     _write_json(tmp_path / "SNMPv2-TC.json", _snmpv2_tc_payload())

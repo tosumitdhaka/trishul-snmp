@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from trishul_snmp.mib.models import MibModuleRecord, MibTypeRecord
+from trishul_snmp.mib.models import MibModuleRecord, MibNode, MibTypeRecord
 from trishul_snmp.mib.registry import MibRegistry
 from trishul_snmp.types import OidMatch
 
@@ -44,3 +44,7 @@ class MibBundle:
     def resolve_type(self, module: str, type_name: str) -> MibTypeRecord | None:
         """Resolve a local or imported textual convention."""
         return self._registry.resolve_type(module, type_name)
+
+    def resolve_node(self, module: str, symbol: str) -> MibNode | None:
+        """Resolve an exact object or notification record."""
+        return self._registry.resolve_node(module, symbol)

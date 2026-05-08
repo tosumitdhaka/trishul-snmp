@@ -14,6 +14,19 @@ from trishul_snmp.errors import (
 from trishul_snmp.manager.client import V2cManager
 from trishul_snmp.mib.bundle import MibBundle
 from trishul_snmp.mib.loader import load_bundle
+from trishul_snmp.notify.client import V2cNotifier
+from trishul_snmp.notify.events import (
+    NotificationEvent,
+    NotificationMemberBinding,
+    decode_notification,
+)
+from trishul_snmp.notify.listener import V2cNotificationListener
+from trishul_snmp.responder.server import V2cResponder
+from trishul_snmp.responder.sources import (
+    CallbackObjectSource,
+    InMemoryObjectSource,
+    ResponderSource,
+)
 from trishul_snmp.types import (
     OID,
     Counter32Value,
@@ -33,6 +46,7 @@ from trishul_snmp.types import (
     Response,
     SnmpValue,
     SnmpValueType,
+    SocketAddress,
     TimeTicksValue,
     VarBind,
 )
@@ -40,6 +54,7 @@ from trishul_snmp.types import (
 __all__ = [
     "BundleError",
     "BundleValidationError",
+    "CallbackObjectSource",
     "Counter32Value",
     "Counter64Value",
     "EndOfMibViewValue",
@@ -48,6 +63,7 @@ __all__ = [
     "InvalidOidError",
     "IntegerValue",
     "IpAddressValue",
+    "InMemoryObjectSource",
     "MibBundle",
     "NoSuchInstanceValue",
     "NoSuchObjectValue",
@@ -59,7 +75,11 @@ __all__ = [
     "OpaqueValue",
     "ProtocolError",
     "RequestTimeoutError",
+    "ResponderSource",
     "Response",
+    "NotificationEvent",
+    "NotificationMemberBinding",
+    "SocketAddress",
     "SnmpValue",
     "SnmpValueType",
     "TimeTicksValue",
@@ -68,9 +88,13 @@ __all__ = [
     "UnknownOidError",
     "UnknownSymbolError",
     "V2cManager",
+    "V2cNotificationListener",
+    "V2cNotifier",
+    "V2cResponder",
     "VarBind",
     "__version__",
+    "decode_notification",
     "load_bundle",
 ]
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"

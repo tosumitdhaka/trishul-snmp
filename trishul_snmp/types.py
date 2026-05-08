@@ -7,6 +7,7 @@ from enum import IntEnum
 from typing import TypeAlias
 
 OID: TypeAlias = tuple[int, ...]
+SocketAddress: TypeAlias = tuple[str, int] | tuple[str, int, int, int]
 
 
 class ErrorStatus(IntEnum):

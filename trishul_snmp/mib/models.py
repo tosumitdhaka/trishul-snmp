@@ -10,6 +10,18 @@ from trishul_snmp.types import OID
 
 
 @dataclass(frozen=True, slots=True)
+class MibMemberRef:
+    """Structured reference to another retained symbol."""
+
+    module: str
+    object: str
+
+    @property
+    def symbolic(self) -> str:
+        return f"{self.module}::{self.object}"
+
+
+@dataclass(frozen=True, slots=True)
 class MibNode:
     """Normalized object or notification record."""
 
@@ -24,6 +36,8 @@ class MibNode:
     status: str | None
     index: tuple[str, ...] | None
     augments: str | None
+    description: str | None
+    members: tuple[MibMemberRef, ...] | None
     constraints: Mapping[str, Any] | None
 
     @property

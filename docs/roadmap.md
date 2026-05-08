@@ -5,6 +5,23 @@ Status: `planned` | `in progress` | `done` | `deferred`
 
 ---
 
+## v0.2.0 — complete, pending release
+
+Tracked by GitHub milestone `0.2.0` and umbrella issue `#7`.
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | Notification metadata retention and shared plumbing | done | `#2`. `description` and structured `members` are retained, and lower-level request prep helpers are shared across manager and notify paths. |
+| 2 | Outbound SNMPv2c trap/inform send APIs | done | `#4`. `V2cNotifier` sends numeric or symbolic notifications and auto-populates standard SNMPv2 notification varbinds. |
+| 3 | Inbound SNMPv2c notification listener/server transport | done | `#3`. `V2cNotificationListener` supports bind controls, community allowlists, trap/inform decode, and automatic inform acknowledgement. |
+| 4 | Notification event/render/decode/CLI tooling | done | `#5`. `NotificationEvent` now carries notification metadata and member bindings; CLI trap/inform/listen/decode commands are wired. |
+| 5 | Narrow read-only responder / simulator layer | done | `#6`. `V2cResponder` plus in-memory and callback-backed sources now cover `GET`, `GET_NEXT`, and `GET_BULK` for tests, demos, and simulator-style use. |
+
+See [v0.2.0 Implementation Prep](v0.2.0-implementation-prep.md) for the
+coding sequence, package evolution, and pre-implementation lock decisions.
+
+---
+
 ## v0.1.1 — shipped 2026-05-07
 
 | # | Item | Status | Notes |
@@ -52,5 +69,5 @@ Status: `planned` | `in progress` | `done` | `deferred`
 | 6 | SNMPv1 manager support | deferred | Not required for the initial modern runtime baseline. |
 | 7 | SNMPv3 | deferred | Significant auth/privacy scope increase; not justified for `v0.1`. |
 | 8 | `set` | deferred | Write operations need separate safety and API design. |
-| 9 | Trap receiver / listener | deferred | Different runtime model and lifecycle from manager-side polling. |
-| 10 | Agent / responder support | deferred | Separate product scope from the manager runtime. |
+| 9 | Daemon/service packaging for long-running listeners | deferred | Library-level listener and responder APIs exist on main branch; daemonization is still out of scope. |
+| 10 | Full agent framework or writable responder support | deferred | `v0.2.0` only targets a narrow read-only simulator/responder. |

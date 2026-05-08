@@ -230,8 +230,8 @@ def test_decode_message_rejects_invalid_message_shape() -> None:
 
 
 def test_decode_pdu_rejects_invalid_shapes() -> None:
-    unsupported_tag = encode_tlv(0xA7, _valid_pdu_payload())
-    with pytest.raises(ProtocolError, match="Unsupported PDU tag 0xa7"):
+    unsupported_tag = encode_tlv(0xA8, _valid_pdu_payload())
+    with pytest.raises(ProtocolError, match="Unsupported PDU tag 0xa8"):
         decode_pdu(unsupported_tag)
 
     wrong_integer_tag = encode_tlv(

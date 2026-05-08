@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import socket
+from typing import cast
 
 import pytest
 
 from trishul_snmp.errors import RequestTimeoutError, TransportError
-from trishul_snmp.transport.udp import UdpClient
+from trishul_snmp.transport.udp import (
+    UdpClient,
+    UdpServer,
+    _QueueingDatagramProtocol,
+    _ServerClosed,
+)
 
 
 class _ResolveFailLoop:
@@ -25,6 +31,33 @@ class _FakeSocket:
 
     def close(self) -> None:
         self.closed = True
+
+
+class _FakeDatagramTransport:
+    def __init__(self, *, sockname: tuple[str, int] = ("127.0.0.1", 40161)) -> None:
+        self.sockname = sockname
+        self.closed = False
+        self.sendto_calls: list[tuple[bytes, tuple[str, int]]] = []
+        self.protocol: asyncio.DatagramProtocol | None = None
+
+    def get_extra_info(self, name: str):
+        if name == "sockname":
+            return self.sockname
+        return None
+
+    def sendto(self, data: bytes, addr: tuple[str, int]) -> None:
+        self.sendto_calls.append((data, addr))
+
+    def close(self) -> None:
+        self.closed = True
+        if self.protocol is not None:
+            self.protocol.connection_lost(None)
+
+
+class _ExplodingDatagramTransport(_FakeDatagramTransport):
+    def sendto(self, data: bytes, addr: tuple[str, int]) -> None:
+        del data, addr
+        raise OSError("send failed")
 
 
 class _HappyLoop:
@@ -81,6 +114,31 @@ class _ReceiveFailLoop(_HappyLoop):
     async def sock_recv(self, sock: _FakeSocket, size: int) -> bytes:
         del sock, size
         raise OSError("recv failed")
+
+
+class _BindLoop:
+    def __init__(self, transport: _FakeDatagramTransport) -> None:
+        self.transport = transport
+        self.endpoint_calls: list[tuple[str, int]] = []
+
+    def create_future(self):
+        return asyncio.Future()
+
+    async def create_datagram_endpoint(self, factory, *, local_addr: tuple[str, int]):
+        self.endpoint_calls.append(local_addr)
+        protocol = factory()
+        self.transport.protocol = cast(asyncio.DatagramProtocol, protocol)
+        self.transport.protocol.connection_made(self.transport)
+        return self.transport, protocol
+
+
+class _BindFailLoop:
+    def create_future(self):
+        return asyncio.Future()
+
+    async def create_datagram_endpoint(self, factory, *, local_addr: tuple[str, int]):
+        del factory, local_addr
+        raise OSError("bind failed")
 
 
 def test_udp_client_open_wraps_resolution_failure(monkeypatch) -> None:
@@ -262,5 +320,114 @@ def test_udp_client_receive_wraps_socket_oserror(monkeypatch) -> None:
     async def scenario() -> None:
         with pytest.raises(TransportError, match="Failed to receive UDP datagram"):
             await client.receive(timeout=0.1)
+
+    asyncio.run(scenario())
+
+
+def test_udp_server_send_and_receive_require_open() -> None:
+    server = UdpServer("127.0.0.1", 162)
+
+    async def send_scenario() -> None:
+        with pytest.raises(TransportError, match="UDP server is not open"):
+            await server.sendto(b"payload", ("127.0.0.1", 40000))
+
+    async def receive_scenario() -> None:
+        with pytest.raises(TransportError, match="UDP server is not open"):
+            await server.receive()
+
+    asyncio.run(send_scenario())
+    asyncio.run(receive_scenario())
+
+
+def test_udp_server_open_receive_send_and_close_success(monkeypatch) -> None:
+    transport = _FakeDatagramTransport()
+    loop = _BindLoop(transport)
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
+    server = UdpServer("127.0.0.1", 0)
+
+    async def scenario() -> None:
+        await server.open()
+        assert server.local_address == ("127.0.0.1", 40161)
+
+        assert transport.protocol is not None
+        transport.protocol.datagram_received(b"payload", ("127.0.0.1", 40000))
+        received = await server.receive()
+        assert received.data == b"payload"
+        assert received.source_address == ("127.0.0.1", 40000)
+
+        await server.sendto(b"reply", ("127.0.0.1", 40000))
+        await server.close()
+        await server.close()
+
+    asyncio.run(scenario())
+
+    assert loop.endpoint_calls == [("127.0.0.1", 0)]
+    assert transport.sendto_calls == [(b"reply", ("127.0.0.1", 40000))]
+    assert transport.closed is True
+
+
+def test_udp_server_open_wraps_bind_failure(monkeypatch) -> None:
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: _BindFailLoop())
+    server = UdpServer("127.0.0.1", 162)
+
+    async def scenario() -> None:
+        with pytest.raises(TransportError, match="Unable to bind UDP server socket"):
+            await server.open()
+
+    asyncio.run(scenario())
+
+
+def test_queueing_datagram_protocol_ignores_invalid_addr_and_reports_close_error() -> None:
+    async def scenario() -> None:
+        queue: asyncio.Queue = asyncio.Queue()
+        closed: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        protocol = _QueueingDatagramProtocol(queue, closed)
+        transport = _FakeDatagramTransport()
+
+        protocol.connection_made(transport)
+        protocol.datagram_received(b"payload", ("bad",))
+        assert queue.empty()
+
+        error = RuntimeError("boom")
+        protocol.connection_lost(error)
+
+        marker = await queue.get()
+        assert isinstance(marker, _ServerClosed)
+        assert marker.cause is error
+        with pytest.raises(RuntimeError, match="boom"):
+            await closed
+
+    asyncio.run(scenario())
+
+
+def test_udp_server_local_address_open_short_circuit_and_closed_queue() -> None:
+    server = UdpServer("127.0.0.1", 162)
+    assert server.local_address is None
+
+    server._transport = _FakeDatagramTransport(sockname=("127.0.0.1", "bad"))  # type: ignore[arg-type]
+    assert server.local_address is None
+
+    async def scenario() -> None:
+        await server.open()
+
+    asyncio.run(scenario())
+
+
+def test_udp_server_close_sendto_and_receive_cover_error_paths() -> None:
+    async def scenario() -> None:
+        server = UdpServer("127.0.0.1", 162)
+        server._transport = _ExplodingDatagramTransport()
+        server._closed = asyncio.get_running_loop().create_future()
+        server._closed.set_exception(RuntimeError("close failed"))
+
+        with pytest.raises(TransportError, match="Failed to send UDP datagram"):
+            await server.sendto(b"payload", ("127.0.0.1", 40000))
+
+        await server.close()
+
+        server._queue = asyncio.Queue()
+        await server._queue.put(_ServerClosed(RuntimeError("boom")))
+        with pytest.raises(TransportError, match="UDP server is closed"):
+            await server.receive()
 
     asyncio.run(scenario())

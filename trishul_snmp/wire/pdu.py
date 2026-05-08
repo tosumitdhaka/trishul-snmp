@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import IntEnum
 
 from trishul_snmp.errors import ProtocolError
-from trishul_snmp.types import OID, ErrorStatus, SnmpValueType
+from trishul_snmp.types import OID, ErrorStatus, NullValue, SnmpValueType
 from trishul_snmp.wire.asn1 import decode_value, encode_value
 from trishul_snmp.wire.ber import decode_tlv, encode_tlv, expect_end
 
@@ -16,6 +17,8 @@ _GET_NEXT_REQUEST_TAG = 0xA1
 _RESPONSE_TAG = 0xA2
 _SET_REQUEST_TAG = 0xA3
 _GET_BULK_REQUEST_TAG = 0xA5
+_INFORM_REQUEST_TAG = 0xA6
+_SNMPV2_TRAP_TAG = 0xA7
 
 
 class PduType(IntEnum):
@@ -26,6 +29,8 @@ class PduType(IntEnum):
     RESPONSE = _RESPONSE_TAG
     SET = _SET_REQUEST_TAG
     GET_BULK = _GET_BULK_REQUEST_TAG
+    INFORM_REQUEST = _INFORM_REQUEST_TAG
+    SNMPV2_TRAP = _SNMPV2_TRAP_TAG
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +50,18 @@ class Pdu:
     error_status: int
     error_index: int
     varbinds: tuple[RawVarBind, ...]
+
+
+def build_raw_varbinds(
+    varbinds: Iterable[tuple[OID, SnmpValueType]],
+) -> tuple[RawVarBind, ...]:
+    """Build low-level varbinds from numeric OID/value pairs."""
+    return tuple(RawVarBind(oid=oid, value=value) for oid, value in varbinds)
+
+
+def build_null_varbinds(oids: Sequence[OID]) -> tuple[RawVarBind, ...]:
+    """Build NULL-valued varbinds for request-style PDUs."""
+    return build_raw_varbinds((oid, NullValue()) for oid in oids)
 
 
 def encode_pdu(pdu: Pdu) -> bytes:

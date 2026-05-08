@@ -9,11 +9,11 @@ Follow this checklist for every release. Steps should be completed in order.
 - [ ] All CI checks green on `main` (lint, typecheck, tests — Python 3.10–3.13)
 - [ ] Lint passes with zero errors:
   ```bash
-  ruff check trishul_snmp tests
+  ruff check trishul_snmp tests scripts
   ```
 - [ ] Formatting is clean:
   ```bash
-  ruff format trishul_snmp tests --check
+  ruff format trishul_snmp tests scripts --check
   ```
 - [ ] Type checking passes with zero errors:
   ```bash
@@ -50,11 +50,19 @@ Follow this checklist for every release. Steps should be completed in order.
 - [ ] Run the full quality gate on a clean editable install:
   ```bash
   pip install -e ".[dev]"
-  ruff check trishul_snmp tests
-  ruff format trishul_snmp tests --check
+  ruff check trishul_snmp tests scripts
+  ruff format trishul_snmp tests scripts --check
   mypy trishul_snmp
   pytest --cov=trishul_snmp --cov-report=term-missing:skip-covered --cov-fail-under=95 -q
   ```
+  Helper:
+  ```bash
+  python3 scripts/run_release_gate.py
+  ```
+  This runs the local release gate end to end: lint, format check, mypy, pytest,
+  coverage, build, wheel smoke test, and temporary wheel-test venv cleanup.
+  Use `--smoke-host 127.0.0.1` to add a live post-install `tsnmp get` smoke test
+  against a reachable local agent.
 
 - [ ] Build source and wheel distributions:
   ```bash
@@ -80,6 +88,17 @@ Follow this checklist for every release. Steps should be completed in order.
   print('DUPLICATES:', dupes or 'none')
   "
   ```
+
+- [ ] Run ecosystem validation against the intended `tsmi` pairing:
+  ```bash
+  python3 scripts/validate_ecosystem.py \
+    --tsmi-version 0.4.3 \
+    --mib-dir /var/lib/mibs/ietf \
+    --mib-dir /var/lib/mibs/iana \
+    --host 127.0.0.1 \
+    --keep-work-dir
+  ```
+  This validates `tsmi` CLI output shapes, standalone module JSON loading, directory sidecar loading, live manager calls against a real agent, local trap/inform send/listen/decode, and local responder behavior.
 
 - [ ] If a reachable test SNMP agent is available, do one live smoke test from the clean venv:
   ```bash

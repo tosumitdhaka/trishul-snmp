@@ -10,6 +10,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.2.0] — 2026-05-08
+
+### Added
+
+- **SNMPv2c notification runtime** — `V2cNotifier` now supports outbound trap and inform send, and `V2cNotificationListener` supports inbound trap/inform receive with automatic inform acknowledgement.
+- **Offline notification decode** — `decode_notification()` turns captured BER payloads into the same public `NotificationEvent` model used by the live listener.
+- **Narrow read-only responder / simulator** — `V2cResponder`, `InMemoryObjectSource`, and `CallbackObjectSource` now cover `GET`, `GET_NEXT`, and `GET_BULK` for tests, demos, and simulator-style use.
+- **Ecosystem validation harness** — `scripts/validate_ecosystem.py` now creates an isolated venv, validates `tsmi` CLI bundle output, exercises live manager flows against a real agent, and checks local notification and responder behavior end to end.
+
+### Changed
+
+- **Notification metadata retention and rendering** — `NotificationEvent` now carries notification OID/name/description, uptime, and declared member bindings derived from compiled JSON metadata when available.
+- **CLI surface expanded** — `tsnmp` now includes `trap`, `inform`, `listen`, and `decode-notification` in addition to the manager polling commands.
+- **Documentation refreshed for the current runtime surface** — README and package docs now describe notification and responder support rather than a manager-only baseline.
+- **Release validation guidance expanded** — the release checklist now includes the dedicated ecosystem validation flow and host MIB directory guidance for real-world pairing checks.
+
+---
+
 ## [0.1.1] — 2026-05-07
 
 ### Added

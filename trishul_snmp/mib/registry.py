@@ -13,7 +13,7 @@ from trishul_snmp.errors import (
     UnknownOidError,
     UnknownSymbolError,
 )
-from trishul_snmp.mib.models import MibModuleRecord, MibNode, MibTypeRecord
+from trishul_snmp.mib.models import MibMemberRef, MibModuleRecord, MibNode, MibTypeRecord
 from trishul_snmp.types import OID, OidMatch
 
 _SUPPORTED_PRODUCER = "trishul-smi"
@@ -184,6 +184,10 @@ class MibRegistry:
                 return self._type_index.get((imported_module, type_name))
         return None
 
+    def resolve_node(self, module: str, symbol: str) -> MibNode | None:
+        """Return an object or notification node by exact module/symbol."""
+        return self._symbol_index.get((module, symbol))
+
     def _lookup_exact_from_accelerator(self, oid: OID) -> MibNode | None:
         entry = self._oid_index.get(oid)
         if entry is None:
@@ -298,6 +302,13 @@ def normalize_node_map(
                 name=name,
                 path=path,
             ),
+            description=_optional_string(
+                raw_node.get("description"),
+                field="description",
+                name=name,
+                path=path,
+            ),
+            members=_normalize_member_refs(raw_node.get("members"), name=name, path=path),
             constraints=constraints,
         )
     return normalized
@@ -381,6 +392,40 @@ def _optional_string(value: object, *, field: str, name: str, path: Path) -> str
     if not isinstance(value, str):
         raise BundleValidationError(f"Node {name!r} field {field!r} must be a string", path=path)
     return value
+
+
+def _normalize_member_refs(
+    raw_members: object,
+    *,
+    name: str,
+    path: Path,
+) -> tuple[MibMemberRef, ...] | None:
+    if raw_members is None:
+        return None
+    if not isinstance(raw_members, list):
+        raise BundleValidationError(f"Node {name!r} field 'members' must be a list", path=path)
+
+    normalized: list[MibMemberRef] = []
+    for raw_member in raw_members:
+        if not isinstance(raw_member, dict):
+            raise BundleValidationError(
+                f"Node {name!r} members must be objects containing 'module' and 'object'",
+                path=path,
+            )
+        module = raw_member.get("module")
+        object_name = raw_member.get("object")
+        if (
+            not isinstance(module, str)
+            or not module
+            or not isinstance(object_name, str)
+            or not object_name
+        ):
+            raise BundleValidationError(
+                f"Node {name!r} members must contain string 'module' and 'object' fields",
+                path=path,
+            )
+        normalized.append(MibMemberRef(module=module, object=object_name))
+    return tuple(normalized)
 
 
 def normalize_module_metadata(raw_metadata: object, *, path: Path) -> Mapping[str, object]:

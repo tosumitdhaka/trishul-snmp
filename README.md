@@ -7,11 +7,12 @@
 [![GitHub Forks](https://img.shields.io/github/forks/tosumitdhaka/trishul-snmp?style=flat)](https://github.com/tosumitdhaka/trishul-snmp/forks)
 [![GitHub Issues](https://img.shields.io/github/issues/tosumitdhaka/trishul-snmp)](https://github.com/tosumitdhaka/trishul-snmp/issues)
 
-> A modern SNMP runtime and manager written in Python.
+> A modern SNMP runtime, manager, and simulator toolkit written in Python.
 
-`trishul-snmp` (`tsnmp`) is a package-first SNMP runtime for manager-side use.
-It keeps the protocol runtime independent from MIB compilation and uses compiled
-JSON artifacts only when symbolic enrichment is desired.
+`trishul-snmp` (`tsnmp`) is a package-first SNMP runtime for manager-side use,
+notification handling, and narrow simulator-style responder flows. It keeps the
+protocol runtime independent from MIB compilation and uses compiled JSON
+artifacts only when symbolic enrichment is desired.
 
 For the canonical `tsnmp`/`tsmi` split, tested version pairing, and current
 ecosystem status, see [Ecosystem and Compatibility](docs/ecosystem.md).
@@ -29,13 +30,17 @@ thin and secondary.
 ## Features
 
 - async-first Python API
-- manager-only SNMPv2c runtime
+- SNMPv2c manager runtime
 - read-only operations:
   - `get`
   - `get_next`
   - `get_bulk`
   - `walk`
   - `bulkwalk`
+- outbound SNMPv2c trap and inform send
+- inbound SNMPv2c trap and inform listen
+- offline notification decode
+- narrow read-only SNMPv2c responder / simulator
 - in-tree BER / ASN.1 / SNMPv2c wire codec
 - UDP transport and request dispatcher
 - optional symbolic translation and display enrichment from compiled JSON MIB artifacts
@@ -43,9 +48,10 @@ thin and secondary.
 
 ## Scope
 
-Current v0.1 baseline:
+Current main-branch baseline:
 
-- manager-only
+- manager operations plus notification send/listen/decode
+- narrow read-only responder / simulator support
 - SNMPv2c-only
 - read-only operations only
 - async-first Python API first, CLI second
@@ -61,8 +67,8 @@ Deliberately deferred:
 - SNMPv1
 - SNMPv3
 - `set`
-- traps / listener
-- agent/responder support
+- full agent framework
+- writable responder support
 - compiler workflows inside `tsnmp`
 
 ## Installation
@@ -128,9 +134,9 @@ asyncio.run(main())
 - [Documentation Index](docs/index.md) — entry point for package docs
 - [Getting Started](docs/getting-started.md) — install, first requests, and runtime flows
 - [Ecosystem and Compatibility](docs/ecosystem.md) — `tsnmp`/`tsmi` split, tested pairing, bundle inputs, ecosystem status
-- [Python API](docs/python-api.md) — `V2cManager`, `load_bundle`, and public types
-- [CLI Reference](docs/cli.md) — commands, options, exit codes, and examples
-- [Configuration](docs/configuration.md) — manager constructor and bundle/runtime knobs
+- [Python API](docs/python-api.md) — manager, notify, responder, and public runtime types
+- [CLI Reference](docs/cli.md) — polling, notification, and offline decode commands
+- [Configuration](docs/configuration.md) — manager, notify, responder, and bundle/runtime knobs
 - [Architecture](docs/architecture.md) — layering, package structure, and call flows
 - [Bundle Contract](docs/bundles.md) — compiled JSON inputs, sidecars, validation, scope
 - [Roadmap](docs/roadmap.md) — shipped scope and deferred work
