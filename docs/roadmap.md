@@ -5,7 +5,7 @@ Status: `planned` | `in progress` | `done` | `deferred`
 
 ---
 
-## v0.2.0 — complete, pending release
+## v0.2.0 — shipped 2026-05-08
 
 Tracked by GitHub milestone `0.2.0` and umbrella issue `#7`.
 
