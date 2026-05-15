@@ -5,6 +5,17 @@ Status: `planned` | `in progress` | `done` | `deferred`
 
 ---
 
+## v0.3.0 — shipped 2026-05-15
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | Simulation rule engine | done | `CounterRule`, `RandomNumericRule`, `UptimeRule`, `TimestampRule` plus `SimulationRule` protocol. `InMemoryObjectSource` now stores and evaluates rules alongside static values. |
+| 2 | `InMemoryObjectSource.from_bundle()` | done | Auto-populates a source from a `MibBundle` with syntax-appropriate defaults, instance suffix generation, and deprecated-object filtering. |
+| 3 | `MibBundle` iteration helpers | done | `iter_objects()`, `iter_notifications()`, and `search()` allow in-memory bundle queries without a separate database layer. |
+| 4 | `NotificationEvent.to_dict()` | done | JSON-safe dict serialization for WebSocket broadcast and storage use cases. |
+
+---
+
 ## v0.2.0 — shipped 2026-05-08
 
 Tracked by GitHub milestone `0.2.0` and umbrella issue `#7`.

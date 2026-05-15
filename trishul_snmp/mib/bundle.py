@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 
 from trishul_snmp.mib.models import MibModuleRecord, MibNode, MibTypeRecord
@@ -48,3 +48,59 @@ class MibBundle:
     def resolve_node(self, module: str, symbol: str) -> MibNode | None:
         """Resolve an exact object or notification record."""
         return self._registry.resolve_node(module, symbol)
+
+    def iter_objects(
+        self,
+        *,
+        module: str | None = None,
+        type_filter: str | None = None,
+    ) -> Iterator[MibNode]:
+        """Iterate over object nodes, optionally filtered by module and object_type."""
+        for mod_name, mod_record in self._registry.modules.items():
+            if module is not None and mod_name != module:
+                continue
+            for node in mod_record.objects.values():
+                if type_filter is not None and node.object_type != type_filter:
+                    continue
+                yield node
+
+    def iter_notifications(
+        self,
+        *,
+        module: str | None = None,
+    ) -> Iterator[MibNode]:
+        """Iterate over notification nodes, optionally filtered by module."""
+        for mod_name, mod_record in self._registry.modules.items():
+            if module is not None and mod_name != module:
+                continue
+            yield from mod_record.notifications.values()
+
+    def search(
+        self,
+        query: str,
+        *,
+        module: str | None = None,
+        type_filter: str | None = None,
+        limit: int = 100,
+    ) -> list[MibNode]:
+        """Case-insensitive substring search over node names and descriptions."""
+        needle = query.lower()
+        results: list[MibNode] = []
+        for mod_name, mod_record in self._registry.modules.items():
+            if module is not None and mod_name != module:
+                continue
+            candidates: list[MibNode] = []
+            if type_filter != "NOTIFICATION-TYPE":
+                candidates.extend(mod_record.objects.values())
+            if type_filter != "OBJECT-TYPE":
+                candidates.extend(mod_record.notifications.values())
+            for node in candidates:
+                if type_filter is not None and node.object_type != type_filter:
+                    continue
+                name_match = needle in node.name.lower()
+                desc_match = node.description is not None and needle in node.description.lower()
+                if name_match or desc_match:
+                    results.append(node)
+                    if len(results) >= limit:
+                        return results
+        return results

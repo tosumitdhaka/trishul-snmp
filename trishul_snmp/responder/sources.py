@@ -8,12 +8,29 @@ from typing import Protocol, TypeAlias
 
 from trishul_snmp._runtime import normalize_targets
 from trishul_snmp.mib.bundle import MibBundle
-from trishul_snmp.types import OID, SnmpValueType
+from trishul_snmp.responder.rules import SimulationRule
+from trishul_snmp.types import (
+    OID,
+    Counter32Value,
+    Counter64Value,
+    Gauge32Value,
+    IntegerValue,
+    IpAddressValue,
+    OctetStringValue,
+    SnmpValueType,
+    TimeTicksValue,
+)
 
-ObjectInput: TypeAlias = tuple[str | Sequence[int], SnmpValueType]
+ObjectValue: TypeAlias = SnmpValueType | SimulationRule
+ObjectInput: TypeAlias = tuple[str | Sequence[int], ObjectValue]
 NextLookupResult: TypeAlias = tuple[OID, SnmpValueType] | None
 ExactLookup: TypeAlias = Callable[[OID], SnmpValueType | None]
 NextLookup: TypeAlias = Callable[[OID], NextLookupResult]
+
+_COUNTER_SYNTAXES = frozenset({"Counter32", "Counter64", "ZeroBasedCounter32"})
+_GAUGE_SYNTAXES = frozenset({"Gauge32", "Unsigned32", "ZeroBasedCounter64", "CounterBasedGauge64"})
+_TIMETICKS_SYNTAXES = frozenset({"TimeTicks"})
+_IP_SYNTAXES = frozenset({"IpAddress"})
 
 
 class ResponderSource(Protocol):
@@ -36,13 +53,18 @@ class InMemoryObjectSource:
         objects: Iterable[ObjectInput] = (),
     ) -> None:
         self._bundle = bundle
-        self._values: dict[OID, SnmpValueType] = {}
+        self._values: dict[OID, ObjectValue] = {}
         self._sorted_oids: list[OID] = []
         self.set_objects(objects)
 
     def lookup_exact(self, oid: OID) -> SnmpValueType | None:
         """Return the exact value for *oid* when present."""
-        return self._values.get(oid)
+        stored = self._values.get(oid)
+        if stored is None:
+            return None
+        if isinstance(stored, SimulationRule):
+            return stored.get_value()
+        return stored
 
     def lookup_next(self, oid: OID) -> NextLookupResult:
         """Return the next lexicographic OID/value pair after *oid*."""
@@ -50,10 +72,12 @@ class InMemoryObjectSource:
         if index >= len(self._sorted_oids):
             return None
         next_oid = self._sorted_oids[index]
-        return next_oid, self._values[next_oid]
+        stored = self._values[next_oid]
+        value = stored.get_value() if isinstance(stored, SimulationRule) else stored
+        return next_oid, value
 
-    def set_object(self, target: str | Sequence[int], value: SnmpValueType) -> OID:
-        """Insert or replace an object value and return its normalized OID."""
+    def set_object(self, target: str | Sequence[int], value: ObjectValue) -> OID:
+        """Insert or replace an object value or rule and return its normalized OID."""
         oid = self._normalize_target(target)
         if oid not in self._values:
             insort(self._sorted_oids, oid)
@@ -61,7 +85,7 @@ class InMemoryObjectSource:
         return oid
 
     def set_objects(self, objects: Iterable[ObjectInput]) -> tuple[OID, ...]:
-        """Insert or replace multiple object values."""
+        """Insert or replace multiple object values or rules."""
         return tuple(self.set_object(target, value) for target, value in objects)
 
     def delete_object(self, target: str | Sequence[int]) -> bool:
@@ -83,8 +107,58 @@ class InMemoryObjectSource:
         """Return stored OIDs in lexicographic order."""
         return tuple(self._sorted_oids)
 
+    @classmethod
+    def from_bundle(
+        cls,
+        bundle: MibBundle,
+        *,
+        max_instances: int = 2,
+        include_deprecated: bool = False,
+    ) -> InMemoryObjectSource:
+        """Generate a populated source from bundle objects with sensible default values."""
+        source = cls(bundle=bundle)
+        for node in bundle.iter_objects():
+            if node.max_access == "not-accessible":
+                continue
+            if node.status == "obsolete":
+                continue
+            if not include_deprecated and node.status == "deprecated":
+                continue
+            if node.nodetype == "scalar":
+                source.set_object(node.oid + (0,), _default_value(node.syntax, instance=0))
+            elif node.nodetype == "column":
+                for i in range(1, max_instances + 1):
+                    source.set_object(node.oid + (i,), _default_value(node.syntax, instance=i))
+        return source
+
     def _normalize_target(self, target: str | Sequence[int]) -> OID:
         return normalize_targets((target,), bundle=self._bundle)[0]
+
+
+def _default_value(syntax: str | None, *, instance: int) -> SnmpValueType:
+    if syntax is None:
+        return OctetStringValue(b"")
+    base = syntax.split("(")[0].strip()
+    if base in _COUNTER_SYNTAXES or base == "Counter64":
+        return Counter32Value(0) if base != "Counter64" else Counter64Value(0)
+    if base in _GAUGE_SYNTAXES:
+        return Gauge32Value(0)
+    if base in _TIMETICKS_SYNTAXES:
+        return TimeTicksValue(0)
+    if base in _IP_SYNTAXES:
+        return IpAddressValue("0.0.0.0")
+    if base in {
+        "Integer32",
+        "Integer",
+        "Unsigned32",
+        "InterfaceIndex",
+        "TruthValue",
+        "RowStatus",
+        "StorageType",
+        "ColumnStatus",
+    }:
+        return IntegerValue(instance)
+    return OctetStringValue(b"")
 
 
 class CallbackObjectSource:

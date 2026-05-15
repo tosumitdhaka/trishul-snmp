@@ -41,6 +41,10 @@ thin and secondary.
 - inbound SNMPv2c trap and inform listen
 - offline notification decode
 - narrow read-only SNMPv2c responder / simulator
+- simulation rules for dynamic OID values (counters, gauges, uptime, timestamps)
+- bundle-backed auto-population of simulator object sets
+- in-memory MIB bundle iteration and substring search
+- JSON-safe notification event serialization
 - in-tree BER / ASN.1 / SNMPv2c wire codec
 - UDP transport and request dispatcher
 - optional symbolic translation and display enrichment from compiled JSON MIB artifacts

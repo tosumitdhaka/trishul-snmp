@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from trishul_snmp._runtime import public_varbinds_from_raw_varbinds
 from trishul_snmp.errors import UnknownOidError
@@ -72,6 +73,44 @@ class NotificationEvent:
     @property
     def declared_members(self) -> tuple[MibMemberRef, ...]:
         return tuple(binding.member for binding in self.member_bindings)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-safe dict representation of this event."""
+        return {
+            "request_id": self.request_id,
+            "community": self.community,
+            "source_host": self.source_host,
+            "source_port": self.source_port,
+            "pdu_type": self.pdu_type,
+            "notification_oid": (
+                ".".join(str(arc) for arc in self.notification_oid)
+                if self.notification_oid is not None
+                else None
+            ),
+            "notification_name": self.notification_name,
+            "notification_description": self.notification_description,
+            "uptime": self.uptime,
+            "varbinds": [
+                {
+                    "oid": vb.oid_str,
+                    "display_name": vb.display_name,
+                    "value_type": vb.value_type,
+                    "value": vb.display_value,
+                }
+                for vb in self.varbinds
+            ],
+            "member_bindings": [
+                {
+                    "symbolic": binding.symbolic,
+                    "oid": binding.varbind.oid_str if binding.varbind is not None else None,
+                    "value_type": (
+                        binding.varbind.value_type if binding.varbind is not None else None
+                    ),
+                    "value": binding.varbind.display_value if binding.varbind is not None else None,
+                }
+                for binding in self.member_bindings
+            ],
+        }
 
 
 def notification_event_from_message(

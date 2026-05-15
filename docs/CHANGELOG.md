@@ -10,6 +10,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.0] — 2026-05-15
+
+### Added
+
+- **Simulation rule engine** — `CounterRule`, `RandomNumericRule`, `UptimeRule`, and `TimestampRule` let `InMemoryObjectSource` serve dynamic OID values (monotonically-increasing counters, random gauges, auto-incrementing timeticks, epoch timestamps) without any application-side callback code. The `SimulationRule` protocol is public for custom rules.
+- **`InMemoryObjectSource.from_bundle()`** — class method that auto-populates a source from a `MibBundle`, generating scalar `.0` instances and column instances up to `max_instances`, with syntax-appropriate default values and optional deprecated-object filtering.
+- **`MibBundle` iteration helpers** — `iter_objects()`, `iter_notifications()`, and `search()` allow callers to iterate or substring-search bundle nodes in memory without a separate database, enabling browser UIs and catalog features to query the bundle directly.
+- **`NotificationEvent.to_dict()`** — returns a fully JSON-safe `dict` representation of a notification event, including varbinds and member bindings, suitable for WebSocket broadcast or storage without additional application-side serialization.
+
+---
+
 ## [0.2.0] — 2026-05-08
 
 ### Added

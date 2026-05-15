@@ -16,8 +16,13 @@ same package surface.
 | `decode_notification(data, *, bundle=None, source_address=None)` | function | Offline decode for BER-encoded SNMPv2c traps and informs |
 | `load_bundle(path)` | function | Load a compiled module JSON file or bundle directory |
 | `MibBundle` | class | Bundle translation and enrichment handle |
-| `InMemoryObjectSource` | class | Mutable in-memory responder object source |
+| `InMemoryObjectSource` | class | Mutable in-memory responder object source; accepts static values and simulation rules |
 | `CallbackObjectSource` | class | Callback-backed responder object source |
+| `SimulationRule` | protocol | Protocol for dynamic OID value rules |
+| `CounterRule` | class | Monotonically-increasing counter rule |
+| `RandomNumericRule` | class | Random integer in a range, re-sampled on each read |
+| `UptimeRule` | class | Auto-incrementing timeticks (centiseconds) since construction |
+| `TimestampRule` | class | Current Unix epoch time as a scalar value |
 | `Response` | dataclass | Result for `get`, `get_next`, and `get_bulk` |
 | `VarBind` | dataclass | OID/value pair plus optional enrichment fields |
 | `NotificationEvent` | dataclass | Structured inbound notification event |
@@ -175,6 +180,9 @@ Main bundle methods:
 - `resolve_node()`
 - `resolve_type()`
 - `modules`
+- `iter_objects(*, module=None, type_filter=None)` — iterate over object nodes
+- `iter_notifications(*, module=None)` — iterate over notification nodes
+- `search(query, *, module=None, type_filter=None, limit=100)` — case-insensitive substring search over node names and descriptions
 
 ---
 
@@ -317,6 +325,10 @@ Convenience properties:
 - `is_inform`
 - `declared_members`
 
+Methods:
+
+- `to_dict()` — returns a JSON-safe `dict` containing all event fields, varbinds, and member bindings
+
 `NotificationMemberBinding` exposes:
 
 | Field | Description |
@@ -444,3 +456,42 @@ Included helpers:
 `InMemoryObjectSource` accepts numeric or symbolic targets when constructed with a
 bundle. `CallbackObjectSource` is useful when the simulated values need to be
 derived dynamically rather than stored in a static table.
+
+---
+
+## Simulation rules
+
+`InMemoryObjectSource` accepts simulation rules alongside static values. Rules
+are evaluated on every `lookup_exact` or `lookup_next` call.
+
+```python
+from trishul_snmp import (
+    CounterRule, RandomNumericRule, UptimeRule, TimestampRule,
+    InMemoryObjectSource,
+)
+
+source = InMemoryObjectSource()
+source.set_object("1.3.6.1.2.1.1.3.0", UptimeRule())
+source.set_object("1.3.6.1.2.1.2.2.1.10.1", CounterRule(increment=1024))
+source.set_object("1.3.6.1.2.1.2.2.1.5.1", RandomNumericRule(min=1_000_000, max=1_000_000_000))
+```
+
+| Rule | Default value type | Behavior |
+|---|---|---|
+| `CounterRule(*, start=0, increment=1, value_type=Counter32Value)` | `Counter32Value` | Increments by `increment` on each read |
+| `RandomNumericRule(*, min, max, value_type=Gauge32Value)` | `Gauge32Value` | Returns `random.randint(min, max)` on each read |
+| `UptimeRule()` | `TimeTicksValue` | Elapsed centiseconds since the rule was constructed |
+| `TimestampRule(*, value_type=IntegerValue)` | `IntegerValue` | Current Unix epoch time on each read |
+
+Use `InMemoryObjectSource.from_bundle()` to auto-populate a source from a bundle:
+
+```python
+from trishul_snmp import InMemoryObjectSource, load_bundle
+
+bundle = load_bundle("./mibs-json")
+source = InMemoryObjectSource.from_bundle(bundle, max_instances=2)
+```
+
+This generates scalar `.0` instances and column instances `1..max_instances` for
+every accessible, non-obsolete object in the bundle, with syntax-appropriate
+default values (`Counter32Value(0)`, `OctetStringValue(b"")`, etc.).

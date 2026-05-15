@@ -1,6 +1,6 @@
 # trishul-snmp — Architecture
 
-> **Last updated:** 2026-05-08
+> **Last updated:** 2026-05-15
 
 ---
 
@@ -64,6 +64,7 @@ trishul_snmp/
 ├── responder/
 │   ├── server.py        ← V2cResponder public API
 │   ├── sources.py       ← in-memory and callback-backed data sources
+│   ├── rules.py         ← simulation rules for dynamic OID values
 │   └── __init__.py      ← responder package export
 │
 ├── mib/
@@ -139,6 +140,8 @@ Owns the narrow read-only simulator behavior:
 - resolve exact and next lexicographic objects from a pluggable source
 - synthesize `noSuchObject` and `endOfMibView` where appropriate
 - keep source interfaces small enough for fixtures and callback-backed simulation
+- simulation rules (`CounterRule`, `RandomNumericRule`, `UptimeRule`, `TimestampRule`) generate dynamic values on each lookup without application-side callbacks
+- `InMemoryObjectSource.from_bundle()` populates a source from compiled JSON metadata with sensible defaults
 
 ### 3.6 `mib/`
 
@@ -149,6 +152,7 @@ Owns optional symbolic services:
 - resolve `MODULE::symbol` input
 - reverse-lookup numeric OIDs for enrichment
 - render display names and values
+- `MibBundle.iter_objects()`, `iter_notifications()`, and `search()` provide in-memory iteration and substring search over loaded nodes
 
 ### 3.7 `cli/`
 
