@@ -10,6 +10,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.1] — 2026-05-15
+
+### Fixed
+
+- **`from_bundle()` now assigns simulation rules for dynamic syntax types** — counters (`Counter32`, `Counter64`, and variants) get a `CounterRule` that increments on every poll, timetick/timestamp syntaxes (`TimeTicks`, `TimeStamp`, `TimeInterval`) get an `UptimeRule`, and gauges (`Gauge32`, `Unsigned32`) get a `RandomNumericRule(min=0, max=1000)`. Previously all three were frozen at `0` as static values, making the simulator non-responsive over time.
+
+---
+
 ## [0.3.0] — 2026-05-15
 
 ### Added

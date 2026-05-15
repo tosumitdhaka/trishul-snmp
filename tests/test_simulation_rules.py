@@ -229,15 +229,25 @@ def test_from_bundle_generates_scalar_and_column_instances(tmp_path: Path) -> No
 
     source = InMemoryObjectSource.from_bundle(bundle, max_instances=2)
 
-    # Scalar with .0 suffix
+    # Static types stay static
     assert source.lookup_exact((1, 3, 6, 1, 2, 1, 1, 1, 0)) == OctetStringValue(b"")
-    assert source.lookup_exact((1, 3, 6, 1, 2, 1, 1, 3, 0)) == TimeTicksValue(0)
-
-    # Column instances
     assert source.lookup_exact((1, 3, 6, 1, 2, 1, 2, 2, 1, 1, 1)) == IntegerValue(1)
     assert source.lookup_exact((1, 3, 6, 1, 2, 1, 2, 2, 1, 1, 2)) == IntegerValue(2)
-    assert source.lookup_exact((1, 3, 6, 1, 2, 1, 2, 2, 1, 10, 1)) == Counter32Value(0)
-    assert source.lookup_exact((1, 3, 6, 1, 2, 1, 2, 2, 1, 10, 2)) == Counter32Value(0)
+
+    # TimeTicks scalar → UptimeRule: value is a TimeTicksValue and changes over time
+    v1 = source.lookup_exact((1, 3, 6, 1, 2, 1, 1, 3, 0))
+    assert isinstance(v1, TimeTicksValue)
+    time.sleep(0.02)
+    v2 = source.lookup_exact((1, 3, 6, 1, 2, 1, 1, 3, 0))
+    assert isinstance(v2, TimeTicksValue)
+    assert v2.value >= v1.value
+
+    # Counter32 column → CounterRule: value increments on each poll
+    c1 = source.lookup_exact((1, 3, 6, 1, 2, 1, 2, 2, 1, 10, 1))
+    c2 = source.lookup_exact((1, 3, 6, 1, 2, 1, 2, 2, 1, 10, 1))
+    assert isinstance(c1, Counter32Value)
+    assert isinstance(c2, Counter32Value)
+    assert c2.value > c1.value
 
     # Not-accessible table row must be absent
     assert source.lookup_exact((1, 3, 6, 1, 2, 1, 2, 2)) is None

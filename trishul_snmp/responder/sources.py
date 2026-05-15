@@ -8,17 +8,14 @@ from typing import Protocol, TypeAlias
 
 from trishul_snmp._runtime import normalize_targets
 from trishul_snmp.mib.bundle import MibBundle
-from trishul_snmp.responder.rules import SimulationRule
+from trishul_snmp.responder.rules import CounterRule, RandomNumericRule, SimulationRule, UptimeRule
 from trishul_snmp.types import (
     OID,
-    Counter32Value,
     Counter64Value,
-    Gauge32Value,
     IntegerValue,
     IpAddressValue,
     OctetStringValue,
     SnmpValueType,
-    TimeTicksValue,
 )
 
 ObjectValue: TypeAlias = SnmpValueType | SimulationRule
@@ -27,9 +24,10 @@ NextLookupResult: TypeAlias = tuple[OID, SnmpValueType] | None
 ExactLookup: TypeAlias = Callable[[OID], SnmpValueType | None]
 NextLookup: TypeAlias = Callable[[OID], NextLookupResult]
 
-_COUNTER_SYNTAXES = frozenset({"Counter32", "Counter64", "ZeroBasedCounter32"})
-_GAUGE_SYNTAXES = frozenset({"Gauge32", "Unsigned32", "ZeroBasedCounter64", "CounterBasedGauge64"})
-_TIMETICKS_SYNTAXES = frozenset({"TimeTicks"})
+_COUNTER32_SYNTAXES = frozenset({"Counter32", "ZeroBasedCounter32"})
+_COUNTER64_SYNTAXES = frozenset({"Counter64", "ZeroBasedCounter64", "CounterBasedGauge64"})
+_GAUGE_SYNTAXES = frozenset({"Gauge32", "Unsigned32"})
+_TIMETICKS_SYNTAXES = frozenset({"TimeTicks", "TimeStamp", "TimeInterval"})
 _IP_SYNTAXES = frozenset({"IpAddress"})
 
 
@@ -135,22 +133,23 @@ class InMemoryObjectSource:
         return normalize_targets((target,), bundle=self._bundle)[0]
 
 
-def _default_value(syntax: str | None, *, instance: int) -> SnmpValueType:
+def _default_value(syntax: str | None, *, instance: int) -> ObjectValue:
     if syntax is None:
         return OctetStringValue(b"")
     base = syntax.split("(")[0].strip()
-    if base in _COUNTER_SYNTAXES or base == "Counter64":
-        return Counter32Value(0) if base != "Counter64" else Counter64Value(0)
+    if base in _COUNTER32_SYNTAXES:
+        return CounterRule()
+    if base in _COUNTER64_SYNTAXES:
+        return CounterRule(value_type=Counter64Value)
     if base in _GAUGE_SYNTAXES:
-        return Gauge32Value(0)
+        return RandomNumericRule(min=0, max=1000)
     if base in _TIMETICKS_SYNTAXES:
-        return TimeTicksValue(0)
+        return UptimeRule()
     if base in _IP_SYNTAXES:
         return IpAddressValue("0.0.0.0")
     if base in {
         "Integer32",
         "Integer",
-        "Unsigned32",
         "InterfaceIndex",
         "TruthValue",
         "RowStatus",
