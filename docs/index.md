@@ -24,7 +24,7 @@ repository and community entrypoints live under [`.github/`](../.github/).
 | Document | Description |
 |---|---|
 | [Getting Started](getting-started.md) | Install, first requests, and end-to-end runtime flows |
-| [Python API](python-api.md) | `V2cManager`, notification APIs, responder/simulator APIs, offline decode, and public types |
+| [Python API](python-api.md) | `V2cManager`, `V3Manager`, notification APIs, responder/simulator APIs, offline decode, and public types |
 | [CLI Reference](cli.md) | Polling, notification send/listen/decode commands, options, exit codes, and examples |
 | [Configuration](configuration.md) | Runtime constructor fields, bundle loading inputs, and CLI/runtime knobs |
 | [Architecture](architecture.md) | Package structure, runtime layering, call flows, and bundle boundary |
@@ -38,7 +38,7 @@ repository and community entrypoints live under [`.github/`](../.github/).
 
 | Document | Description |
 |---|---|
-| [v0.2.0 Implementation Prep](v0.2.0-implementation-prep.md) | Implementation plan, milestone sequencing, code touch points, and release bar for the current `0.2.0` cycle |
+| [v0.2.0 Implementation Prep](v0.2.0-implementation-prep.md) | Historical implementation plan and release bar for the `0.2.0` cycle |
 | [Contributing](contributing.md) | Dev setup, test/lint/typecheck commands, and conventions |
 | [Contributors](../.github/CONTRIBUTORS.md) | Maintainer and contributor listing |
 | [Release Checklist](release-checklist.md) | Maintainer checklist for cutting and verifying a release |
@@ -57,7 +57,7 @@ repository and community entrypoints live under [`.github/`](../.github/).
 
 ## Quick links
 
-- **Install:** `pip install trishul-snmp`
+- **Install:** `pip install trishul-snmp` (add `[v3]` for SNMPv3 auth/priv: `pip install "trishul-snmp[v3]"`)
 - **Ecosystem status:** [Ecosystem and Compatibility](ecosystem.md)
 - **GitHub overview:** [README](../README.md)
 - **Repository:** [github.com/tosumitdhaka/trishul-snmp](https://github.com/tosumitdhaka/trishul-snmp)

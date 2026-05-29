@@ -49,7 +49,7 @@ Follow this checklist for every release. Steps should be completed in order.
 
 - [ ] Run the full quality gate on a clean editable install:
   ```bash
-  pip install -e ".[dev]"
+  pip install -e ".[dev,v3]"
   ruff check trishul_snmp tests scripts
   ruff format trishul_snmp tests scripts --check
   mypy trishul_snmp
@@ -74,9 +74,9 @@ Follow this checklist for every release. Steps should be completed in order.
 - [ ] Smoke-test the built wheel from a clean venv:
   ```bash
   python -m venv /tmp/tsnmp-release-test
-  /tmp/tsnmp-release-test/bin/pip install dist/trishul_snmp-x.y.z-py3-none-any.whl
+  /tmp/tsnmp-release-test/bin/pip install "dist/trishul_snmp-x.y.z-py3-none-any.whl[v3]"
   /tmp/tsnmp-release-test/bin/tsnmp version
-  /tmp/tsnmp-release-test/bin/python -c "from trishul_snmp import V2cManager, load_bundle; print('import ok')"
+  /tmp/tsnmp-release-test/bin/python -c "from trishul_snmp import V2cManager, V3Manager, load_bundle; print('import ok')"
   ```
 
 - [ ] Verify the wheel has no duplicate entries:

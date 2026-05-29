@@ -1,8 +1,8 @@
 # Configuration Reference
 
-All runtime configuration is explicit on `V2cManager`, `V2cNotifier`,
-`V2cNotificationListener`, `V2cResponder`, and `load_bundle()`. The CLI maps
-directly to these knobs; there is no hidden global config layer.
+All runtime configuration is explicit on the manager, notifier, listener, and responder
+constructors and `load_bundle()`. The CLI maps directly to these knobs; there is no hidden
+global config layer.
 
 ```python
 from trishul_snmp import V2cManager, load_bundle
@@ -36,6 +36,36 @@ Validation notes:
 - `timeout` must be greater than `0`
 - `retries` cannot be negative
 - symbolic targets require a loaded bundle
+
+---
+
+## `V3Manager` fields
+
+Requires `pip install "trishul-snmp[v3]"` for auth/priv.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `host` | `str` | required | Target hostname or IP address |
+| `user` | `UsmUser` | required | USM credentials (`UsmUser` dataclass) |
+| `port` | `int` | `161` | Target UDP port |
+| `timeout` | `float` | `2.0` | Per-request timeout in seconds |
+| `retries` | `int` | `1` | Retry count after the first attempt |
+| `bundle` | `MibBundle \| None` | `None` | Optional bundle for symbolic resolution and enrichment |
+| `max_datagram_size` | `int` | `65535` | Maximum UDP datagram size for receive operations |
+| `context_name` | `bytes` | `b""` | SNMPv3 context name |
+
+`UsmUser` fields: `username` (str), `auth_protocol` (AuthProtocol), `auth_key` (bytes),
+`auth_key_localized` (bool), `priv_protocol` (PrivProtocol), `priv_key` (bytes).
+
+`AuthProtocol`: `NONE`, `MD5`, `SHA1`, `SHA256`
+`PrivProtocol`: `NONE`, `AES128` (DES raises `ProtocolError`)
+
+---
+
+## `V3Notifier` fields
+
+Same as `V3Manager` except `port` defaults to `162`. `send_inform()` is supported;
+`send_trap()` raises `ProtocolError` — see the Python API docs for the reason.
 
 ---
 

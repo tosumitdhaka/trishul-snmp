@@ -11,10 +11,19 @@ add compiled JSON only when you need symbolic resolution or better display metad
 pip install trishul-snmp
 ```
 
+For SNMPv3 auth/priv support (HMAC and AES-128-CFB encryption), install the `[v3]` extra:
+
+```bash
+pip install "trishul-snmp[v3]"
+```
+
+The base package always imports correctly without `[v3]`; only calling auth or priv methods
+at runtime requires it.
+
 For local development:
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,v3]"
 ```
 
 Requires Python `>=3.10`.
@@ -27,7 +36,7 @@ Current main-branch baseline:
 
 - manager operations plus notification send/listen/decode
 - narrow read-only responder/simulator support
-- SNMPv2c-only
+- SNMPv2c and SNMPv3 USM (noAuthNoPriv, authNoPriv, authPriv AES-128)
 - read-only operations: `get`, `get_next`, `get_bulk`, `walk`, `bulkwalk`
 - package-first Python API
 - optional compiled-JSON bundle loading from a single module file or a bundle directory
@@ -38,7 +47,6 @@ Deliberately out of scope:
 - runtime dependency on `trishul-smi`
 - `set`
 - SNMPv1
-- SNMPv3
 - full agent or writable responder behavior
 
 ---

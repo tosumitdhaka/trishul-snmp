@@ -58,6 +58,13 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 
 ---
 
+## v0.4.0 — shipped 2026-05-28
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | Session architecture refactor | done | Extracted shared `UdpClient + Dispatcher + Lock + MibBundle` into `session.py`. Added `security/model.py` (`SecurityModel` protocol) + `security/community.py` (`CommunityModel` for v2c). `dispatcher.py` takes `security=` instead of `community=`. `V2cManager` / `V2cNotifier` are subclasses of new `SnmpManager` / `SnmpNotifier` bases; `V2cNotificationListener` is an alias — no public API breakage. |
+| 2 | SNMPv3 USM (full stack) | done | Full USM: noAuthNoPriv + authNoPriv (HMAC-MD5/SHA-1/SHA-256) + authPriv (AES-128-CFB). DES-CBC intentionally deferred — broken cipher, not present in `cryptography>=41`. Engine discovery via optional async `prepare(dispatcher)` hook on `UsmModel`; `session.py` awaits it on open. Discovery uses a dedicated `dispatcher.send_raw_and_receive(data) -> bytes` path that never surfaces to the normal request flow — REPORT never reaches `send_pdu()` or `response_from_pdu()`. `wrap_pdu`/`unwrap_message` stay synchronous. `security/usm.py` never imports `cryptography` at module level; auth/priv methods call `_require_cryptography()` which raises `ImportError` with install instructions if the package is absent. `UsmModel` is imported unconditionally in `__init__.py` — it always works; only calling auth/priv methods without `[v3]` fails. CI installs `.[dev,v3]`. A dedicated test blocks `cryptography` via `patch.dict(sys.modules, {'cryptography': None})` and reimports `usm` to catch top-level import regressions even with `[v3]` installed. `V3Manager` mirrors `V2cManager`. `V3Notifier` supports `send_inform()` only — `send_trap()` raises `ProtocolError` because SNMPv3 traps require the sender's own authoritative engine state (RFC 3412 §7.1.9), which is not available after discovery against the receiver; use `send_inform()` for authenticated v3 notifications. v3 listener out of scope for this release. Requires `cryptography>=40` (optional extra `[v3]`). |
+
 ## Near-term hardening
 
 | # | Item | Status | Notes |
@@ -78,7 +85,9 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 | 4 | `pysnmp` API compatibility layer | deferred | Avoid carrying legacy surface area in `v0.1`. |
 | 5 | Sync wrapper | deferred | Async-first package API remains the primary runtime surface. |
 | 6 | SNMPv1 manager support | deferred | Not required for the initial modern runtime baseline. |
-| 7 | SNMPv3 | deferred | Significant auth/privacy scope increase; not justified for `v0.1`. |
+| 7 | SNMPv3 full implementation | moved | Moved into v0.4.0 item 2. v3 listener (USM-aware inform-ack) remains deferred to a follow-on version. |
 | 8 | `set` | deferred | Write operations need separate safety and API design. |
 | 9 | Daemon/service packaging for long-running listeners | deferred | Library-level listener and responder APIs exist on main branch; daemonization is still out of scope. |
 | 10 | Full agent framework or writable responder support | deferred | `v0.2.0` only targets a narrow read-only simulator/responder. |
+| 11 | Native codec experiment | deferred | Pure codec microbenchmarks improved, but end-to-end manager and responder paths did not justify the extra Rust build, packaging, and dual-implementation maintenance cost. Revisit only if a broader native hot-path effort is planned. |
+| 12 | DES-CBC privacy (USM) | deferred | DES is a broken cipher (56-bit key). Not present in `cryptography>=41`; the `PrivProtocol.DES` enum value is retained for wire-level identification but `_encrypt_des`/`_decrypt_des` raise `ProtocolError`. Revisit only if required for a legacy-device integration with no alternative. |

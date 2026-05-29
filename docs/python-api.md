@@ -10,7 +10,9 @@ same package surface.
 | Symbol | Kind | Purpose |
 |---|---|---|
 | `V2cManager` | class | Async SNMPv2c manager client |
+| `V3Manager` | class | Async SNMPv3 USM manager client |
 | `V2cNotifier` | class | Async SNMPv2c trap and inform sender |
+| `V3Notifier` | class | Async SNMPv3 USM inform sender (`send_trap` unsupported — RFC 3412 §7.1.9) |
 | `V2cNotificationListener` | class | Async SNMPv2c trap and inform listener |
 | `V2cResponder` | class | Async SNMPv2c read-only responder for simulator-style use |
 | `decode_notification(data, *, bundle=None, source_address=None)` | function | Offline decode for BER-encoded SNMPv2c traps and informs |
@@ -27,6 +29,13 @@ same package surface.
 | `VarBind` | dataclass | OID/value pair plus optional enrichment fields |
 | `NotificationEvent` | dataclass | Structured inbound notification event |
 | `NotificationMemberBinding` | dataclass | Declared notification member paired with the received varbind |
+
+SNMPv3 USM types (require `pip install "trishul-snmp[v3]"` for auth/priv methods):
+
+- `UsmUser`
+- `AuthProtocol`
+- `PrivProtocol`
+- `UsmModel`
 
 Important public enums and value models:
 
@@ -92,6 +101,59 @@ try:
 finally:
     await manager.close()
 ```
+
+---
+
+## `V3Manager`
+
+Requires `pip install "trishul-snmp[v3]"` for auth/priv methods.
+
+```python
+from trishul_snmp import V3Manager, UsmUser, AuthProtocol, PrivProtocol
+
+user = UsmUser(
+    username="myuser",
+    auth_protocol=AuthProtocol.SHA1,
+    auth_key=b"my-auth-passphrase",
+    priv_protocol=PrivProtocol.AES128,
+    priv_key=b"my-priv-passphrase",
+)
+
+async with V3Manager(host="10.0.0.10", user=user) as manager:
+    response = await manager.get("1.3.6.1.2.1.1.3.0")
+```
+
+### Constructor fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `host` | `str` | required | Target hostname or IP address |
+| `user` | `UsmUser` | required | USM credentials |
+| `port` | `int` | `161` | Target UDP port |
+| `timeout` | `float` | `2.0` | Per-request timeout in seconds |
+| `retries` | `int` | `1` | Retry count after the first attempt |
+| `bundle` | `MibBundle \| None` | `None` | Optional bundle for symbolic resolution and enrichment |
+| `max_datagram_size` | `int` | `65535` | Maximum datagram size for UDP receive |
+| `context_name` | `bytes` | `b""` | SNMPv3 context name |
+
+`V3Manager.open()` runs RFC 3414 engine discovery automatically before the first request.
+All manager operations (`get`, `get_next`, `get_bulk`, `walk`, `bulkwalk`) are identical
+to `V2cManager`.
+
+### `UsmUser` fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `username` | `str` | required | USM security name |
+| `auth_protocol` | `AuthProtocol` | `AuthProtocol.NONE` | HMAC algorithm |
+| `auth_key` | `bytes` | `b""` | Auth passphrase (or pre-localized key if `auth_key_localized=True`) |
+| `auth_key_localized` | `bool` | `False` | Skip RFC 3414 key derivation and use `auth_key` bytes directly |
+| `priv_protocol` | `PrivProtocol` | `PrivProtocol.NONE` | Privacy algorithm |
+| `priv_key` | `bytes` | `b""` | Priv passphrase |
+
+`AuthProtocol` values: `NONE`, `MD5`, `SHA1`, `SHA256`
+
+`PrivProtocol` values: `NONE`, `AES128` (`DES` enum value exists for wire identification but raises `ProtocolError` at runtime)
 
 ---
 
@@ -202,6 +264,7 @@ Runtime and protocol errors:
 - `TransportError`
 - `RequestTimeoutError`
 - `ProtocolError`
+- `AuthenticationError` (subclass of `ProtocolError`; raised on USM HMAC verification failure)
 
 ---
 
@@ -259,6 +322,24 @@ async with V2cNotifier(host="10.0.0.20", community="public", bundle=bundle) as n
         uptime=123,
     )
 ```
+
+---
+
+## `V3Notifier`
+
+Requires `pip install "trishul-snmp[v3]"` for auth/priv methods.
+
+Constructor fields are identical to `V2cNotifier` except `community` is replaced by `user: UsmUser`
+and there is an additional optional `context_name: bytes = b""` field.
+
+**`send_inform` is fully supported.** Informs are confirmed-class PDUs that require the receiver's
+engine parameters; engine discovery provides exactly those.
+
+**`send_trap` raises `ProtocolError` and is not supported.** SNMPv3 traps are unconfirmed PDUs that
+must carry the *sender's own* authoritative engine state (RFC 3412 §7.1.9). Engine discovery
+populates the *receiver's* engine state, not the sender's, so emitting a trap would silently produce
+a protocol-incorrect message. `V3Notifier.send_trap()` raises `ProtocolError` immediately to
+prevent that. Use `send_inform()` for reliable authenticated SNMPv3 notifications.
 
 ---
 

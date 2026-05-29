@@ -56,7 +56,7 @@ Current main-branch baseline:
 
 - manager operations plus notification send/listen/decode
 - narrow read-only responder / simulator support
-- SNMPv2c-only
+- SNMPv2c and SNMPv3 USM (noAuthNoPriv, authNoPriv, authPriv AES-128)
 - read-only operations only
 - async-first Python API first, CLI second
 - optional compiled-JSON enrichment via `tsmi` artifacts
@@ -69,7 +69,6 @@ Deliberately deferred:
 - direct runtime dependency on the `trishul-smi` Python package
 - sync wrapper
 - SNMPv1
-- SNMPv3
 - `set`
 - full agent framework
 - writable responder support
@@ -81,10 +80,18 @@ Deliberately deferred:
 pip install trishul-snmp
 ```
 
+For SNMPv3 auth/priv support (HMAC and AES-128-CFB encryption):
+
+```bash
+pip install "trishul-snmp[v3]"
+```
+
+The base package imports without `[v3]`; only calling auth or priv methods at runtime requires it.
+
 For local development:
 
 ```bash
-pip install -e .[dev]
+pip install -e ".[dev,v3]"
 ```
 
 Requires Python `>=3.10`.

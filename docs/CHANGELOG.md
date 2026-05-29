@@ -10,6 +10,24 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.0] — 2026-05-28
+
+### Added
+
+- **SNMPv3 USM** — full noAuthNoPriv, authNoPriv (HMAC-MD5 / SHA-1 / SHA-256), and authPriv (AES-128-CFB) support. DES-CBC intentionally omitted — broken cipher, not present in `cryptography>=41`.
+- **Engine discovery** — `UsmModel.prepare(dispatcher)` sends an RFC 3414 probe and caches engineID / engineBoots / engineTime; `SnmpSession.open()` awaits it automatically when the security model exposes the method.
+- **`V3Manager`** — thin subclass of `SnmpManager` that accepts a `UsmUser` and wires a `UsmModel` internally, mirroring the `V2cManager` pattern.
+- **`V3Notifier`** — `send_inform()` supported; `send_trap()` raises `ProtocolError`. SNMPv3 traps require the sender's own authoritative engine state (RFC 3412 §7.1.9), which is unavailable after engine discovery against the receiver.
+- **`AuthenticationError`** — new exception raised on HMAC verification failure; subclass of `ProtocolError`.
+- **`cryptography>=40` optional extra** — `pip install trishul-snmp[v3]`; the package imports and works without it, only auth/priv method calls fail with a clear install hint.
+
+### Changed
+
+- **CI and release workflows** now install `.[dev,v3]` so the full test suite runs with crypto support.
+- **`dispatcher.py`** gained `send_raw_and_receive(data) -> bytes` for the USM discovery path; never used by normal `send_pdu` / `send_only` flows.
+
+---
+
 ## [0.3.1] — 2026-05-15
 
 ### Fixed

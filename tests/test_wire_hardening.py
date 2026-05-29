@@ -5,7 +5,11 @@ import pytest
 from trishul_snmp.errors import ProtocolError
 from trishul_snmp.types import NullValue
 from trishul_snmp.wire.ber import decode_length, decode_tlv, encode_tlv
-from trishul_snmp.wire.message import SnmpMessage, decode_message, encode_message
+from trishul_snmp.wire.message import (
+    SnmpMessage,
+    decode_message,
+    encode_message,
+)
 from trishul_snmp.wire.pdu import Pdu, PduType, RawVarBind, decode_pdu, encode_pdu
 
 
@@ -80,6 +84,76 @@ def test_decode_message_rejects_invalid_community_text() -> None:
 
     with pytest.raises(ProtocolError, match="invalid UTF-8"):
         decode_message(encoded)
+
+
+def _valid_message_bytes() -> bytes:
+    return encode_message(
+        SnmpMessage(
+            version=1,
+            community="public",
+            pdu=Pdu(
+                pdu_type=PduType.GET,
+                request_id=1,
+                error_status=0,
+                error_index=0,
+                varbinds=(RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 3, 0), value=NullValue()),),
+            ),
+        )
+    )
+
+
+def test_decode_message_rejects_wrong_request_id_tag() -> None:
+    data = bytearray(_valid_message_bytes())
+    # The PDU tag is 0xA0; the first byte inside PDU content is the request_id INTEGER tag.
+    pdu_start = data.index(0xA0) + 2  # skip PDU tag + 1-byte length
+    data[pdu_start] = 0x04  # replace INTEGER (0x02) with OCTET STRING (0x04)
+    with pytest.raises(ProtocolError):
+        decode_message(bytes(data))
+
+
+def test_decode_message_rejects_wrong_oid_tag() -> None:
+    data = bytearray(_valid_message_bytes())
+    data[data.index(0x06)] = 0x02  # replace OID tag with INTEGER tag
+    with pytest.raises(ProtocolError):
+        decode_message(bytes(data))
+
+
+def test_decode_message_rejects_trailing_bytes() -> None:
+    data = _valid_message_bytes() + b"\x00"
+    with pytest.raises(ProtocolError, match="Unexpected trailing BER content"):
+        decode_message(data)
+
+
+def test_encode_message_rejects_invalid_oid_first_arc() -> None:
+    msg = SnmpMessage(
+        version=1,
+        community="public",
+        pdu=Pdu(
+            pdu_type=PduType.GET,
+            request_id=1,
+            error_status=0,
+            error_index=0,
+            varbinds=(RawVarBind(oid=(3, 0), value=NullValue()),),
+        ),
+    )
+    with pytest.raises(ProtocolError, match="First OID arc"):
+        encode_message(msg)
+
+
+def test_encode_message_rejects_negative_oid_arc() -> None:
+    msg = SnmpMessage(
+        version=1,
+        community="public",
+        pdu=Pdu(
+            pdu_type=PduType.GET,
+            request_id=1,
+            error_status=0,
+            error_index=0,
+            varbinds=(RawVarBind(oid=(1, 3, -1), value=NullValue()),),
+        ),
+    )
+    with pytest.raises(ProtocolError, match="OID arcs cannot be negative"):
+        encode_message(msg)
 
 
 def test_decode_pdu_rejects_empty_integer_content() -> None:

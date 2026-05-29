@@ -1,6 +1,6 @@
 # trishul-snmp — Architecture
 
-> **Last updated:** 2026-05-15
+> **Last updated:** 2026-05-29
 
 ---
 
@@ -13,18 +13,20 @@ responder with no MIB compiler dependency. Optional compiled-JSON artifacts add
 symbolic translation and richer display.
 
 ```text
-┌────────────────────────────────────────────────────────────────────┐
-│                       Python API / CLI                             │
-│ V2cManager + V2cNotifier + V2cNotificationListener + V2cResponder │
-│                     + decode_notification()                        │
-├────────────────────────────────────────────────────────────────────┤
-│ manager/      target normalization, request shaping, walk logic    │
-│ notify/       send, listen, and offline notification decode        │
-│ responder/    read-only request handling and simulator sources     │
-│ transport/    UDP client/server, request matching, retries         │
-│ wire/         BER / ASN.1 / SNMPv2c message + PDU codec            │
-│ mib/          optional bundle loading, registry, rendering         │
-└────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                             Python API / CLI                                 │
+│  V2cManager / V3Manager  ·  V2cNotifier / V3Notifier                        │
+│  V2cNotificationListener  ·  V2cResponder  ·  decode_notification()          │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ manager/      target normalization, request shaping, walk logic              │
+│ notify/       send, listen, and offline notification decode                  │
+│ responder/    read-only request handling and simulator sources               │
+│ security/     SecurityModel protocol · CommunityModel · UsmModel (v3 USM)   │
+│ session.py    shared UdpClient + Dispatcher + Lock + MibBundle               │
+│ transport/    UDP client/server, request matching, retries                   │
+│ wire/         BER / ASN.1 / SNMPv2c + SNMPv3 message + PDU codec            │
+│ mib/          optional bundle loading, registry, rendering                   │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 The CLI is intentionally thin. It does not define a second architecture.
@@ -37,13 +39,20 @@ The CLI is intentionally thin. It does not define a second architecture.
 trishul_snmp/
 ├── __init__.py          ← public package surface + version
 ├── __main__.py          ← `python -m trishul_snmp`
-├── errors.py            ← exception hierarchy
+├── errors.py            ← exception hierarchy (incl. AuthenticationError)
 ├── types.py             ← public response and SNMP value models
+├── session.py           ← shared UdpClient + Dispatcher + Lock + MibBundle
+│
+├── security/
+│   ├── model.py         ← SecurityModel protocol (structural)
+│   ├── community.py     ← CommunityModel for SNMPv2c
+│   └── usm.py           ← UsmModel, UsmUser, AuthProtocol, PrivProtocol (v3 USM)
 │
 ├── wire/
 │   ├── ber.py           ← BER primitives
 │   ├── asn1.py          ← ASN.1 value encoding helpers
-│   ├── message.py       ← SNMP message encode/decode
+│   ├── message.py       ← SNMPv2c message encode/decode
+│   ├── v3message.py     ← SNMPv3 outer message + ScopedPDU + USM params codec
 │   └── pdu.py           ← PDU models and PDU encode/decode
 │
 ├── transport/
@@ -51,12 +60,12 @@ trishul_snmp/
 │   └── dispatcher.py    ← request ids, timeout/retry, response matching
 │
 ├── manager/
-│   ├── client.py        ← V2cManager public runtime API
+│   ├── client.py        ← SnmpManager base · V2cManager · V3Manager
 │   ├── operations.py    ← target normalization and response shaping
 │   └── walk.py          ← subtree walk stop rules and iteration
 │
 ├── notify/
-│   ├── client.py        ← V2cNotifier public send API
+│   ├── client.py        ← SnmpNotifier base · V2cNotifier · V3Notifier
 │   ├── listener.py      ← V2cNotificationListener public receive API
 │   ├── events.py        ← notification event model + live/offline decode
 │   └── __init__.py      ← notification package export
@@ -90,13 +99,27 @@ Pure protocol codec. Responsibilities:
 
 - BER primitives
 - ASN.1 value encoding/decoding
-- SNMP message and PDU encode/decode
+- SNMPv2c and SNMPv3 message and PDU encode/decode
+- SNMPv3 outer message framing, ScopedPDU, and USM security parameters codec (`v3message.py`)
 
 Non-responsibilities:
 
 - no UDP socket handling
 - no retry/timeout logic
 - no bundle translation or enrichment
+- no cryptography (`security/` owns auth/priv)
+
+### 3.1a `security/`
+
+Security model abstraction. Responsibilities:
+
+- `SecurityModel` structural protocol: `wrap_pdu(pdu) -> bytes`, `unwrap_message(data) -> Pdu | None`
+- `CommunityModel`: SNMPv2c community string wrapping/matching
+- `UsmModel`: SNMPv3 USM — RFC 3414 key derivation, HMAC auth, AES-128-CFB privacy, engine discovery
+- `UsmUser`: immutable credential dataclass (username, auth protocol/key, priv protocol/key)
+
+`UsmModel` imports `cryptography` lazily inside auth/priv methods only; the class is always
+importable without the `[v3]` extra.
 
 ### 3.2 `transport/`
 
@@ -253,10 +276,10 @@ actually need.
 The current main-branch scope is still intentionally narrower than a full SNMP
 stack:
 
-- SNMPv2c-only
+- SNMPv2c and SNMPv3 USM (noAuthNoPriv, authNoPriv, authPriv AES-128)
 - async-first package API first, CLI second
 - manager operations plus notification send/receive and narrow read-only response
 - not attempting a full `pysnmp` replacement
 
-Raw MIB ingestion, compiler workflows, writable `set`, SNMPv3, and full
+Raw MIB ingestion, compiler workflows, writable `set`, SNMPv1, and full
 agent framework support remain outside the current implemented architecture.

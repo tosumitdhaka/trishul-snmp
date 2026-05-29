@@ -14,8 +14,8 @@ from trishul_snmp.wire.message import SnmpMessage, decode_message, encode_messag
 from trishul_snmp.wire.pdu import Pdu, PduType
 
 
-class V2cNotificationListener:
-    """Async iterator-style SNMPv2c trap and inform listener."""
+class SnmpNotificationListener:
+    """Async iterator-style SNMP trap and inform listener."""
 
     def __init__(
         self,
@@ -30,7 +30,7 @@ class V2cNotificationListener:
         self._communities = _normalize_communities(communities)
         self._closed = False
 
-    async def __aenter__(self) -> V2cNotificationListener:
+    async def __aenter__(self) -> SnmpNotificationListener:
         await self.open()
         return self
 
@@ -43,7 +43,7 @@ class V2cNotificationListener:
         del exc_type, exc, tb
         await self.close()
 
-    def __aiter__(self) -> V2cNotificationListener:
+    def __aiter__(self) -> SnmpNotificationListener:
         return self
 
     async def __anext__(self) -> NotificationEvent:
@@ -101,6 +101,9 @@ class V2cNotificationListener:
             ),
         )
         await self._server.sendto(encode_message(response), addr)
+
+
+V2cNotificationListener = SnmpNotificationListener
 
 
 def _normalize_communities(communities: Sequence[str] | None) -> frozenset[str] | None:

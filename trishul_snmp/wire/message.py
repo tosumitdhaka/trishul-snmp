@@ -25,6 +25,15 @@ class SnmpMessage:
 
 def encode_message(message: SnmpMessage) -> bytes:
     """Encode an SNMP message."""
+    return _encode_message_python(message)
+
+
+def decode_message(data: bytes) -> SnmpMessage:
+    """Decode an SNMP message."""
+    return _decode_message_python(data)
+
+
+def _encode_message_python(message: SnmpMessage) -> bytes:
     content = b"".join(
         [
             _encode_integer(message.version),
@@ -35,8 +44,7 @@ def encode_message(message: SnmpMessage) -> bytes:
     return encode_tlv(_SEQUENCE_TAG, content)
 
 
-def decode_message(data: bytes) -> SnmpMessage:
-    """Decode an SNMP message."""
+def _decode_message_python(data: bytes) -> SnmpMessage:
     tag, content, offset = decode_tlv(data, 0)
     if tag != _SEQUENCE_TAG:
         raise ProtocolError(f"Expected SNMP message SEQUENCE, found 0x{tag:02x}")

@@ -23,11 +23,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev,v3]"
       - run: pytest --tb=short -q
 
   # ------------------------------------------------------------------ #
-  # Build sdist + wheel
+  # Build the distribution (wheel + sdist)
   # ------------------------------------------------------------------ #
   build:
     name: Build distribution
@@ -44,11 +44,8 @@ jobs:
       - name: Install hatch
         run: pip install hatch
 
-      - name: Build
+      - name: Build wheel and sdist
         run: hatch build
-
-      - name: Verify dist contents
-        run: ls -lh dist/
 
       - uses: actions/upload-artifact@v7
         with:

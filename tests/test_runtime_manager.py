@@ -138,8 +138,8 @@ class FakeDispatcher:
 def _build_manager(*, bundle_path: Path) -> V2cManager:
     bundle = load_bundle(bundle_path)
     manager = V2cManager(host="127.0.0.1", port=161, community="public", bundle=bundle)
-    manager._client = _NoopClient()  # type: ignore[attr-defined]
-    manager._dispatcher = FakeDispatcher()  # type: ignore[attr-defined]
+    manager._session._client = _NoopClient()  # type: ignore[attr-defined]
+    manager._session._dispatcher = FakeDispatcher()  # type: ignore[attr-defined]
     return manager
 
 

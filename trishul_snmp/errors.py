@@ -49,3 +49,7 @@ class TransportError(TsnmpError):
 
 class RequestTimeoutError(TransportError):
     """Raised when a request does not receive a matching response in time."""
+
+
+class AuthenticationError(ProtocolError):
+    """Raised when SNMPv3 USM message authentication verification fails."""

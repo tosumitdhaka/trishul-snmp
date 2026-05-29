@@ -19,6 +19,7 @@ from trishul_snmp.notify.client import (
     build_notification_raw_varbinds,
     encode_notification_raw_varbinds,
 )
+from trishul_snmp.security.community import CommunityModel
 from trishul_snmp.transport.dispatcher import RequestDispatcher
 from trishul_snmp.wire.message import SnmpMessage, decode_message, encode_message
 from trishul_snmp.wire.pdu import Pdu, PduType, RawVarBind
@@ -122,10 +123,10 @@ def _build_notifier(
     bundle = load_bundle(bundle_path) if bundle_path is not None else None
     notifier = V2cNotifier(host="127.0.0.1", port=162, community="public", bundle=bundle, retries=0)
     fake_client = FakeUdpClient(replies or [])
-    notifier._client = fake_client  # type: ignore[attr-defined]
-    notifier._dispatcher = RequestDispatcher(  # type: ignore[attr-defined]
+    notifier._session._client = fake_client  # type: ignore[attr-defined]
+    notifier._session._dispatcher = RequestDispatcher(  # type: ignore[attr-defined]
         fake_client,
-        community="public",
+        security=CommunityModel("public"),
         timeout=0.2,
         retries=0,
     )

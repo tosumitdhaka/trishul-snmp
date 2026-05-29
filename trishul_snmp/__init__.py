@@ -1,6 +1,7 @@
 """Public package surface for trishul-snmp."""
 
 from trishul_snmp.errors import (
+    AuthenticationError,
     BundleError,
     BundleValidationError,
     InvalidOidError,
@@ -11,16 +12,16 @@ from trishul_snmp.errors import (
     UnknownOidError,
     UnknownSymbolError,
 )
-from trishul_snmp.manager.client import V2cManager
+from trishul_snmp.manager.client import SnmpManager, V2cManager, V3Manager
 from trishul_snmp.mib.bundle import MibBundle
 from trishul_snmp.mib.loader import load_bundle
-from trishul_snmp.notify.client import V2cNotifier
+from trishul_snmp.notify.client import SnmpNotifier, V2cNotifier, V3Notifier
 from trishul_snmp.notify.events import (
     NotificationEvent,
     NotificationMemberBinding,
     decode_notification,
 )
-from trishul_snmp.notify.listener import V2cNotificationListener
+from trishul_snmp.notify.listener import SnmpNotificationListener, V2cNotificationListener
 from trishul_snmp.responder.rules import (
     CounterRule,
     RandomNumericRule,
@@ -34,6 +35,10 @@ from trishul_snmp.responder.sources import (
     InMemoryObjectSource,
     ResponderSource,
 )
+from trishul_snmp.security.community import CommunityModel
+from trishul_snmp.security.model import SecurityModel
+from trishul_snmp.security.usm import AuthProtocol, PrivProtocol, UsmModel, UsmUser
+from trishul_snmp.session import SnmpSession
 from trishul_snmp.types import (
     OID,
     Counter32Value,
@@ -59,9 +64,12 @@ from trishul_snmp.types import (
 )
 
 __all__ = [
+    "AuthProtocol",
+    "AuthenticationError",
     "BundleError",
     "BundleValidationError",
     "CallbackObjectSource",
+    "CommunityModel",
     "Counter32Value",
     "Counter64Value",
     "CounterRule",
@@ -83,15 +91,21 @@ __all__ = [
     "OidMatch",
     "OctetStringValue",
     "OpaqueValue",
+    "PrivProtocol",
     "ProtocolError",
     "RandomNumericRule",
     "RequestTimeoutError",
     "ResponderSource",
     "Response",
+    "SecurityModel",
     "SimulationRule",
-    "SocketAddress",
+    "SnmpManager",
+    "SnmpNotificationListener",
+    "SnmpNotifier",
+    "SnmpSession",
     "SnmpValue",
     "SnmpValueType",
+    "SocketAddress",
     "TimeTicksValue",
     "TimestampRule",
     "TranslationError",
@@ -99,14 +113,18 @@ __all__ = [
     "UnknownOidError",
     "UnknownSymbolError",
     "UptimeRule",
+    "UsmModel",
+    "UsmUser",
     "V2cManager",
     "V2cNotificationListener",
     "V2cNotifier",
     "V2cResponder",
+    "V3Manager",
+    "V3Notifier",
     "VarBind",
     "__version__",
     "decode_notification",
     "load_bundle",
 ]
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"

@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from trishul_snmp.errors import ProtocolError, RequestTimeoutError
+from trishul_snmp.security.community import CommunityModel
 from trishul_snmp.transport.dispatcher import RequestDispatcher
 from trishul_snmp.types import NullValue
 from trishul_snmp.wire.message import SnmpMessage, decode_message, encode_message
@@ -50,7 +51,9 @@ def test_dispatcher_retries_after_timeout_then_succeeds() -> None:
             _response_bytes(request_id=1, pdu_type=PduType.RESPONSE),
         ]
     )
-    dispatcher = RequestDispatcher(client, community="public", timeout=0.5, retries=1)
+    dispatcher = RequestDispatcher(
+        client, security=CommunityModel("public"), timeout=0.5, retries=1
+    )
 
     async def scenario():
         return await dispatcher.send_pdu(
@@ -73,7 +76,9 @@ def test_dispatcher_ignores_unmatched_responses_until_match() -> None:
             _response_bytes(request_id=1, pdu_type=PduType.RESPONSE),
         ]
     )
-    dispatcher = RequestDispatcher(client, community="public", timeout=0.5, retries=0)
+    dispatcher = RequestDispatcher(
+        client, security=CommunityModel("public"), timeout=0.5, retries=0
+    )
 
     async def scenario():
         return await dispatcher.send_pdu(
@@ -89,7 +94,9 @@ def test_dispatcher_ignores_unmatched_responses_until_match() -> None:
 
 def test_dispatcher_raises_protocol_error_for_non_response_pdu() -> None:
     client = FakeUdpClient([_response_bytes(request_id=1, pdu_type=PduType.GET)])
-    dispatcher = RequestDispatcher(client, community="public", timeout=0.5, retries=0)
+    dispatcher = RequestDispatcher(
+        client, security=CommunityModel("public"), timeout=0.5, retries=0
+    )
 
     async def scenario():
         return await dispatcher.send_pdu(
@@ -108,7 +115,9 @@ def test_dispatcher_raises_after_retry_budget_exhausted() -> None:
             RequestTimeoutError("timed out"),
         ]
     )
-    dispatcher = RequestDispatcher(client, community="public", timeout=0.5, retries=1)
+    dispatcher = RequestDispatcher(
+        client, security=CommunityModel("public"), timeout=0.5, retries=1
+    )
 
     async def scenario():
         return await dispatcher.send_pdu(
@@ -123,7 +132,9 @@ def test_dispatcher_raises_after_retry_budget_exhausted() -> None:
 
 def test_dispatcher_prepare_request_and_send_only_helpers() -> None:
     client = FakeUdpClient([])
-    dispatcher = RequestDispatcher(client, community="public", timeout=0.5, retries=0)
+    dispatcher = RequestDispatcher(
+        client, security=CommunityModel("public"), timeout=0.5, retries=0
+    )
     request = dispatcher.prepare_request(
         PduType.GET,
         (RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 3, 0), value=NullValue()),),
@@ -151,7 +162,7 @@ def test_dispatcher_validates_timeout_and_retries() -> None:
     client = FakeUdpClient([])
 
     with pytest.raises(ValueError, match="timeout must be > 0"):
-        RequestDispatcher(client, community="public", timeout=0, retries=0)
+        RequestDispatcher(client, security=CommunityModel("public"), timeout=0, retries=0)
 
     with pytest.raises(ValueError, match="retries cannot be negative"):
-        RequestDispatcher(client, community="public", timeout=1.0, retries=-1)
+        RequestDispatcher(client, security=CommunityModel("public"), timeout=1.0, retries=-1)

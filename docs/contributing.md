@@ -7,7 +7,7 @@
 ```bash
 git clone https://github.com/tosumitdhaka/trishul-snmp
 cd trishul-snmp
-pip install -e ".[dev]"
+pip install -e ".[dev,v3]"
 ```
 
 ---
@@ -49,7 +49,7 @@ ruff format --check trishul_snmp tests
 ## Running the CLI locally
 
 ```bash
-# After pip install -e ".[dev]"
+# After pip install -e ".[dev,v3]"
 tsnmp version
 tsnmp translate --bundle ./IF-MIB.json IF-MIB::ifDescr.1
 tsnmp get --host 127.0.0.1 1.3.6.1.2.1.1.3.0
@@ -65,9 +65,11 @@ Please do not introduce these without explicit design discussion:
 - direct runtime dependency on `trishul-smi`
 - public generic JSON normalization for foreign schemas
 - `pysnmp` compatibility shims
-- SNMPv3 support
 - `set`
 - full agent framework or writable responder functionality
+- SNMPv3 listener (USM-aware inform-ack — separate design needed)
+- `V3Notifier.send_trap()` — requires local authoritative engine state; not supported until a local-engine bootstrapping design is in place
+- DES-CBC privacy (broken cipher, deferred)
 
 Those are not rejected forever, but they are outside the current baseline.
 

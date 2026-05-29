@@ -50,8 +50,8 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install package + dev deps
-        run: pip install -e ".[dev]"
+      - name: Install dev deps
+        run: pip install -e ".[dev,v3]"
 
       - name: mypy
         run: mypy
@@ -76,8 +76,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install package + dev deps
-        run: pip install -e ".[dev]"
+      - name: Install dev deps
+        run: pip install -e ".[dev,v3]"
 
       - name: pytest
         run: |
