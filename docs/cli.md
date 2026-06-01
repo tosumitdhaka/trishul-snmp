@@ -4,6 +4,11 @@ The CLI is a thin wrapper over the Python API. It is useful for smoke testing,
 offline translation, notification debugging, and simple operator workflows, but
 it is not the primary product surface.
 
+Current `v0.4.0` live CLI protocol coverage is SNMPv2c only. The Python API already
+supports SNMPv3 USM manager operations and SNMPv3 inform send. CLI SNMPv3 support is
+planned for `v0.4.1`; until then, use `V3Manager` and `V3Notifier.send_inform()`
+from Python for live SNMPv3 workflows.
+
 ---
 
 ## Common manager options
@@ -323,5 +328,6 @@ Deliberately still not included:
 - `set`
 - compile workflows
 - raw MIB file or directory ingestion
+- SNMPv3 live CLI commands in `v0.4.0` (planned for `v0.4.1`)
 
 If you need rich runtime usage, prefer the Python API.

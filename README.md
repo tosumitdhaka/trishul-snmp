@@ -31,6 +31,7 @@ thin and secondary.
 
 - async-first Python API
 - SNMPv2c manager runtime
+- SNMPv3 USM manager runtime (`V3Manager`; noAuthNoPriv, authNoPriv, authPriv AES-128)
 - read-only operations:
   - `get`
   - `get_next`
@@ -38,6 +39,7 @@ thin and secondary.
   - `walk`
   - `bulkwalk`
 - outbound SNMPv2c trap and inform send
+- outbound SNMPv3 USM inform send (`V3Notifier.send_inform()`)
 - inbound SNMPv2c trap and inform listen
 - offline notification decode
 - narrow read-only SNMPv2c responder / simulator
@@ -45,10 +47,11 @@ thin and secondary.
 - bundle-backed auto-population of simulator object sets
 - in-memory MIB bundle iteration and substring search
 - JSON-safe notification event serialization
-- in-tree BER / ASN.1 / SNMPv2c wire codec
+- in-tree BER / ASN.1 / SNMPv2c + SNMPv3 wire/security codec
 - UDP transport and request dispatcher
 - optional symbolic translation and display enrichment from compiled JSON MIB artifacts
 - works with numeric OIDs and no MIB bundle loaded
+- live CLI commands currently cover SNMPv2c; SNMPv3 CLI live support is planned for `v0.4.1`
 
 ## Scope
 
@@ -139,6 +142,33 @@ async def main() -> None:
 
 asyncio.run(main())
 ```
+
+SNMPv3 USM GET:
+
+```python
+import asyncio
+
+from trishul_snmp import AuthProtocol, UsmUser, V3Manager
+
+user = UsmUser(
+    username="monitor",
+    auth_protocol=AuthProtocol.SHA256,
+    auth_key=b"authpass123",
+)
+
+
+async def main() -> None:
+    async with V3Manager(host="10.0.0.10", user=user) as manager:
+        response = await manager.get("1.3.6.1.2.1.1.3.0")
+        for varbind in response.varbinds:
+            print(varbind.oid_str, varbind.value_type, varbind.display_value)
+
+
+asyncio.run(main())
+```
+
+Current `v0.4.0` CLI live commands are still SNMPv2c-only. Use the Python API for
+SNMPv3 today; CLI SNMPv3 manager and inform support is planned for `v0.4.1`.
 
 ## Documentation
 

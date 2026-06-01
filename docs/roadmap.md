@@ -65,6 +65,16 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 | 1 | Session architecture refactor | done | Extracted shared `UdpClient + Dispatcher + Lock + MibBundle` into `session.py`. Added `security/model.py` (`SecurityModel` protocol) + `security/community.py` (`CommunityModel` for v2c). `dispatcher.py` takes `security=` instead of `community=`. `V2cManager` / `V2cNotifier` are subclasses of new `SnmpManager` / `SnmpNotifier` bases; `V2cNotificationListener` is an alias — no public API breakage. |
 | 2 | SNMPv3 USM (full stack) | done | Full USM: noAuthNoPriv + authNoPriv (HMAC-MD5/SHA-1/SHA-256) + authPriv (AES-128-CFB). DES-CBC intentionally deferred — broken cipher, not present in `cryptography>=41`. Engine discovery via optional async `prepare(dispatcher)` hook on `UsmModel`; `session.py` awaits it on open. Discovery uses a dedicated `dispatcher.send_raw_and_receive(data) -> bytes` path that never surfaces to the normal request flow — REPORT never reaches `send_pdu()` or `response_from_pdu()`. `wrap_pdu`/`unwrap_message` stay synchronous. `security/usm.py` never imports `cryptography` at module level; auth/priv methods call `_require_cryptography()` which raises `ImportError` with install instructions if the package is absent. `UsmModel` is imported unconditionally in `__init__.py` — it always works; only calling auth/priv methods without `[v3]` fails. CI installs `.[dev,v3]`. A dedicated test blocks `cryptography` via `patch.dict(sys.modules, {'cryptography': None})` and reimports `usm` to catch top-level import regressions even with `[v3]` installed. `V3Manager` mirrors `V2cManager`. `V3Notifier` supports `send_inform()` only — `send_trap()` raises `ProtocolError` because SNMPv3 traps require the sender's own authoritative engine state (RFC 3412 §7.1.9), which is not available after discovery against the receiver; use `send_inform()` for authenticated v3 notifications. v3 listener out of scope for this release. Requires `cryptography>=40` (optional extra `[v3]`). |
 
+---
+
+## v0.4.1 — planned
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | CLI SNMPv3 manager commands | planned | Extend `get`, `getnext`, `getbulk`, `walk`, and `bulkwalk` with explicit SNMP version/security selection and `UsmUser`-equivalent CLI inputs (`username`, auth protocol/key, priv protocol/key, optional `context_name`). Route v3 requests through `V3Manager`. Keep clear install hints when `[v3]` extras are missing for auth/priv flows. |
+| 2 | CLI SNMPv3 notification send | planned | Extend `inform` with SNMPv3 USM support via `V3Notifier`. `trap` stays rejected for SNMPv3 with the same RFC 3412 §7.1.9 explanation as the Python API. `listen` and `decode-notification` remain SNMPv2c-only in `v0.4.1`. |
+| 3 | CLI docs and smoke coverage for SNMPv3 | planned | Update help text, examples, and release smoke checks so CLI protocol coverage is explicit and exercised for both SNMPv2c and SNMPv3 manager/inform paths. |
+
 ## Near-term hardening
 
 | # | Item | Status | Notes |

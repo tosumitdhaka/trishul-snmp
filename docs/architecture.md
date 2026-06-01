@@ -185,6 +185,7 @@ Owns command-line UX only:
 - load the optional bundle
 - call the same Python API as library users
 - render text or JSON output
+- current live-command protocol coverage in `v0.4.0` is SNMPv2c only; SNMPv3 CLI support is follow-on work
 
 ---
 
@@ -199,6 +200,9 @@ Owns command-line UX only:
 5. `UdpClient.receive()` waits for a matching response with timeout/retry handling.
 6. `decode_message()` decodes the response and `response_from_pdu()` builds the public `Response`.
 7. With no bundle loaded, enrichment is effectively pass-through.
+
+This flow is shown with `V2cManager`. `V3Manager` follows the same request path after
+`SnmpSession.open()` performs engine discovery and `UsmModel` wraps/unwraps the PDU.
 
 ### 4.2 Symbolic GET with a bundle
 
@@ -222,11 +226,12 @@ Owns command-line UX only:
 
 ### 4.5 Outbound trap/inform send
 
-1. Caller invokes `await notifier.send_trap(...)` or `await notifier.send_inform(...)`.
+1. Caller invokes `await V2cNotifier.send_trap(...)`, `await V2cNotifier.send_inform(...)`, or `await V3Notifier.send_inform(...)`.
 2. Numeric or symbolic notification OIDs are normalized at the API edge.
 3. `sysUpTime.0` and `snmpTrapOID.0` are inserted first unless explicitly provided.
 4. The notification PDU is encoded and sent over UDP.
-5. Trap send stops after send; inform send waits for a matching `RESPONSE` PDU.
+5. SNMPv2c trap send stops after send; SNMPv2c and SNMPv3 inform send wait for a matching `RESPONSE` PDU.
+6. `V3Notifier.send_trap()` intentionally raises `ProtocolError` in `v0.4.0` because SNMPv3 traps require the sender's local authoritative engine state, which is not tracked yet.
 
 ### 4.6 Inbound trap/inform receive
 
