@@ -12,7 +12,7 @@ same package surface.
 | `V2cManager` | class | Async SNMPv2c manager client |
 | `V3Manager` | class | Async SNMPv3 USM manager client |
 | `V2cNotifier` | class | Async SNMPv2c trap and inform sender |
-| `V3Notifier` | class | Async SNMPv3 USM inform sender (`send_trap` unsupported — RFC 3412 §7.1.9) |
+| `V3Notifier` | class | Async SNMPv3 USM notifier; informs use peer discovery, traps require `UsmLocalEngine` |
 | `V2cNotificationListener` | class | Async SNMPv2c trap and inform listener |
 | `V2cResponder` | class | Async SNMPv2c read-only responder for simulator-style use |
 | `decode_notification(data, *, bundle=None, source_address=None)` | function | Offline decode for BER-encoded SNMPv2c traps and informs |
@@ -33,6 +33,7 @@ same package surface.
 SNMPv3 USM types (require `pip install "trishul-snmp[v3]"` for auth/priv methods):
 
 - `UsmUser`
+- `UsmLocalEngine`
 - `AuthProtocol`
 - `PrivProtocol`
 - `UsmModel`
@@ -329,17 +330,40 @@ async with V2cNotifier(host="10.0.0.20", community="public", bundle=bundle) as n
 
 Requires `pip install "trishul-snmp[v3]"` for auth/priv methods.
 
-Constructor fields are identical to `V2cNotifier` except `community` is replaced by `user: UsmUser`
-and there is an additional optional `context_name: bytes = b""` field.
+Constructor fields are identical to `V2cNotifier` except `community` is replaced by
+`user: UsmUser`, and SNMPv3 adds `context_name: bytes = b""` plus
+`local_engine: UsmLocalEngine | None = None`.
 
-**`send_inform` is fully supported.** Informs are confirmed-class PDUs that require the receiver's
-engine parameters; engine discovery provides exactly those.
+`send_inform()` is fully supported. Informs are confirmed-class PDUs that require the
+receiver's engine parameters; `V3Notifier` discovers those lazily on first use.
 
-**`send_trap` raises `ProtocolError` and is not supported.** SNMPv3 traps are unconfirmed PDUs that
-must carry the *sender's own* authoritative engine state (RFC 3412 §7.1.9). Engine discovery
-populates the *receiver's* engine state, not the sender's, so emitting a trap would silently produce
-a protocol-incorrect message. `V3Notifier.send_trap()` raises `ProtocolError` immediately to
-prevent that. Use `send_inform()` for reliable authenticated SNMPv3 notifications.
+`send_trap()` is also supported, but only when `local_engine` is configured. SNMPv3 traps are
+unconfirmed PDUs that must carry the sender's own authoritative engine state (RFC 3412 §7.1.9),
+so the caller must supply it explicitly.
+
+### `UsmLocalEngine` fields
+
+| Field | Type | Description |
+|---|---|---|
+| `engine_id` | `bytes` | Sender authoritative engine-id |
+| `engine_boots` | `int` | Sender authoritative `engineBoots` |
+| `engine_time` | `int` | Sender authoritative `engineTime` |
+
+Example:
+
+```python
+from trishul_snmp import UsmLocalEngine, UsmUser, V3Notifier
+
+user = UsmUser(username="notify")
+local_engine = UsmLocalEngine(
+    engine_id=bytes.fromhex("8000010203"),
+    engine_boots=7,
+    engine_time=99,
+)
+
+async with V3Notifier(host="10.0.0.20", user=user, local_engine=local_engine) as notifier:
+    await notifier.send_trap("1.3.6.1.6.3.1.1.5.3")
+```
 
 ---
 

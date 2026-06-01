@@ -50,12 +50,12 @@ class SnmpSession:
         del exc_type, exc, tb
         await self.close()
 
-    async def open(self) -> None:
+    async def open(self, *, skip_prepare: bool = False) -> None:
         if self._opened:
             return
         await self._client.open()
         try:
-            if hasattr(self._security, "prepare"):
+            if not skip_prepare and hasattr(self._security, "prepare"):
                 await self._security.prepare(self._dispatcher)
         except BaseException:
             await self._client.close()

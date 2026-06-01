@@ -10,6 +10,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.1] — 2026-06-01
+
+### Added
+
+- **Sender-authoritative SNMPv3 traps** — `UsmLocalEngine` is now public and `V3Notifier.send_trap()` is supported when the caller supplies explicit local authoritative engine state (`engine_id`, `engine_boots`, `engine_time`).
+- **SNMPv3 live CLI support** — `tsnmp` now supports SNMPv3 `get`, `getnext`, `getbulk`, `walk`, `bulkwalk`, `trap`, and `inform` through explicit `--snmp-version {2c,3}` selection.
+- **CLI SNMPv3 security parsing** — `--username`, auth/priv protocol and secret inputs, `--context-name`, and trap-only `--local-engine-*` options are now validated before any network I/O.
+
+### Changed
+
+- **`V3Notifier` behavior** — `send_inform()` discovers peer engine state lazily on first use, while trap-capable notifiers no longer depend on a discovery roundtrip during `open()`.
+- **CLI error handling** — missing `[v3]` extras for auth/priv workflows now surface as ordinary CLI errors with the install hint instead of a Python traceback.
+- **Documentation and release guidance** — package docs now describe the shipped SNMPv3 CLI surface and the `V3Notifier.send_trap()` local-engine requirement.
+
+### Known limitations
+
+- `listen` and `decode-notification` remain SNMPv2c-only in `0.4.1`; SNMPv3 inbound/offline notification work is deferred to `0.4.2`.
+- DES-CBC privacy remains deferred; `PrivProtocol.DES` is retained only for wire-level identification and still raises `ProtocolError` at runtime.
+
+---
+
 ## [0.4.0] — 2026-05-28
 
 ### Added

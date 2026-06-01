@@ -185,6 +185,31 @@ class FakeManager:
         return await self.walk(root, bulk=True, max_repetitions=max_repetitions)
 
 
+class FakeV3Manager(FakeManager):
+    created: list[FakeV3Manager] = []
+
+    def __init__(
+        self,
+        *,
+        host: str,
+        user,
+        port: int = 161,
+        timeout: float = 2.0,
+        retries: int = 1,
+        bundle=None,
+        context_name: bytes = b"",
+    ) -> None:
+        self.host = host
+        self.user = user
+        self.context_name = context_name
+        self.port = port
+        self.timeout = timeout
+        self.retries = retries
+        self.bundle = bundle
+        self.calls: list[tuple[str, object]] = []
+        type(self).created.append(self)
+
+
 class FakeNotifier:
     created: list[FakeNotifier] = []
 
@@ -243,6 +268,33 @@ class FakeNotifier:
             error_index=0,
             varbinds=(_varbind("1.3.6.1.2.1.2.2.1.1.7", "NOTIF-MIB::ifIndex.7", "7"),),
         )
+
+
+class FakeV3Notifier(FakeNotifier):
+    created: list[FakeV3Notifier] = []
+
+    def __init__(
+        self,
+        *,
+        host: str,
+        user,
+        port: int = 162,
+        timeout: float = 2.0,
+        retries: int = 1,
+        bundle=None,
+        context_name: bytes = b"",
+        local_engine=None,
+    ) -> None:
+        self.host = host
+        self.user = user
+        self.context_name = context_name
+        self.local_engine = local_engine
+        self.port = port
+        self.timeout = timeout
+        self.retries = retries
+        self.bundle = bundle
+        self.calls: list[tuple[str, object]] = []
+        type(self).created.append(self)
 
 
 class FakeListener:
@@ -358,6 +410,36 @@ def test_cli_get_renders_text_and_uses_bundle(monkeypatch, tmp_path: Path, capsy
     assert captured.out.strip() == "IF-MIB::ifDescr.1 = eth0"
     assert FakeManager.created[0].bundle is not None
     assert FakeManager.created[0].calls == [("get", ("IF-MIB::ifDescr.1",))]
+
+
+def test_cli_get_v3_uses_v3manager(monkeypatch, tmp_path: Path, capsys) -> None:
+    _write_json(tmp_path / "IF-MIB.json", _if_mib_payload())
+    FakeV3Manager.created.clear()
+    monkeypatch.setattr("trishul_snmp.cli.main.V3Manager", FakeV3Manager)
+
+    exit_code = main(
+        [
+            "get",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "3",
+            "--username",
+            "alice",
+            "--context-name",
+            "alerts",
+            "--bundle",
+            str(tmp_path / "IF-MIB.json"),
+            "IF-MIB::ifDescr.1",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out.strip() == "IF-MIB::ifDescr.1 = eth0"
+    assert FakeV3Manager.created[0].user.username == "alice"
+    assert FakeV3Manager.created[0].context_name == b"alerts"
+    assert FakeV3Manager.created[0].calls == [("get", ("IF-MIB::ifDescr.1",))]
 
 
 def test_cli_getbulk_json_output(monkeypatch, capsys) -> None:
@@ -524,6 +606,49 @@ def test_cli_trap_parses_typed_varbinds(monkeypatch, tmp_path: Path, capsys) -> 
     ]
 
 
+def test_cli_trap_v3_routes_to_v3notifier(monkeypatch, capsys) -> None:
+    FakeV3Notifier.created.clear()
+    monkeypatch.setattr("trishul_snmp.cli.main.V3Notifier", FakeV3Notifier)
+
+    exit_code = main(
+        [
+            "trap",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "3",
+            "--username",
+            "alice",
+            "--local-engine-id",
+            "80:00:01:02:03",
+            "--local-engine-boots",
+            "7",
+            "--local-engine-time",
+            "99",
+            "1.3.6.1.6.3.1.1.5.3",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out.strip() == "request_id=77"
+    assert FakeV3Notifier.created[0].user.username == "alice"
+    assert FakeV3Notifier.created[0].local_engine is not None
+    assert FakeV3Notifier.created[0].local_engine.engine_id == bytes.fromhex("8000010203")
+    assert FakeV3Notifier.created[0].local_engine.engine_boots == 7
+    assert FakeV3Notifier.created[0].local_engine.engine_time == 99
+    assert FakeV3Notifier.created[0].calls == [
+        (
+            "send_trap",
+            {
+                "notification": "1.3.6.1.6.3.1.1.5.3",
+                "varbinds": (),
+                "uptime": 0,
+            },
+        )
+    ]
+
+
 def test_cli_inform_renders_response(monkeypatch, capsys) -> None:
     FakeNotifier.created.clear()
     monkeypatch.setattr("trishul_snmp.cli.main.V2cNotifier", FakeNotifier)
@@ -549,6 +674,43 @@ def test_cli_inform_renders_response(monkeypatch, capsys) -> None:
             {
                 "notification": "1.3.6.1.6.3.1.1.5.3",
                 "varbinds": (("1.3.6.1.2.1.2.2.1.1.7", IntegerValue(7)),),
+                "uptime": 0,
+            },
+        )
+    ]
+
+
+def test_cli_inform_v3_routes_to_v3notifier(monkeypatch, capsys) -> None:
+    FakeV3Notifier.created.clear()
+    monkeypatch.setattr("trishul_snmp.cli.main.V3Notifier", FakeV3Notifier)
+
+    exit_code = main(
+        [
+            "inform",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "3",
+            "--username",
+            "alice",
+            "--context-name",
+            "alerts",
+            "1.3.6.1.6.3.1.1.5.3",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out.strip() == "NOTIF-MIB::ifIndex.7 = 7"
+    assert FakeV3Notifier.created[0].user.username == "alice"
+    assert FakeV3Notifier.created[0].context_name == b"alerts"
+    assert FakeV3Notifier.created[0].local_engine is None
+    assert FakeV3Notifier.created[0].calls == [
+        (
+            "send_inform",
+            {
+                "notification": "1.3.6.1.6.3.1.1.5.3",
+                "varbinds": (),
                 "uptime": 0,
             },
         )
@@ -642,6 +804,56 @@ def test_cli_main_renders_handler_value_errors(monkeypatch, capsys) -> None:
     captured = capsys.readouterr()
     assert exit_code == 1
     assert captured.err.strip() == "tsnmp: boom"
+
+
+def test_cli_main_renders_v3_validation_errors(capsys) -> None:
+    exit_code = main(
+        [
+            "get",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "3",
+            "--community",
+            "public",
+            "--username",
+            "alice",
+            "1.3.6.1.2.1.2.2",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err.strip() == "tsnmp: --community is invalid with --snmp-version 3"
+
+
+def test_cli_main_renders_v3_import_errors(monkeypatch, capsys) -> None:
+    class ExplodingV3Manager(FakeV3Manager):
+        async def __aenter__(self) -> FakeV3Manager:
+            raise ImportError("pip install trishul-snmp[v3]")
+
+    monkeypatch.setattr("trishul_snmp.cli.main.V3Manager", ExplodingV3Manager)
+
+    exit_code = main(
+        [
+            "get",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "3",
+            "--username",
+            "alice",
+            "--auth-protocol",
+            "md5",
+            "--auth-key",
+            "secret",
+            "1.3.6.1.2.1.2.2",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err.strip() == "tsnmp: pip install trishul-snmp[v3]"
 
 
 def test_cli_run_exits_with_main_status(monkeypatch) -> None:

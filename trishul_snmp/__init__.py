@@ -37,7 +37,7 @@ from trishul_snmp.responder.sources import (
 )
 from trishul_snmp.security.community import CommunityModel
 from trishul_snmp.security.model import SecurityModel
-from trishul_snmp.security.usm import AuthProtocol, PrivProtocol, UsmModel, UsmUser
+from trishul_snmp.security.usm import AuthProtocol, PrivProtocol, UsmLocalEngine, UsmModel, UsmUser
 from trishul_snmp.session import SnmpSession
 from trishul_snmp.types import (
     OID,
@@ -113,6 +113,7 @@ __all__ = [
     "UnknownOidError",
     "UnknownSymbolError",
     "UptimeRule",
+    "UsmLocalEngine",
     "UsmModel",
     "UsmUser",
     "V2cManager",
@@ -127,4 +128,4 @@ __all__ = [
     "load_bundle",
 ]
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"

@@ -7,13 +7,17 @@ from pathlib import Path
 import pytest
 
 from trishul_snmp.cli.common import (
+    V2cCliSecurity,
+    V3CliSecurity,
     load_bundle_from_args,
+    parse_cli_security,
     parse_hex_bytes,
     parse_notification_varbind,
     parse_notification_varbinds,
     parse_snmp_value,
     resolve_oid_target,
 )
+from trishul_snmp.security.usm import AuthProtocol, PrivProtocol
 from trishul_snmp.types import (
     Counter32Value,
     Counter64Value,
@@ -63,6 +67,26 @@ def _if_mib_payload() -> dict[object, object]:
     return payload
 
 
+def _security_args(**overrides: object) -> argparse.Namespace:
+    data: dict[str, object] = {
+        "snmp_version": "2c",
+        "community": None,
+        "username": None,
+        "auth_protocol": "none",
+        "auth_key": None,
+        "auth_key_env": None,
+        "priv_protocol": "none",
+        "priv_key": None,
+        "priv_key_env": None,
+        "context_name": "",
+        "local_engine_id": None,
+        "local_engine_boots": None,
+        "local_engine_time": None,
+    }
+    data.update(overrides)
+    return argparse.Namespace(**data)
+
+
 def test_load_bundle_from_args_handles_missing_and_present_bundle(tmp_path: Path) -> None:
     assert load_bundle_from_args(argparse.Namespace(bundle=None)) is None
 
@@ -71,6 +95,132 @@ def test_load_bundle_from_args_handles_missing_and_present_bundle(tmp_path: Path
 
     assert bundle is not None
     assert bundle.resolve("IF-MIB::ifDescr.7") == (1, 3, 6, 1, 2, 1, 2, 2, 1, 2, 7)
+
+
+def test_parse_cli_security_defaults_to_v2c_public() -> None:
+    parsed = parse_cli_security(_security_args())
+
+    assert isinstance(parsed, V2cCliSecurity)
+    assert parsed.community == "public"
+
+
+def test_parse_cli_security_builds_v3_noauthnopriv() -> None:
+    parsed = parse_cli_security(
+        _security_args(snmp_version="3", username="alice", context_name="alerts")
+    )
+
+    assert isinstance(parsed, V3CliSecurity)
+    assert parsed.user.username == "alice"
+    assert parsed.user.auth_protocol is AuthProtocol.NONE
+    assert parsed.user.priv_protocol is PrivProtocol.NONE
+    assert parsed.context_name == b"alerts"
+    assert parsed.local_engine is None
+
+
+def test_parse_cli_security_builds_v3_authpriv_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("TSNMP_AUTH", "auth-secret")
+    monkeypatch.setenv("TSNMP_PRIV", "priv-secret")
+
+    parsed = parse_cli_security(
+        _security_args(
+            snmp_version="3",
+            username="alice",
+            auth_protocol="sha256",
+            auth_key_env="TSNMP_AUTH",
+            priv_protocol="aes128",
+            priv_key_env="TSNMP_PRIV",
+        )
+    )
+
+    assert isinstance(parsed, V3CliSecurity)
+    assert parsed.user.auth_protocol is AuthProtocol.SHA256
+    assert parsed.user.auth_key == b"auth-secret"
+    assert parsed.user.priv_protocol is PrivProtocol.AES128
+    assert parsed.user.priv_key == b"priv-secret"
+
+
+def test_parse_cli_security_rejects_v3_with_community() -> None:
+    with pytest.raises(ValueError, match="--community is invalid with --snmp-version 3"):
+        parse_cli_security(_security_args(snmp_version="3", community="public", username="alice"))
+
+
+def test_parse_cli_security_rejects_missing_auth_key() -> None:
+    with pytest.raises(ValueError, match="exactly one of --auth-key or --auth-key-env"):
+        parse_cli_security(
+            _security_args(
+                snmp_version="3",
+                username="alice",
+                auth_protocol="md5",
+            )
+        )
+
+
+def test_parse_cli_security_rejects_priv_without_auth() -> None:
+    with pytest.raises(ValueError, match="--priv-protocol requires --auth-protocol"):
+        parse_cli_security(
+            _security_args(
+                snmp_version="3",
+                username="alice",
+                priv_protocol="aes128",
+                priv_key="secret",
+            )
+        )
+
+
+def test_parse_cli_security_requires_local_engine_for_v3_trap() -> None:
+    with pytest.raises(ValueError, match="SNMPv3 trap requires --local-engine-id"):
+        parse_cli_security(
+            _security_args(snmp_version="3", username="alice"),
+            require_local_engine=True,
+            allow_local_engine=True,
+        )
+
+
+def test_parse_cli_security_builds_v3_local_engine_for_trap() -> None:
+    parsed = parse_cli_security(
+        _security_args(
+            snmp_version="3",
+            username="alice",
+            local_engine_id="80:00:01:02:03",
+            local_engine_boots=7,
+            local_engine_time=99,
+        ),
+        require_local_engine=True,
+        allow_local_engine=True,
+    )
+
+    assert isinstance(parsed, V3CliSecurity)
+    assert parsed.local_engine is not None
+    assert parsed.local_engine.engine_id == bytes.fromhex("8000010203")
+    assert parsed.local_engine.engine_boots == 7
+    assert parsed.local_engine.engine_time == 99
+
+
+def test_parse_cli_security_rejects_local_engine_when_not_allowed() -> None:
+    with pytest.raises(ValueError, match="only valid for SNMPv3 trap"):
+        parse_cli_security(
+            _security_args(
+                snmp_version="3",
+                username="alice",
+                local_engine_id="8000010203",
+                local_engine_boots=1,
+                local_engine_time=2,
+            )
+        )
+
+
+def test_parse_cli_security_rejects_missing_env_secret(monkeypatch) -> None:
+    monkeypatch.delenv("TSNMP_AUTH", raising=False)
+
+    with pytest.raises(ValueError, match="Environment variable TSNMP_AUTH is not set"):
+        parse_cli_security(
+            _security_args(
+                snmp_version="3",
+                username="alice",
+                auth_protocol="sha1",
+                auth_key_env="TSNMP_AUTH",
+            )
+        )
 
 
 def test_parse_notification_varbinds_empty_returns_empty_tuple() -> None:

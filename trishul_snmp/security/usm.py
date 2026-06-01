@@ -54,6 +54,15 @@ class PrivProtocol(Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class UsmLocalEngine:
+    """Explicit sender-authoritative engine state for outbound SNMPv3 traps."""
+
+    engine_id: bytes
+    engine_boots: int
+    engine_time: int
+
+
+@dataclass(frozen=True, slots=True)
 class UsmUser:
     """USM credentials for a single user.
 
@@ -83,35 +92,37 @@ class UsmModel:
 
     user: UsmUser
     context_name: bytes = b""
+    local_engine: UsmLocalEngine | None = None
 
-    # engine state — populated by prepare()
-    _engine_id: bytes = field(default=b"", init=False, repr=False)
-    _engine_boots: int = field(default=0, init=False, repr=False)
-    _engine_time: int = field(default=0, init=False, repr=False)
+    # peer engine state — populated by prepare()
+    _peer_engine_id: bytes = field(default=b"", init=False, repr=False)
+    _peer_engine_boots: int = field(default=0, init=False, repr=False)
+    _peer_engine_time: int = field(default=0, init=False, repr=False)
     _msg_id_counter: int = field(default=0, init=False, repr=False)
 
     # ── SecurityModel protocol ────────────────────────────────────────────
 
     def wrap_pdu(self, pdu: Pdu) -> bytes:
         """Encode a PDU into an SNMPv3 USM message."""
+        engine = self._select_outbound_engine(pdu.pdu_type)
         flags = self._msg_flags(pdu.pdu_type)
         self._msg_id_counter += 1
         msg_id = self._msg_id_counter
 
-        scoped_bytes = encode_scoped_pdu(self._engine_id, self.context_name, pdu)
+        scoped_bytes = encode_scoped_pdu(engine.engine_id, self.context_name, pdu)
 
         if self.user.priv_protocol is not PrivProtocol.NONE:
             _require_cryptography()
-            priv_params, scoped_bytes = self._encrypt_scoped_pdu(scoped_bytes)
+            priv_params, scoped_bytes = self._encrypt_scoped_pdu(scoped_bytes, engine)
         else:
             priv_params = b""
 
         auth_params = b"\x00" * _AUTH_TAG_LEN if self._auth_enabled() else b""
 
         usm = UsmParams(
-            engine_id=self._engine_id,
-            engine_boots=self._engine_boots,
-            engine_time=self._engine_time,
+            engine_id=engine.engine_id,
+            engine_boots=engine.engine_boots,
+            engine_time=engine.engine_time,
             username=self.user.username.encode(),
             auth_params=auth_params,
             priv_params=priv_params,
@@ -125,7 +136,7 @@ class UsmModel:
         )
 
         if self._auth_enabled():
-            raw = self._stamp_auth(raw)
+            raw = self._stamp_auth(raw, engine.engine_id)
 
         return raw
 
@@ -145,11 +156,16 @@ class UsmModel:
 
         # Reject messages from a different authoritative engine.
         # Skip the check during discovery (cached engine_id is still empty).
-        if self._engine_id and view.usm_params.engine_id != self._engine_id:
+        if self._peer_engine_id and view.usm_params.engine_id != self._peer_engine_id:
             return None
 
         if self._auth_enabled():
-            self._verify_auth(data, view.auth_params_offset, view.usm_params.auth_params)
+            self._verify_auth(
+                data,
+                view.auth_params_offset,
+                view.usm_params.auth_params,
+                view.usm_params.engine_id,
+            )
 
         msg_data = view.msg_data_bytes
 
@@ -158,6 +174,7 @@ class UsmModel:
             msg_data = self._decrypt_scoped_pdu(
                 msg_data,
                 view.usm_params.priv_params,
+                view.usm_params.engine_id,
                 view.usm_params.engine_boots,
                 view.usm_params.engine_time,
             )
@@ -182,6 +199,51 @@ class UsmModel:
         probe = self._build_discovery_probe()
         response_data = await dispatcher.send_raw_and_receive(probe)
         self._parse_discovery_response(response_data)
+
+    # ── compatibility aliases / engine selection ─────────────────────────
+
+    @property
+    def _engine_id(self) -> bytes:
+        return self._peer_engine_id
+
+    @_engine_id.setter
+    def _engine_id(self, value: bytes) -> None:
+        self._peer_engine_id = value
+
+    @property
+    def _engine_boots(self) -> int:
+        return self._peer_engine_boots
+
+    @_engine_boots.setter
+    def _engine_boots(self, value: int) -> None:
+        self._peer_engine_boots = value
+
+    @property
+    def _engine_time(self) -> int:
+        return self._peer_engine_time
+
+    @_engine_time.setter
+    def _engine_time(self, value: int) -> None:
+        self._peer_engine_time = value
+
+    @property
+    def peer_engine_discovered(self) -> bool:
+        """Whether peer engine discovery has populated authoritative peer state."""
+        return bool(self._peer_engine_id)
+
+    def _select_outbound_engine(self, pdu_type: PduType) -> UsmLocalEngine:
+        if pdu_type is PduType.SNMPV2_TRAP:
+            if self.local_engine is None:
+                raise ProtocolError(
+                    "SNMPv3 traps require local_engine authoritative state "
+                    "(engine_id, engine_boots, engine_time)"
+                )
+            return self.local_engine
+        return UsmLocalEngine(
+            engine_id=self._peer_engine_id,
+            engine_boots=self._peer_engine_boots,
+            engine_time=self._peer_engine_time,
+        )
 
     # ── RFC 3414 key derivation ───────────────────────────────────────────
 
@@ -226,15 +288,16 @@ class UsmModel:
             return lambda data: hashlib.sha256(data)
         raise ProtocolError(f"Unsupported auth protocol: {proto}")
 
-    def _hmac_key(self) -> bytes:
+    def _hmac_key(self, engine_id: bytes | None = None) -> bytes:
         """Return the localised HMAC key."""
         if not self.user.auth_key:
             return b""
         if self.user.auth_key_localized:
             return self.user.auth_key
-        return self._localize_key(self.user.auth_key, self._engine_id)
+        selected_engine_id = self._peer_engine_id if engine_id is None else engine_id
+        return self._localize_key(self.user.auth_key, selected_engine_id)
 
-    def _compute_auth_tag(self, msg: bytes) -> bytes:
+    def _compute_auth_tag(self, msg: bytes, engine_id: bytes | None = None) -> bytes:
         """Compute 12-byte HMAC over *msg* using the localised auth key."""
         import hmac as _hmac
 
@@ -248,25 +311,31 @@ class UsmModel:
         else:
             raise ProtocolError(f"Unsupported auth protocol: {proto}")
 
-        mac = _hmac.new(self._hmac_key(), msg, alg).digest()
+        mac = _hmac.new(self._hmac_key(engine_id), msg, alg).digest()
         return mac[:_AUTH_TAG_LEN]
 
-    def _stamp_auth(self, raw: bytes) -> bytes:
+    def _stamp_auth(self, raw: bytes, engine_id: bytes | None = None) -> bytes:
         """Replace the 12-byte zero auth_params placeholder with the real HMAC."""
-        tag = self._compute_auth_tag(raw)
+        tag = self._compute_auth_tag(raw, engine_id)
         # decode to find the auth_params_offset in the just-encoded message
         view = decode_v3_message(raw)
         offset = view.auth_params_offset
         return raw[:offset] + tag + raw[offset + _AUTH_TAG_LEN :]
 
-    def _verify_auth(self, raw: bytes, auth_params_offset: int, received_tag: bytes) -> None:
+    def _verify_auth(
+        self,
+        raw: bytes,
+        auth_params_offset: int,
+        received_tag: bytes,
+        engine_id: bytes,
+    ) -> None:
         """Verify the 12-byte auth tag; raise AuthenticationError on mismatch."""
         zeroed = (
             raw[:auth_params_offset]
             + b"\x00" * _AUTH_TAG_LEN
             + raw[auth_params_offset + _AUTH_TAG_LEN :]
         )
-        expected = self._compute_auth_tag(zeroed)
+        expected = self._compute_auth_tag(zeroed, engine_id)
         import hmac as _hmac
 
         if not _hmac.compare_digest(expected, received_tag[:_AUTH_TAG_LEN]):
@@ -274,12 +343,19 @@ class UsmModel:
 
     # ── priv helpers (stubs — filled in Step 4) ──────────────────────────
 
-    def _encrypt_scoped_pdu(self, scoped_bytes: bytes) -> tuple[bytes, bytes]:
+    def _encrypt_scoped_pdu(
+        self, scoped_bytes: bytes, engine: UsmLocalEngine
+    ) -> tuple[bytes, bytes]:
         """Encrypt a ScopedPDU.  Returns (priv_params, encrypted_msg_data_bytes)."""
         _require_cryptography()
         proto = self.user.priv_protocol
         if proto is PrivProtocol.AES128:
-            return self._encrypt_aes128(scoped_bytes)
+            return self._encrypt_aes128(
+                scoped_bytes,
+                engine.engine_id,
+                engine.engine_boots,
+                engine.engine_time,
+            )
         if proto is PrivProtocol.DES:
             return self._encrypt_des(scoped_bytes)
         raise ProtocolError(f"Unsupported priv protocol: {proto}")
@@ -288,6 +364,7 @@ class UsmModel:
         self,
         msg_data: bytes,
         priv_params: bytes,
+        engine_id: bytes,
         msg_engine_boots: int,
         msg_engine_time: int,
     ) -> bytes:
@@ -295,21 +372,29 @@ class UsmModel:
         _require_cryptography()
         proto = self.user.priv_protocol
         if proto is PrivProtocol.AES128:
-            return self._decrypt_aes128(msg_data, priv_params, msg_engine_boots, msg_engine_time)
+            return self._decrypt_aes128(
+                msg_data, priv_params, engine_id, msg_engine_boots, msg_engine_time
+            )
         if proto is PrivProtocol.DES:
             return self._decrypt_des(msg_data, priv_params)
         raise ProtocolError(f"Unsupported priv protocol: {proto}")
 
-    def _encrypt_aes128(self, plaintext: bytes) -> tuple[bytes, bytes]:
+    def _encrypt_aes128(
+        self,
+        plaintext: bytes,
+        engine_id: bytes,
+        engine_boots: int,
+        engine_time: int,
+    ) -> tuple[bytes, bytes]:
         import os
         import struct
         import warnings
 
         from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-        aes_key = self._priv_key_aes128()
+        aes_key = self._priv_key_aes128(engine_id)
         local_iv = os.urandom(8)
-        iv = struct.pack(">I", self._engine_boots) + struct.pack(">I", self._engine_time) + local_iv
+        iv = struct.pack(">I", engine_boots) + struct.pack(">I", engine_time) + local_iv
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             cipher = Cipher(algorithms.AES(aes_key), modes.CFB(iv))
@@ -323,6 +408,7 @@ class UsmModel:
         self,
         msg_data: bytes,
         priv_params: bytes,
+        engine_id: bytes,
         msg_engine_boots: int,
         msg_engine_time: int,
     ) -> bytes:
@@ -341,7 +427,7 @@ class UsmModel:
                 f"AES-128 privacyParameters must be exactly 8 octets, got {len(priv_params)}"
             )
 
-        aes_key = self._priv_key_aes128()
+        aes_key = self._priv_key_aes128(engine_id)
         local_iv = priv_params[:8]
         # IV uses boots/time from the inbound message header, not the cached local state.
         iv = struct.pack(">I", msg_engine_boots) + struct.pack(">I", msg_engine_time) + local_iv
@@ -351,14 +437,14 @@ class UsmModel:
         dec = cipher.decryptor()
         return dec.update(ciphertext) + dec.finalize()
 
-    def _priv_key_aes128(self) -> bytes:
+    def _priv_key_aes128(self, engine_id: bytes) -> bytes:
         """Derive the 16-byte AES-128 privacy key (first 16 bytes of the localized priv key)."""
         if self.user.priv_key:
-            raw = self._localize_priv_key(self.user.priv_key)
+            raw = self._localize_priv_key(self.user.priv_key, engine_id)
             return raw[:16]
         raise ProtocolError("AES-128 privacy requires a priv_key")
 
-    def _localize_priv_key(self, password: bytes) -> bytes:
+    def _localize_priv_key(self, password: bytes, engine_id: bytes) -> bytes:
         """Localize a priv passphrase using the same RFC 3414 KDF as the auth key."""
         if self.user.auth_protocol is AuthProtocol.NONE:
             raise ProtocolError("Cannot derive priv key without an auth protocol")
@@ -368,7 +454,7 @@ class UsmModel:
         for i in range(1048576):
             buf[i] = password[i % plen]
         ku = h(bytes(buf)).digest()
-        return h(ku + self._engine_id + ku).digest()
+        return h(ku + engine_id + ku).digest()
 
     def _encrypt_des(self, plaintext: bytes) -> tuple[bytes, bytes]:
         raise ProtocolError("DES-CBC is not supported; use AES-128 or upgrade to cryptography>=42")
@@ -436,9 +522,9 @@ class UsmModel:
         p = view.usm_params
         if not p.engine_id:
             raise ProtocolError("Engine discovery: REPORT contained empty engineID")
-        self._engine_id = p.engine_id
-        self._engine_boots = p.engine_boots
-        self._engine_time = p.engine_time
+        self._peer_engine_id = p.engine_id
+        self._peer_engine_boots = p.engine_boots
+        self._peer_engine_time = p.engine_time
 
 
 def _peek_scoped_pdu(msg_data_bytes: bytes) -> tuple[bytes, bytes, int, int]:

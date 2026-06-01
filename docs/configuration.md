@@ -64,8 +64,14 @@ Requires `pip install "trishul-snmp[v3]"` for auth/priv.
 
 ## `V3Notifier` fields
 
-Same as `V3Manager` except `port` defaults to `162`. `send_inform()` is supported;
-`send_trap()` raises `ProtocolError` — see the Python API docs for the reason.
+Same as `V3Manager` except `port` defaults to `162` and
+`local_engine: UsmLocalEngine | None = None` may be supplied for SNMPv3 traps.
+
+Behavior notes:
+
+- `send_inform()` discovers peer engine state lazily on first use
+- `send_trap()` requires `local_engine`
+- trap-capable `V3Notifier.open()` does not depend on peer discovery
 
 ---
 
@@ -157,11 +163,19 @@ The CLI is a direct wrapper over the same runtime configuration:
 
 | CLI option | Runtime mapping |
 |---|---|
-| `--host` | `V2cManager(...)`, `V2cNotifier(...)`, or `V2cNotificationListener(...)` depending on the command |
-| `--port` | `V2cManager(...)`, `V2cNotifier(...)`, or `V2cNotificationListener(...)` depending on the command |
+| `--host` | Manager, notifier, or listener constructor `host=...` depending on the command |
+| `--port` | Manager, notifier, or listener constructor `port=...` depending on the command |
+| `--snmp-version` | Chooses `V2cManager` / `V3Manager` or `V2cNotifier` / `V3Notifier` |
 | `--community` | `V2cManager(community=...)`, `V2cNotifier(community=...)`, or listener allowlist entries |
-| `--timeout` | `V2cManager(timeout=...)` or `V2cNotifier(timeout=...)` |
-| `--retries` | `V2cManager(retries=...)` or `V2cNotifier(retries=...)` |
+| `--username` | `UsmUser(username=...)` for SNMPv3 manager/notifier commands |
+| `--auth-protocol` | `UsmUser(auth_protocol=...)` |
+| `--auth-key` / `--auth-key-env` | `UsmUser(auth_key=...)` |
+| `--priv-protocol` | `UsmUser(priv_protocol=...)` |
+| `--priv-key` / `--priv-key-env` | `UsmUser(priv_key=...)` |
+| `--context-name` | `V3Manager(context_name=...)` or `V3Notifier(context_name=...)` |
+| `--local-engine-id` / `--local-engine-boots` / `--local-engine-time` | `V3Notifier(local_engine=UsmLocalEngine(...))` for SNMPv3 trap only |
+| `--timeout` | Manager or notifier `timeout=...` |
+| `--retries` | Manager or notifier `retries=...` |
 | `--bundle` | `load_bundle(path)` plus optional runtime bundle attachment |
 | `--json` | Output rendering only; no runtime behavior change |
 | `--numeric` | Output rendering only; no runtime behavior change |
@@ -169,7 +183,7 @@ The CLI is a direct wrapper over the same runtime configuration:
 | `--max-repetitions` | `get_bulk(...)`, `walk(...)`, or `bulkwalk(...)` |
 | `--no-bulk` | `walk(..., bulk=False)` |
 | `--uptime` | `send_trap(..., uptime=...)` or `send_inform(..., uptime=...)` |
-| `--varbind` | Notification varbind parsing at the CLI edge before calling `V2cNotifier` |
+| `--varbind` | Notification varbind parsing at the CLI edge before calling the notifier |
 | `--count` | Listener receive loop exit condition only |
 
 CLI defaults differ slightly from the Python API:

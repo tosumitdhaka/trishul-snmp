@@ -60,9 +60,11 @@ Follow this checklist for every release. Steps should be completed in order.
   python3 scripts/run_release_gate.py
   ```
   This runs the local release gate end to end: lint, format check, mypy, pytest,
-  coverage, build, wheel smoke test, and temporary wheel-test venv cleanup.
-  Use `--smoke-host 127.0.0.1` to add a live post-install `tsnmp get` smoke test
-  against a reachable local agent.
+  coverage, build, base-wheel smoke test, and temporary wheel-test venv cleanup.
+  It also checks that the base wheel exposes the public SNMPv3 symbols and CLI help
+  surface without requiring `[v3]`. Use `--smoke-host 127.0.0.1` to add a live
+  post-install `tsnmp get` smoke test against a reachable local agent. The explicit
+  clean-venv `[v3]` install step below is still required.
 
 - [ ] Build source and wheel distributions:
   ```bash
@@ -76,7 +78,10 @@ Follow this checklist for every release. Steps should be completed in order.
   python -m venv /tmp/tsnmp-release-test
   /tmp/tsnmp-release-test/bin/pip install "dist/trishul_snmp-x.y.z-py3-none-any.whl[v3]"
   /tmp/tsnmp-release-test/bin/tsnmp version
-  /tmp/tsnmp-release-test/bin/python -c "from trishul_snmp import V2cManager, V3Manager, load_bundle; print('import ok')"
+  /tmp/tsnmp-release-test/bin/python -c "from trishul_snmp import UsmLocalEngine, V2cManager, V3Manager, V3Notifier, load_bundle; print('import ok')"
+  /tmp/tsnmp-release-test/bin/tsnmp get --help >/dev/null
+  /tmp/tsnmp-release-test/bin/tsnmp get --snmp-version 3 --help >/dev/null
+  /tmp/tsnmp-release-test/bin/tsnmp trap --snmp-version 3 --help >/dev/null
   ```
 
 - [ ] Verify the wheel has no duplicate entries:
@@ -105,6 +110,14 @@ Follow this checklist for every release. Steps should be completed in order.
   /tmp/tsnmp-release-test/bin/tsnmp get --host 127.0.0.1 1.3.6.1.2.1.1.3.0
   ```
   This is optional but useful for catching packaging or runtime issues that unit tests may miss.
+
+- [ ] If a reachable SNMPv3 test agent/receiver is available, do one CLI v3 smoke test as well:
+  ```bash
+  /tmp/tsnmp-release-test/bin/tsnmp get --host 127.0.0.1 --snmp-version 3 --username testuser 1.3.6.1.2.1.1.3.0
+  /tmp/tsnmp-release-test/bin/tsnmp trap --host 127.0.0.1 --snmp-version 3 --username testuser \
+    --local-engine-id 8000010203 --local-engine-boots 1 --local-engine-time 1 1.3.6.1.6.3.1.1.5.3
+  ```
+  For `0.4.1`, `listen` and `decode-notification` remain SNMPv2c-only, so v3 live smoke should focus on manager and outbound notifier paths.
 
 ---
 

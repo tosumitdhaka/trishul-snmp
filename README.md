@@ -39,7 +39,7 @@ thin and secondary.
   - `walk`
   - `bulkwalk`
 - outbound SNMPv2c trap and inform send
-- outbound SNMPv3 USM inform send (`V3Notifier.send_inform()`)
+- outbound SNMPv3 USM trap and inform send (`V3Notifier`; traps require `UsmLocalEngine`)
 - inbound SNMPv2c trap and inform listen
 - offline notification decode
 - narrow read-only SNMPv2c responder / simulator
@@ -51,7 +51,8 @@ thin and secondary.
 - UDP transport and request dispatcher
 - optional symbolic translation and display enrichment from compiled JSON MIB artifacts
 - works with numeric OIDs and no MIB bundle loaded
-- live CLI commands currently cover SNMPv2c; SNMPv3 CLI live support is planned for `v0.4.1`
+- live CLI commands cover SNMPv2c plus SNMPv3 manager and outbound notification send
+- `listen` and `decode-notification` remain SNMPv2c-only
 
 ## Scope
 
@@ -167,8 +168,9 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Current `v0.4.0` CLI live commands are still SNMPv2c-only. Use the Python API for
-SNMPv3 today; CLI SNMPv3 manager and inform support is planned for `v0.4.1`.
+`v0.4.1` CLI live coverage includes SNMPv2c plus SNMPv3 `get`, `getnext`, `getbulk`,
+`walk`, `bulkwalk`, `trap`, and `inform` via explicit `--snmp-version {2c,3}` selection.
+`listen` and `decode-notification` remain SNMPv2c-only.
 
 ## Documentation
 

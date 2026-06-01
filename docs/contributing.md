@@ -68,7 +68,7 @@ Please do not introduce these without explicit design discussion:
 - `set`
 - full agent framework or writable responder functionality
 - SNMPv3 listener (USM-aware inform-ack — separate design needed)
-- `V3Notifier.send_trap()` — requires local authoritative engine state; not supported until a local-engine bootstrapping design is in place
+- offline SNMPv3 notification decode and CLI parity for inbound v3 workflows
 - DES-CBC privacy (broken cipher, deferred)
 
 Those are not rejected forever, but they are outside the current baseline.

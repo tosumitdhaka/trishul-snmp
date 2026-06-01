@@ -1,6 +1,6 @@
 # trishul-snmp — Architecture
 
-> **Last updated:** 2026-05-29
+> **Last updated:** 2026-06-01
 
 ---
 
@@ -46,7 +46,7 @@ trishul_snmp/
 ├── security/
 │   ├── model.py         ← SecurityModel protocol (structural)
 │   ├── community.py     ← CommunityModel for SNMPv2c
-│   └── usm.py           ← UsmModel, UsmUser, AuthProtocol, PrivProtocol (v3 USM)
+│   └── usm.py           ← UsmModel, UsmUser, UsmLocalEngine, auth/priv protocols
 │
 ├── wire/
 │   ├── ber.py           ← BER primitives
@@ -115,8 +115,9 @@ Security model abstraction. Responsibilities:
 
 - `SecurityModel` structural protocol: `wrap_pdu(pdu) -> bytes`, `unwrap_message(data) -> Pdu | None`
 - `CommunityModel`: SNMPv2c community string wrapping/matching
-- `UsmModel`: SNMPv3 USM — RFC 3414 key derivation, HMAC auth, AES-128-CFB privacy, engine discovery
+- `UsmModel`: SNMPv3 USM — RFC 3414 key derivation, HMAC auth, AES-128-CFB privacy, engine discovery, and sender-authoritative trap handling
 - `UsmUser`: immutable credential dataclass (username, auth protocol/key, priv protocol/key)
+- `UsmLocalEngine`: explicit sender-authoritative engine state for SNMPv3 traps
 
 `UsmModel` imports `cryptography` lazily inside auth/priv methods only; the class is always
 importable without the `[v3]` extra.
@@ -182,10 +183,11 @@ Owns optional symbolic services:
 Owns command-line UX only:
 
 - parse arguments
+- validate v2c/v3 security option combinations before network I/O
 - load the optional bundle
 - call the same Python API as library users
 - render text or JSON output
-- current live-command protocol coverage in `v0.4.0` is SNMPv2c only; SNMPv3 CLI support is follow-on work
+- current live-command protocol coverage includes SNMPv2c plus SNMPv3 manager and outbound notification send; `listen` and `decode-notification` remain SNMPv2c-only
 
 ---
 
@@ -226,12 +228,12 @@ This flow is shown with `V2cManager`. `V3Manager` follows the same request path 
 
 ### 4.5 Outbound trap/inform send
 
-1. Caller invokes `await V2cNotifier.send_trap(...)`, `await V2cNotifier.send_inform(...)`, or `await V3Notifier.send_inform(...)`.
+1. Caller invokes `await V2cNotifier.send_trap(...)`, `await V2cNotifier.send_inform(...)`, `await V3Notifier.send_trap(...)`, or `await V3Notifier.send_inform(...)`.
 2. Numeric or symbolic notification OIDs are normalized at the API edge.
 3. `sysUpTime.0` and `snmpTrapOID.0` are inserted first unless explicitly provided.
 4. The notification PDU is encoded and sent over UDP.
-5. SNMPv2c trap send stops after send; SNMPv2c and SNMPv3 inform send wait for a matching `RESPONSE` PDU.
-6. `V3Notifier.send_trap()` intentionally raises `ProtocolError` in `v0.4.0` because SNMPv3 traps require the sender's local authoritative engine state, which is not tracked yet.
+5. Trap send stops after send; inform send waits for a matching `RESPONSE` PDU.
+6. `V3Notifier.send_inform()` uses peer-discovered receiver engine state. `V3Notifier.send_trap()` requires explicit `UsmLocalEngine` so the outbound message carries the sender's own authoritative engine state and does not depend on peer discovery during `open()`.
 
 ### 4.6 Inbound trap/inform receive
 
@@ -284,6 +286,7 @@ stack:
 - SNMPv2c and SNMPv3 USM (noAuthNoPriv, authNoPriv, authPriv AES-128)
 - async-first package API first, CLI second
 - manager operations plus notification send/receive and narrow read-only response
+- live CLI coverage for SNMPv2c plus SNMPv3 manager/outbound notifier paths
 - not attempting a full `pysnmp` replacement
 
 Raw MIB ingestion, compiler workflows, writable `set`, SNMPv1, and full

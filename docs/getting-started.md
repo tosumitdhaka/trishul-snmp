@@ -49,9 +49,10 @@ Deliberately out of scope:
 - SNMPv1
 - full agent or writable responder behavior
 
-Current `v0.4.0` CLI live commands are still SNMPv2c-only. SNMPv3 USM is available
-through the Python API today; CLI SNMPv3 manager and inform support is planned for
-`v0.4.1`.
+Current `v0.4.1` CLI live coverage includes SNMPv2c plus SNMPv3 `get`, `getnext`,
+`getbulk`, `walk`, `bulkwalk`, `trap`, and `inform` via explicit
+`--snmp-version {2c,3}` selection. `listen` and `decode-notification` remain
+SNMPv2c-only.
 
 ---
 
@@ -223,8 +224,48 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-`V3Notifier.send_trap()` is intentionally unsupported in `v0.4.0`; use
-`send_inform()` for authenticated SNMPv3 notifications.
+For SNMPv3 traps, supply explicit sender-authoritative engine state:
+
+```python
+import asyncio
+
+from trishul_snmp import (
+    IntegerValue,
+    UsmLocalEngine,
+    UsmUser,
+    V3Notifier,
+    load_bundle,
+)
+
+bundle = load_bundle("./mibs-json")
+user = UsmUser(username="notify")
+local_engine = UsmLocalEngine(
+    engine_id=bytes.fromhex("8000010203"),
+    engine_boots=7,
+    engine_time=99,
+)
+
+
+async def main() -> None:
+    async with V3Notifier(
+        host="10.0.0.20",
+        user=user,
+        bundle=bundle,
+        local_engine=local_engine,
+    ) as notifier:
+        await notifier.send_trap(
+            "IF-MIB::linkDown",
+            varbinds=[("IF-MIB::ifIndex.7", IntegerValue(7))],
+            uptime=123,
+        )
+
+
+asyncio.run(main())
+```
+
+`V3Notifier.send_inform()` discovers peer engine state automatically on first use.
+`V3Notifier.send_trap()` does not use peer discovery; it requires explicit
+`UsmLocalEngine` so the sender's own authoritative engine state is carried on the wire.
 
 ---
 
@@ -310,10 +351,11 @@ Live notification send:
 
 1. Load a bundle only if you want symbolic notification or varbind targets.
 2. Use `V2cNotifier.send_trap()` or `V2cNotifier.send_inform()` for SNMPv2c notifications.
-3. Use `V3Notifier.send_inform()` for SNMPv3 USM notifications.
-4. `tsnmp` auto-populates `sysUpTime.0` and `snmpTrapOID.0` unless you override them.
-5. Inform requests wait for a matching response; SNMPv2c traps are fire-and-forget.
-6. `V3Notifier.send_trap()` is intentionally unsupported in `v0.4.0`.
+3. Use `V3Notifier.send_inform()` for SNMPv3 USM informs.
+4. Use `V3Notifier.send_trap()` for SNMPv3 traps only when you have explicit `UsmLocalEngine` state.
+5. `tsnmp` auto-populates `sysUpTime.0` and `snmpTrapOID.0` unless you override them.
+6. Inform requests wait for a matching response; traps are fire-and-forget.
+7. SNMPv3 informs use peer-discovered receiver state; SNMPv3 traps use the sender's local authoritative state.
 
 Responder simulation:
 

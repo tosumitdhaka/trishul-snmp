@@ -4,10 +4,9 @@ The CLI is a thin wrapper over the Python API. It is useful for smoke testing,
 offline translation, notification debugging, and simple operator workflows, but
 it is not the primary product surface.
 
-Current `v0.4.0` live CLI protocol coverage is SNMPv2c only. The Python API already
-supports SNMPv3 USM manager operations and SNMPv3 inform send. CLI SNMPv3 support is
-planned for `v0.4.1`; until then, use `V3Manager` and `V3Notifier.send_inform()`
-from Python for live SNMPv3 workflows.
+`v0.4.1` live CLI coverage includes SNMPv2c plus SNMPv3 `get`, `getnext`,
+`getbulk`, `walk`, `bulkwalk`, `trap`, and `inform`. `listen` and
+`decode-notification` remain SNMPv2c-only.
 
 ---
 
@@ -20,7 +19,14 @@ options:
 |---|---|---|
 | `--host` | required | Target agent hostname or IP address |
 | `--port` | `161` | Target UDP port |
-| `--community` | `public` | SNMPv2c community string |
+| `--snmp-version {2c,3}` | `2c` | Explicit live protocol version selection |
+| `--community` | `public` when omitted | SNMPv2c community string; valid only with `--snmp-version 2c` |
+| `--username` | — | SNMPv3 username; required with `--snmp-version 3` |
+| `--auth-protocol {none,md5,sha1,sha256}` | `none` | SNMPv3 auth protocol |
+| `--auth-key` / `--auth-key-env` | — | Exactly one required when auth is enabled |
+| `--priv-protocol {none,aes128}` | `none` | SNMPv3 privacy protocol |
+| `--priv-key` / `--priv-key-env` | — | Exactly one required when privacy is enabled |
+| `--context-name` | empty | SNMPv3 context name (UTF-8 text) |
 | `--timeout` | `2.0` | Request timeout in seconds |
 | `--retries` | `1` | Retry count per request |
 | `--bundle` | — | Compiled module JSON file or bundle directory |
@@ -40,7 +46,14 @@ The outbound notification commands (`trap`, `inform`) share these options:
 |---|---|---|
 | `--host` | required | Target notification receiver hostname or IP address |
 | `--port` | `162` | Target UDP port |
-| `--community` | `public` | SNMPv2c community string |
+| `--snmp-version {2c,3}` | `2c` | Explicit live protocol version selection |
+| `--community` | `public` when omitted | SNMPv2c community string; valid only with `--snmp-version 2c` |
+| `--username` | — | SNMPv3 username; required with `--snmp-version 3` |
+| `--auth-protocol {none,md5,sha1,sha256}` | `none` | SNMPv3 auth protocol |
+| `--auth-key` / `--auth-key-env` | — | Exactly one required when auth is enabled |
+| `--priv-protocol {none,aes128}` | `none` | SNMPv3 privacy protocol |
+| `--priv-key` / `--priv-key-env` | — | Exactly one required when privacy is enabled |
+| `--context-name` | empty | SNMPv3 context name (UTF-8 text) |
 | `--timeout` | `2.0` | Request timeout in seconds |
 | `--retries` | `1` | Retry count per request |
 | `--bundle` | — | Compiled module JSON file or bundle directory |
@@ -63,6 +76,24 @@ Supported `TYPE` values for `--varbind`:
 - `null`
 
 `oid` values may be numeric or symbolic. Symbolic OIDs require `--bundle`.
+
+Trap-only SNMPv3 options:
+
+| Option | Description |
+|---|---|
+| `--local-engine-id` | Sender authoritative engine-id as hex bytes |
+| `--local-engine-boots` | Sender authoritative `engineBoots` |
+| `--local-engine-time` | Sender authoritative `engineTime` |
+
+Validation rules:
+
+- `--community` is invalid with `--snmp-version 3`
+- `--username` is required with `--snmp-version 3`
+- auth requires exactly one of `--auth-key` or `--auth-key-env`
+- privacy requires auth plus exactly one of `--priv-key` or `--priv-key-env`
+- `trap --snmp-version 3` requires all three `--local-engine-*` options
+- `inform --snmp-version 3` rejects `--local-engine-*` as unused
+- auth/priv CLI flows require `pip install "trishul-snmp[v3]"`; noAuthNoPriv v3 flows do not
 
 ---
 
@@ -194,7 +225,7 @@ tsnmp bulkwalk --host 10.0.0.10 --bundle ./mibs-json IF-MIB::ifTable
 tsnmp trap [OPTIONS] NOTIFICATION
 ```
 
-Sends an SNMPv2c trap and prints the assigned request id.
+Sends an SNMP trap and prints the assigned request id.
 
 Examples:
 
@@ -203,6 +234,9 @@ tsnmp trap --host 10.0.0.20 1.3.6.1.6.3.1.1.5.3
 tsnmp trap --host 10.0.0.20 --bundle ./mibs-json IF-MIB::linkDown \
   --uptime 123 \
   --varbind IF-MIB::ifIndex.7=int:7
+tsnmp trap --host 10.0.0.20 --snmp-version 3 --username notify \
+  --local-engine-id 8000010203 --local-engine-boots 7 --local-engine-time 99 \
+  1.3.6.1.6.3.1.1.5.3
 ```
 
 ---
@@ -213,7 +247,7 @@ tsnmp trap --host 10.0.0.20 --bundle ./mibs-json IF-MIB::linkDown \
 tsnmp inform [OPTIONS] NOTIFICATION
 ```
 
-Sends an SNMPv2c inform and prints the response varbinds.
+Sends an SNMP inform and prints the response varbinds.
 
 Additional option:
 
@@ -227,6 +261,9 @@ Examples:
 tsnmp inform --host 10.0.0.20 1.3.6.1.6.3.1.1.5.3
 tsnmp inform --host 10.0.0.20 --bundle ./mibs-json IF-MIB::linkDown \
   --varbind IF-MIB::ifIndex.7=int:7
+tsnmp inform --host 10.0.0.20 --snmp-version 3 --username notify \
+  --auth-protocol sha256 --auth-key-env TSNMP_AUTH \
+  1.3.6.1.6.3.1.1.5.3
 ```
 
 ---
@@ -328,6 +365,7 @@ Deliberately still not included:
 - `set`
 - compile workflows
 - raw MIB file or directory ingestion
-- SNMPv3 live CLI commands in `v0.4.0` (planned for `v0.4.1`)
+- SNMPv3 `listen`
+- SNMPv3 `decode-notification`
 
 If you need rich runtime usage, prefer the Python API.

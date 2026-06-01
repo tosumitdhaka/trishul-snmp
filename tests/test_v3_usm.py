@@ -10,6 +10,7 @@ import pytest
 from trishul_snmp.errors import AuthenticationError, ProtocolError
 from trishul_snmp.security.usm import (
     AuthProtocol,
+    UsmLocalEngine,
     UsmModel,
     UsmUser,
     _localize_key_rfc3414,
@@ -99,9 +100,17 @@ def _make_model(*, auth: AuthProtocol = AuthProtocol.MD5, key: bytes | None = No
     return model
 
 
+def _make_local_engine() -> UsmLocalEngine:
+    return UsmLocalEngine(
+        engine_id=b"\x80\x00\xaa\xbb\xcc\xdd" + b"\x11" * 11,
+        engine_boots=17,
+        engine_time=900,
+    )
+
+
 def test_auth_tag_length_is_12_bytes() -> None:
     model = _make_model()
-    tag = model._compute_auth_tag(b"some message bytes")
+    tag = model._compute_auth_tag(b"some message bytes", model._engine_id)
     assert len(tag) == 12
 
 
@@ -113,7 +122,9 @@ def test_auth_tag_differs_with_different_key() -> None:
     model_a = _make_model(key=key_a)
     model_b = _make_model(key=key_b)
     msg = b"hello"
-    assert model_a._compute_auth_tag(msg) != model_b._compute_auth_tag(msg)
+    assert model_a._compute_auth_tag(msg, model_a._engine_id) != model_b._compute_auth_tag(
+        msg, model_b._engine_id
+    )
 
 
 # ── HMAC failure raises AuthenticationError ───────────────────────────────────
@@ -410,6 +421,64 @@ def test_unwrap_returns_none_for_wrong_engine_id() -> None:
     assert receiver.unwrap_message(raw) is None
 
 
+def test_trap_wrap_uses_local_engine_fields_not_peer_state() -> None:
+    from trishul_snmp.wire.v3message import decode_scoped_pdu, decode_v3_message
+
+    peer_engine_id = b"\x80\x00\x01\x02\x03" + b"\x22" * 12
+    local_engine = _make_local_engine()
+    user = UsmUser(username="trap-user", auth_protocol=AuthProtocol.NONE)
+    model = UsmModel(user=user, local_engine=local_engine)
+    model._engine_id = peer_engine_id
+    model._engine_boots = 5
+    model._engine_time = 6
+
+    pdu = Pdu(
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=7,
+        error_status=0,
+        error_index=0,
+        varbinds=(RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 1, 0), value=NullValue()),),
+    )
+    raw = model.wrap_pdu(pdu)
+    view = decode_v3_message(raw)
+    scoped_engine_id, _ctx, decoded = decode_scoped_pdu(view.msg_data_bytes)
+
+    assert view.usm_params.engine_id == local_engine.engine_id
+    assert view.usm_params.engine_boots == local_engine.engine_boots
+    assert view.usm_params.engine_time == local_engine.engine_time
+    assert scoped_engine_id == local_engine.engine_id
+    assert decoded.pdu_type is PduType.SNMPV2_TRAP
+
+
+def test_inform_wrap_uses_peer_engine_even_when_local_engine_is_present() -> None:
+    from trishul_snmp.wire.v3message import decode_scoped_pdu, decode_v3_message
+
+    peer_engine_id = b"\x80\x00\x01\x02\x03" + b"\x33" * 12
+    local_engine = _make_local_engine()
+    user = UsmUser(username="inform-user", auth_protocol=AuthProtocol.NONE)
+    model = UsmModel(user=user, local_engine=local_engine)
+    model._engine_id = peer_engine_id
+    model._engine_boots = 8
+    model._engine_time = 9
+
+    pdu = Pdu(
+        pdu_type=PduType.INFORM_REQUEST,
+        request_id=8,
+        error_status=0,
+        error_index=0,
+        varbinds=(RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 1, 0), value=NullValue()),),
+    )
+    raw = model.wrap_pdu(pdu)
+    view = decode_v3_message(raw)
+    scoped_engine_id, _ctx, decoded = decode_scoped_pdu(view.msg_data_bytes)
+
+    assert view.usm_params.engine_id == peer_engine_id
+    assert view.usm_params.engine_boots == 8
+    assert view.usm_params.engine_time == 9
+    assert scoped_engine_id == peer_engine_id
+    assert decoded.pdu_type is PduType.INFORM_REQUEST
+
+
 def test_hmac_key_passphrase_of_digest_length_is_localized() -> None:
     """A passphrase whose length equals the digest size must still be localized,
     not returned raw — auth_key_localized=False is the default."""
@@ -439,10 +508,10 @@ def test_hmac_key_passphrase_of_digest_length_is_localized() -> None:
     m_pass._engine_id = engine_id
 
     # The localized key (returned directly) must differ from the derived key.
-    assert m_loc._hmac_key() != m_pass._hmac_key()
+    assert m_loc._hmac_key(engine_id) != m_pass._hmac_key(engine_id)
     # The passphrase path must produce the RFC-localized result.
     expected = _localize_key_rfc3414(passphrase, engine_id, AuthProtocol.MD5)
-    assert m_pass._hmac_key() == expected
+    assert m_pass._hmac_key(engine_id) == expected
 
 
 # ── RFC 3412 reportableFlag ───────────────────────────────────────────────────
@@ -453,9 +522,9 @@ def test_reportable_flag_cleared_for_trap() -> None:
     from trishul_snmp.wire.v3message import MSG_FLAG_REPORTABLE, decode_v3_message
 
     engine_id = b"\x80\x00\x1f\x88\x80" + b"\x00" * 11
+    local_engine = UsmLocalEngine(engine_id=engine_id, engine_boots=1, engine_time=100)
     user = UsmUser(username="u", auth_protocol=AuthProtocol.NONE)
-    model = UsmModel(user=user)
-    model._engine_id = engine_id
+    model = UsmModel(user=user, local_engine=local_engine)
 
     pdu = Pdu(
         pdu_type=PduType.SNMPV2_TRAP,

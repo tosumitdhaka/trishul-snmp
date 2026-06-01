@@ -7,7 +7,7 @@ import hashlib
 import pytest
 
 from trishul_snmp.errors import ProtocolError
-from trishul_snmp.security.usm import AuthProtocol, PrivProtocol, UsmModel, UsmUser
+from trishul_snmp.security.usm import AuthProtocol, PrivProtocol, UsmLocalEngine, UsmModel, UsmUser
 from trishul_snmp.types import NullValue
 from trishul_snmp.wire.pdu import Pdu, PduType, RawVarBind
 
@@ -18,6 +18,7 @@ def _make_authpriv_model(
     priv: PrivProtocol = PrivProtocol.AES128,
     auth_key: bytes | None = None,
     priv_key: bytes | None = None,
+    local_engine: UsmLocalEngine | None = None,
 ) -> UsmModel:
     engine_id = b"\x80\x00\x1f\x88\x80" + b"\x00" * 11
     if auth_key is None:
@@ -32,11 +33,19 @@ def _make_authpriv_model(
         priv_protocol=priv,
         priv_key=priv_key,
     )
-    model = UsmModel(user=user)
+    model = UsmModel(user=user, local_engine=local_engine)
     model._engine_id = engine_id
     model._engine_boots = 2
     model._engine_time = 500
     return model
+
+
+def _make_local_engine() -> UsmLocalEngine:
+    return UsmLocalEngine(
+        engine_id=b"\x80\x00\xaa\xbb\xcc\xdd" + b"\x21" * 11,
+        engine_boots=19,
+        engine_time=1234,
+    )
 
 
 # ── AES-128-CFB roundtrip ─────────────────────────────────────────────────────
@@ -334,3 +343,39 @@ def test_aes128_rejects_priv_params_shorter_than_8() -> None:
 
     with pytest.raises(ProtocolError, match="8 octets"):
         model.unwrap_message(restamped)
+
+
+def test_authpriv_trap_roundtrip_uses_local_engine() -> None:
+    from trishul_snmp.wire.v3message import decode_scoped_pdu, decode_v3_message
+
+    local_engine = _make_local_engine()
+    sender = _make_authpriv_model(local_engine=local_engine)
+    receiver = _make_authpriv_model()
+    receiver._engine_id = local_engine.engine_id
+
+    pdu = Pdu(
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=144,
+        error_status=0,
+        error_index=0,
+        varbinds=(RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 1, 0), value=NullValue()),),
+    )
+    raw = sender.wrap_pdu(pdu)
+    view = decode_v3_message(raw)
+    scoped_engine_id, _ctx, _decoded = decode_scoped_pdu(
+        sender._decrypt_scoped_pdu(
+            view.msg_data_bytes,
+            view.usm_params.priv_params,
+            view.usm_params.engine_id,
+            view.usm_params.engine_boots,
+            view.usm_params.engine_time,
+        )
+    )
+    result = receiver.unwrap_message(raw)
+
+    assert view.usm_params.engine_id == local_engine.engine_id
+    assert view.usm_params.engine_boots == local_engine.engine_boots
+    assert view.usm_params.engine_time == local_engine.engine_time
+    assert scoped_engine_id == local_engine.engine_id
+    assert result is not None
+    assert result.pdu_type is PduType.SNMPV2_TRAP

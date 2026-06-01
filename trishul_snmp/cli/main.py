@@ -10,18 +10,25 @@ from pathlib import Path
 from typing import TypeAlias, cast
 
 from trishul_snmp import (
+    SnmpManager,
+    SnmpNotifier,
     V2cManager,
     V2cNotificationListener,
     V2cNotifier,
+    V3Manager,
+    V3Notifier,
     __version__,
     decode_notification,
 )
 from trishul_snmp.cli.common import (
+    V2cCliSecurity,
     add_bundle_option,
     add_listener_options,
     add_live_options,
+    add_local_engine_options,
     add_notifier_options,
     load_bundle_from_args,
+    parse_cli_security,
     parse_hex_bytes,
     parse_notification_varbinds,
 )
@@ -38,7 +45,7 @@ from trishul_snmp.types import ErrorStatus, Response
 
 HandlerResult: TypeAlias = int | Coroutine[object, object, int]
 Handler: TypeAlias = Callable[[argparse.Namespace], HandlerResult]
-ResponseOperation: TypeAlias = Callable[[V2cManager, argparse.Namespace], Awaitable[Response]]
+ResponseOperation: TypeAlias = Callable[[SnmpManager, argparse.Namespace], Awaitable[Response]]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -112,12 +119,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bulk_walk.set_defaults(handler=_handle_bulk_walk)
 
-    trap = subparsers.add_parser("trap", help="Send an SNMPv2c trap")
+    trap = subparsers.add_parser("trap", help="Send an SNMP trap")
     _add_notification_send_arguments(trap)
+    add_local_engine_options(trap)
     trap.set_defaults(handler=_handle_trap)
 
-    inform = subparsers.add_parser("inform", help="Send an SNMPv2c inform")
+    inform = subparsers.add_parser("inform", help="Send an SNMP inform")
     _add_notification_send_arguments(inform)
+    add_local_engine_options(inform, hidden=True)
     inform.add_argument(
         "--numeric",
         action="store_true",
@@ -180,7 +189,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if isinstance(result, int):
             return result
         return asyncio.run(result)
-    except (OSError, TsnmpError, ValueError) as exc:
+    except (ImportError, OSError, TsnmpError, ValueError) as exc:
         print(f"tsnmp: {exc}", file=sys.stderr)
         return 1
 
@@ -249,7 +258,7 @@ async def _run_response_command(args: argparse.Namespace, operation: ResponseOpe
 async def _handle_trap(args: argparse.Namespace) -> int:
     bundle = load_bundle_from_args(args)
     varbinds = parse_notification_varbinds(args.varbinds, bundle=bundle)
-    async with _notifier_from_args(args, bundle=bundle) as notifier:
+    async with _notifier_from_args(args, bundle=bundle, require_local_engine=True) as notifier:
         request_id = await notifier.send_trap(
             args.notification,
             varbinds=varbinds,
@@ -319,37 +328,69 @@ def _handle_decode_notification(args: argparse.Namespace) -> int:
     return 0
 
 
-def _manager_from_args(args: argparse.Namespace, *, bundle: MibBundle | None) -> V2cManager:
-    return V2cManager(
+def _manager_from_args(args: argparse.Namespace, *, bundle: MibBundle | None) -> SnmpManager:
+    security = parse_cli_security(args)
+    if isinstance(security, V2cCliSecurity):
+        return V2cManager(
+            host=args.host,
+            port=args.port,
+            community=security.community,
+            timeout=args.timeout,
+            retries=args.retries,
+            bundle=bundle,
+        )
+    return V3Manager(
         host=args.host,
         port=args.port,
-        community=args.community,
+        user=security.user,
         timeout=args.timeout,
         retries=args.retries,
         bundle=bundle,
+        context_name=security.context_name,
     )
 
 
-def _notifier_from_args(args: argparse.Namespace, *, bundle: MibBundle | None) -> V2cNotifier:
-    return V2cNotifier(
+def _notifier_from_args(
+    args: argparse.Namespace,
+    *,
+    bundle: MibBundle | None,
+    require_local_engine: bool = False,
+) -> SnmpNotifier:
+    security = parse_cli_security(
+        args,
+        require_local_engine=require_local_engine,
+        allow_local_engine=require_local_engine,
+    )
+    if isinstance(security, V2cCliSecurity):
+        return V2cNotifier(
+            host=args.host,
+            port=args.port,
+            community=security.community,
+            timeout=args.timeout,
+            retries=args.retries,
+            bundle=bundle,
+        )
+    return V3Notifier(
         host=args.host,
         port=args.port,
-        community=args.community,
+        user=security.user,
         timeout=args.timeout,
         retries=args.retries,
         bundle=bundle,
+        context_name=security.context_name,
+        local_engine=security.local_engine,
     )
 
 
-async def _perform_get(manager: V2cManager, args: argparse.Namespace) -> Response:
+async def _perform_get(manager: SnmpManager, args: argparse.Namespace) -> Response:
     return await manager.get(*args.targets)
 
 
-async def _perform_get_next(manager: V2cManager, args: argparse.Namespace) -> Response:
+async def _perform_get_next(manager: SnmpManager, args: argparse.Namespace) -> Response:
     return await manager.get_next(*args.targets)
 
 
-async def _perform_get_bulk(manager: V2cManager, args: argparse.Namespace) -> Response:
+async def _perform_get_bulk(manager: SnmpManager, args: argparse.Namespace) -> Response:
     return await manager.get_bulk(
         *args.targets,
         non_repeaters=args.non_repeaters,

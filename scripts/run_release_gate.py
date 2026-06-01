@@ -64,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Run the local release gate: ruff, mypy, pytest, coverage, "
-            "wheel build, wheel smoke test, and temporary venv cleanup."
+            "wheel build, base-wheel smoke test, and temporary venv cleanup."
         )
     )
     parser.add_argument(
@@ -301,14 +301,22 @@ def _wheel_smoke_test(settings: Settings, report: ReleaseGateReport) -> str:
             [
                 str(wheel_python),
                 "-c",
-                "from trishul_snmp import V2cManager, load_bundle; print('import ok')",
+                (
+                    "from trishul_snmp import "
+                    "UsmLocalEngine, V2cManager, V3Manager, V3Notifier, load_bundle; "
+                    "print('import ok')"
+                ),
             ]
         )
         import_output = import_result.stdout.strip()
         if import_output != "import ok":
             raise ReleaseGateError(f"Unexpected import smoke output: {import_output!r}")
 
-        detail_parts = [f"tsnmp version={installed_version}", import_output]
+        _run_checked([str(wheel_tsnmp), "get", "--help"])
+        _run_checked([str(wheel_tsnmp), "get", "--snmp-version", "3", "--help"])
+        _run_checked([str(wheel_tsnmp), "trap", "--snmp-version", "3", "--help"])
+
+        detail_parts = [f"tsnmp version={installed_version}", import_output, "cli help ok"]
         if settings.smoke_host is not None:
             live_result = _run_checked(
                 [
