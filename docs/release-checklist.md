@@ -117,7 +117,13 @@ Follow this checklist for every release. Steps should be completed in order.
   /tmp/tsnmp-release-test/bin/tsnmp trap --host 127.0.0.1 --snmp-version 3 --username testuser \
     --local-engine-id 8000010203 --local-engine-boots 1 --local-engine-time 1 1.3.6.1.6.3.1.1.5.3
   ```
-  For `0.4.1`, `listen` and `decode-notification` remain SNMPv2c-only, so v3 live smoke should focus on manager and outbound notifier paths.
+  For `v0.4.2+`, add one inbound/offline v3 smoke as well when a local receiver is available:
+  ```bash
+  /tmp/tsnmp-release-test/bin/tsnmp listen --snmp-version 3 --username testuser \
+    --local-engine-id 8000010203 --local-engine-boots 1 --local-engine-time 1 --count 1
+  /tmp/tsnmp-release-test/bin/tsnmp decode-notification --snmp-version 3 --username testuser \
+    --file ./capture-v3-notification.ber
+  ```
 
 ---
 

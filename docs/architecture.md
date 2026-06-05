@@ -1,6 +1,6 @@
 # trishul-snmp — Architecture
 
-> **Last updated:** 2026-06-01
+> **Last updated:** 2026-06-04
 
 ---
 
@@ -16,7 +16,8 @@ symbolic translation and richer display.
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                             Python API / CLI                                 │
 │  V2cManager / V3Manager  ·  V2cNotifier / V3Notifier                        │
-│  V2cNotificationListener  ·  V2cResponder  ·  decode_notification()          │
+│  V2cNotificationListener / V3NotificationListener  ·  V2cResponder          │
+│  decode_notification()                                                       │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │ manager/      target normalization, request shaping, walk logic              │
 │ notify/       send, listen, and offline notification decode                  │
@@ -66,7 +67,8 @@ trishul_snmp/
 │
 ├── notify/
 │   ├── client.py        ← SnmpNotifier base · V2cNotifier · V3Notifier
-│   ├── listener.py      ← V2cNotificationListener public receive API
+│   ├── listener.py      ← V2c/V3 notification listener public receive APIs
+│   ├── v3.py            ← listener-side v3 decode/report/response helpers
 │   ├── events.py        ← notification event model + live/offline decode
 │   └── __init__.py      ← notification package export
 │
@@ -153,7 +155,9 @@ Owns notification-specific runtime behavior:
 - receive trap and inform PDUs as structured events
 - decode BER-encoded trap/inform messages offline into the same public event model
 - auto-acknowledge informs on the listener path
-- apply optional community allowlists on the listener path
+- apply optional community allowlists on the v2c listener path
+- authenticate/decrypt inbound SNMPv3 notifications for one configured USM user
+- reply to v3 discovery probes and inform requests using explicit local authoritative engine state
 - map notification member metadata to received varbinds when a bundle is present
 
 ### 3.5 `responder/`
@@ -187,7 +191,7 @@ Owns command-line UX only:
 - load the optional bundle
 - call the same Python API as library users
 - render text or JSON output
-- current live-command protocol coverage includes SNMPv2c plus SNMPv3 manager and outbound notification send; `listen` and `decode-notification` remain SNMPv2c-only
+- current live-command protocol coverage includes SNMPv2c plus SNMPv3 manager, outbound notification send, inbound notification listen, and offline decode
 
 ---
 
@@ -237,18 +241,19 @@ This flow is shown with `V2cManager`. `V3Manager` follows the same request path 
 
 ### 4.6 Inbound trap/inform receive
 
-1. Caller opens `V2cNotificationListener(...)`.
+1. Caller opens `V2cNotificationListener(...)` or `V3NotificationListener(...)`.
 2. `UdpServer` binds the requested host and port.
 3. The listener receives inbound datagrams and decodes SNMP messages.
-4. Non-notification PDUs and filtered communities are ignored.
-5. Informs are acknowledged automatically with a matching `RESPONSE` PDU.
-6. The listener returns a `NotificationEvent` carrying source address, community, PDU kind, decoded varbinds, notification metadata, and optional declared-member bindings.
+4. For v2c, non-notification PDUs and filtered communities are ignored.
+5. For v3, discovery probes are answered with REPORTs and malformed/wrong-user/auth-failed datagrams are dropped quietly.
+6. Informs are acknowledged automatically with a matching `RESPONSE` PDU.
+7. The listener returns a `NotificationEvent` carrying source address, PDU kind, decoded varbinds, notification metadata, and additive v3 security metadata when present.
 
 ### 4.7 Offline trap/inform decode
 
-1. Caller invokes `decode_notification(raw_bytes, bundle=...)`.
-2. `decode_message()` decodes the SNMPv2c envelope and notification PDU.
-3. `notification_event_from_message()` builds the public `NotificationEvent`.
+1. Caller invokes `decode_notification(raw_bytes, bundle=...)` for v2c or `decode_notification(raw_bytes, bundle=..., user=...)` for strict v3 USM decode.
+2. The function routes through the v2c or v3 codec path based on whether `user` was supplied.
+3. The low-level decode builds the public `NotificationEvent`.
 4. If a bundle is loaded, `snmpTrapOID.0` is reverse-looked-up into `notification_name` and declared `member_bindings`.
 5. No UDP transport or dispatcher code is involved.
 
@@ -286,7 +291,7 @@ stack:
 - SNMPv2c and SNMPv3 USM (noAuthNoPriv, authNoPriv, authPriv AES-128)
 - async-first package API first, CLI second
 - manager operations plus notification send/receive and narrow read-only response
-- live CLI coverage for SNMPv2c plus SNMPv3 manager/outbound notifier paths
+- live CLI coverage for SNMPv2c plus SNMPv3 manager, notifier, listener, and offline decode paths
 - not attempting a full `pysnmp` replacement
 
 Raw MIB ingestion, compiler workflows, writable `set`, SNMPv1, and full

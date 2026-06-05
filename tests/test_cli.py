@@ -325,6 +325,36 @@ class FakeListener:
         return type(self).queued_events.pop(0)
 
 
+class FakeV3Listener:
+    created: list[FakeV3Listener] = []
+    queued_events: list[NotificationEvent] = []
+
+    def __init__(
+        self,
+        *,
+        host: str = "0.0.0.0",
+        port: int = 162,
+        user=None,
+        local_engine=None,
+        bundle=None,
+    ) -> None:
+        self.host = host
+        self.port = port
+        self.user = user
+        self.local_engine = local_engine
+        self.bundle = bundle
+        type(self).created.append(self)
+
+    async def __aenter__(self) -> FakeV3Listener:
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def receive(self) -> NotificationEvent:
+        return type(self).queued_events.pop(0)
+
+
 def _response(oid: str, *, display_name: str) -> Response:
     return Response(
         request_id=1,
@@ -361,6 +391,24 @@ def _notification_event() -> NotificationEvent:
                 varbind=varbind,
             ),
         ),
+    )
+
+
+def _v3_notification_event() -> NotificationEvent:
+    return NotificationEvent(
+        request_id=13,
+        community=None,
+        source_address=("127.0.0.1", 49163),
+        pdu_type="inform-request",
+        varbinds=(),
+        snmp_version="3",
+        username="alice",
+        security_level="authNoPriv",
+        context_engine_id=bytes.fromhex("8000010203"),
+        context_name=b"alerts",
+        authoritative_engine_id=bytes.fromhex("8000010203"),
+        authoritative_engine_boots=7,
+        authoritative_engine_time=99,
     )
 
 
@@ -743,12 +791,48 @@ def test_cli_listen_receives_configured_count(monkeypatch, capsys) -> None:
     assert FakeListener.created[0].communities == ["public"]
 
 
+def test_cli_listen_v3_uses_v3_listener(monkeypatch, capsys) -> None:
+    FakeV3Listener.created.clear()
+    FakeV3Listener.queued_events = [_v3_notification_event()]
+    monkeypatch.setattr("trishul_snmp.cli.main.V3NotificationListener", FakeV3Listener)
+
+    exit_code = main(
+        [
+            "listen",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "3",
+            "--username",
+            "alice",
+            "--local-engine-id",
+            "80:00:01:02:03",
+            "--local-engine-boots",
+            "7",
+            "--local-engine-time",
+            "99",
+            "--count",
+            "1",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "user=alice level=authNoPriv" in captured.out
+    assert FakeV3Listener.created[0].host == "127.0.0.1"
+    assert FakeV3Listener.created[0].user.username == "alice"
+    assert FakeV3Listener.created[0].local_engine is not None
+    assert FakeV3Listener.created[0].local_engine.engine_id == bytes.fromhex("8000010203")
+
+
 def test_cli_decode_notification_accepts_hex_input(monkeypatch, capsys) -> None:
     seen: dict[str, object] = {}
 
-    def fake_decode_notification(data: bytes, *, bundle=None):
+    def fake_decode_notification(data: bytes, *, bundle=None, user=None):
         seen["data"] = data
         seen["bundle"] = bundle
+        seen["user"] = user
         return _notification_event()
 
     monkeypatch.setattr("trishul_snmp.cli.main.decode_notification", fake_decode_notification)
@@ -766,7 +850,45 @@ def test_cli_decode_notification_accepts_hex_input(monkeypatch, capsys) -> None:
     assert exit_code == 0
     assert seen["data"] == b"\x30\x01"
     assert seen["bundle"] is None
+    assert seen["user"] is None
     assert "notification=NOTIF-MIB::linkDown uptime=55" in captured.out
+
+
+def test_cli_decode_notification_v3_passes_user(monkeypatch, capsys) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_decode_notification(data: bytes, *, bundle=None, user=None):
+        seen["data"] = data
+        seen["bundle"] = bundle
+        seen["user"] = user
+        return _v3_notification_event()
+
+    monkeypatch.setattr("trishul_snmp.cli.main.decode_notification", fake_decode_notification)
+
+    exit_code = main(
+        [
+            "decode-notification",
+            "--snmp-version",
+            "3",
+            "--username",
+            "alice",
+            "--auth-protocol",
+            "md5",
+            "--auth-key",
+            "secret",
+            "--hex",
+            "30 01",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert seen["data"] == b"\x30\x01"
+    assert seen["bundle"] is None
+    assert seen["user"] is not None
+    assert seen["user"].username == "alice"
+    assert "user=alice level=authNoPriv" in captured.out
 
 
 def test_cli_listen_rejects_negative_count(capsys) -> None:

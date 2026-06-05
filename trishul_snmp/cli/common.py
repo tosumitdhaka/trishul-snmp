@@ -32,6 +32,11 @@ class V2cCliSecurity:
 
 
 @dataclass(frozen=True, slots=True)
+class V2cListenerCliSecurity:
+    communities: tuple[str, ...] | None
+
+
+@dataclass(frozen=True, slots=True)
 class V3CliSecurity:
     user: UsmUser
     context_name: bytes
@@ -39,6 +44,7 @@ class V3CliSecurity:
 
 
 CliSecurity = V2cCliSecurity | V3CliSecurity
+ListenerCliSecurity = V2cListenerCliSecurity | V3CliSecurity
 
 
 def add_bundle_option(parser: argparse.ArgumentParser, *, required: bool = False) -> None:
@@ -130,6 +136,10 @@ def add_listener_options(parser: argparse.ArgumentParser) -> None:
         help="Listener bind hostname or IP address (default: 0.0.0.0)",
     )
     parser.add_argument("--port", type=int, default=162, help="Listener UDP port (default: 162)")
+    _add_snmp_version_option(
+        parser,
+        help_text="SNMP version for inbound notifications (default: 2c)",
+    )
     parser.add_argument(
         "--community",
         dest="communities",
@@ -137,6 +147,8 @@ def add_listener_options(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Allowed SNMPv2c community string; repeat to allow multiple values",
     )
+    _add_v3_usm_options(parser, include_context_name=False)
+    add_local_engine_options(parser)
     add_bundle_option(parser, required=False)
     parser.add_argument(
         "--numeric",
@@ -149,6 +161,15 @@ def add_listener_options(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Emit one JSON object per received notification",
     )
+
+
+def add_decode_security_options(parser: argparse.ArgumentParser) -> None:
+    """Add optional SNMPv3 credentials for offline notification decode."""
+    _add_snmp_version_option(
+        parser,
+        help_text="SNMP version of the encoded notification (default: 2c)",
+    )
+    _add_v3_usm_options(parser, include_context_name=False)
 
 
 def load_bundle_from_args(args: argparse.Namespace) -> MibBundle | None:
@@ -173,6 +194,58 @@ def parse_cli_security(
             allow_local_engine=allow_local_engine,
         )
     return _parse_v2c_cli_security(args)
+
+
+def parse_listener_cli_security(args: argparse.Namespace) -> ListenerCliSecurity:
+    """Build validated v2c/v3 listener security configuration from CLI arguments."""
+    if getattr(args, "snmp_version", "2c") == "3":
+        if getattr(args, "communities", None):
+            raise ValueError("--community is invalid with --snmp-version 3")
+        return V3CliSecurity(
+            user=_parse_v3_user(args),
+            context_name=b"",
+            local_engine=_parse_local_engine(
+                args,
+                required=True,
+                allowed=True,
+                usage="listener",
+            ),
+        )
+
+    if getattr(args, "username", None):
+        raise ValueError("--username is invalid with --snmp-version 2c")
+    if getattr(args, "auth_protocol", "none") != "none":
+        raise ValueError("--auth-protocol is invalid with --snmp-version 2c")
+    if getattr(args, "auth_key", None) or getattr(args, "auth_key_env", None):
+        raise ValueError("--auth-key and --auth-key-env are invalid with --snmp-version 2c")
+    if getattr(args, "priv_protocol", "none") != "none":
+        raise ValueError("--priv-protocol is invalid with --snmp-version 2c")
+    if getattr(args, "priv_key", None) or getattr(args, "priv_key_env", None):
+        raise ValueError("--priv-key and --priv-key-env are invalid with --snmp-version 2c")
+    if _local_engine_supplied(args):
+        raise ValueError("--local-engine-* options are invalid with --snmp-version 2c")
+
+    communities = getattr(args, "communities", None)
+    normalized = tuple(value for value in communities if value) if communities is not None else ()
+    return V2cListenerCliSecurity(communities=normalized or None)
+
+
+def parse_decode_notification_user(args: argparse.Namespace) -> UsmUser | None:
+    """Build optional SNMPv3 credentials for offline decode commands."""
+    if getattr(args, "snmp_version", "2c") == "3":
+        return _parse_v3_user(args)
+
+    if getattr(args, "username", None):
+        raise ValueError("--username is invalid with --snmp-version 2c")
+    if getattr(args, "auth_protocol", "none") != "none":
+        raise ValueError("--auth-protocol is invalid with --snmp-version 2c")
+    if getattr(args, "auth_key", None) or getattr(args, "auth_key_env", None):
+        raise ValueError("--auth-key and --auth-key-env are invalid with --snmp-version 2c")
+    if getattr(args, "priv_protocol", "none") != "none":
+        raise ValueError("--priv-protocol is invalid with --snmp-version 2c")
+    if getattr(args, "priv_key", None) or getattr(args, "priv_key_env", None):
+        raise ValueError("--priv-key and --priv-key-env are invalid with --snmp-version 2c")
+    return None
 
 
 def parse_notification_varbinds(
@@ -267,17 +340,28 @@ def parse_hex_bytes(value: str) -> bytes:
 
 
 def _add_security_options(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--snmp-version",
-        choices=("2c", "3"),
-        default="2c",
-        help="SNMP version for live operations (default: 2c)",
+    _add_snmp_version_option(
+        parser,
+        help_text="SNMP version for live operations (default: 2c)",
     )
     parser.add_argument(
         "--community",
         default=None,
         help="SNMPv2c community string (default when omitted: public)",
     )
+    _add_v3_usm_options(parser, include_context_name=True)
+
+
+def _add_snmp_version_option(parser: argparse.ArgumentParser, *, help_text: str) -> None:
+    parser.add_argument(
+        "--snmp-version",
+        choices=("2c", "3"),
+        default="2c",
+        help=help_text,
+    )
+
+
+def _add_v3_usm_options(parser: argparse.ArgumentParser, *, include_context_name: bool) -> None:
     parser.add_argument("--username", help="SNMPv3 username")
     parser.add_argument(
         "--auth-protocol",
@@ -295,11 +379,12 @@ def _add_security_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--priv-key", help="SNMPv3 privacy passphrase")
     parser.add_argument("--priv-key-env", help="Environment variable holding the SNMPv3 priv key")
-    parser.add_argument(
-        "--context-name",
-        default="",
-        help="SNMPv3 contextName as UTF-8 text (default: empty)",
-    )
+    if include_context_name:
+        parser.add_argument(
+            "--context-name",
+            default="",
+            help="SNMPv3 contextName as UTF-8 text (default: empty)",
+        )
 
 
 def _parse_v2c_cli_security(args: argparse.Namespace) -> V2cCliSecurity:
@@ -329,6 +414,20 @@ def _parse_v3_cli_security(
     if getattr(args, "community", None) is not None:
         raise ValueError("--community is invalid with --snmp-version 3")
 
+    local_engine = _parse_local_engine(
+        args,
+        required=require_local_engine,
+        allowed=allow_local_engine,
+        usage="trap",
+    )
+    return V3CliSecurity(
+        user=_parse_v3_user(args),
+        context_name=getattr(args, "context_name", "").encode("utf-8"),
+        local_engine=local_engine,
+    )
+
+
+def _parse_v3_user(args: argparse.Namespace) -> UsmUser:
     username = getattr(args, "username", None)
     if not username:
         raise ValueError("--username is required with --snmp-version 3")
@@ -365,21 +464,12 @@ def _parse_v3_cli_security(
         if priv_key is None:
             raise ValueError("SNMPv3 privacy requires exactly one of --priv-key or --priv-key-env")
 
-    local_engine = _parse_local_engine(
-        args,
-        required=require_local_engine,
-        allowed=allow_local_engine,
-    )
-    return V3CliSecurity(
-        user=UsmUser(
-            username=username,
-            auth_protocol=auth_protocol,
-            auth_key=auth_key or b"",
-            priv_protocol=priv_protocol,
-            priv_key=priv_key or b"",
-        ),
-        context_name=getattr(args, "context_name", "").encode("utf-8"),
-        local_engine=local_engine,
+    return UsmUser(
+        username=username,
+        auth_protocol=auth_protocol,
+        auth_key=auth_key or b"",
+        priv_protocol=priv_protocol,
+        priv_key=priv_key or b"",
     )
 
 
@@ -420,24 +510,25 @@ def _parse_local_engine(
     *,
     required: bool,
     allowed: bool,
+    usage: str,
 ) -> UsmLocalEngine | None:
     supplied = _local_engine_supplied(args)
     if supplied and not allowed:
-        raise ValueError("--local-engine-* options are only valid for SNMPv3 trap")
+        raise ValueError(f"--local-engine-* options are only valid for SNMPv3 {usage}")
     if not supplied:
         if required:
             raise ValueError(
-                "SNMPv3 trap requires --local-engine-id, "
+                f"SNMPv3 {usage} requires --local-engine-id, "
                 "--local-engine-boots, and --local-engine-time"
             )
         return None
 
     if getattr(args, "local_engine_id", None) is None:
-        raise ValueError("SNMPv3 trap requires --local-engine-id")
+        raise ValueError(f"SNMPv3 {usage} requires --local-engine-id")
     if getattr(args, "local_engine_boots", None) is None:
-        raise ValueError("SNMPv3 trap requires --local-engine-boots")
+        raise ValueError(f"SNMPv3 {usage} requires --local-engine-boots")
     if getattr(args, "local_engine_time", None) is None:
-        raise ValueError("SNMPv3 trap requires --local-engine-time")
+        raise ValueError(f"SNMPv3 {usage} requires --local-engine-time")
 
     engine_boots = int(args.local_engine_boots)
     engine_time = int(args.local_engine_time)

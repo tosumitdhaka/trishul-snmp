@@ -4,9 +4,8 @@ The CLI is a thin wrapper over the Python API. It is useful for smoke testing,
 offline translation, notification debugging, and simple operator workflows, but
 it is not the primary product surface.
 
-`v0.4.1` live CLI coverage includes SNMPv2c plus SNMPv3 `get`, `getnext`,
-`getbulk`, `walk`, `bulkwalk`, `trap`, and `inform`. `listen` and
-`decode-notification` remain SNMPv2c-only.
+Current CLI coverage includes SNMPv2c plus SNMPv3 `get`, `getnext`, `getbulk`,
+`walk`, `bulkwalk`, `trap`, `inform`, `listen`, and `decode-notification`.
 
 ---
 
@@ -274,7 +273,9 @@ tsnmp inform --host 10.0.0.20 --snmp-version 3 --username notify \
 tsnmp listen [OPTIONS]
 ```
 
-Listens for inbound SNMPv2c traps and informs.
+Listens for inbound SNMP notifications. Use `--snmp-version 2c` with optional
+repeated `--community` allowlists, or `--snmp-version 3` with explicit
+username/auth/priv inputs plus required local authoritative engine state.
 
 Options:
 
@@ -282,7 +283,14 @@ Options:
 |---|---|---|
 | `--host` | `0.0.0.0` | Listener bind hostname or IP address |
 | `--port` | `162` | Listener UDP port |
-| `--community` | repeatable | Optional allowlist entry; repeat to allow multiple values |
+| `--snmp-version {2c,3}` | `2c` | Inbound notification protocol version |
+| `--community` | repeatable | Optional SNMPv2c allowlist entry; invalid with `--snmp-version 3` |
+| `--username` | — | SNMPv3 username; required with `--snmp-version 3` |
+| `--auth-protocol {none,md5,sha1,sha256}` | `none` | SNMPv3 auth protocol |
+| `--auth-key` / `--auth-key-env` | — | Exactly one required when auth is enabled |
+| `--priv-protocol {none,aes128}` | `none` | SNMPv3 privacy protocol |
+| `--priv-key` / `--priv-key-env` | — | Exactly one required when privacy is enabled |
+| `--local-engine-id` / `--local-engine-boots` / `--local-engine-time` | — | Required for `listen --snmp-version 3` |
 | `--bundle` | — | Compiled module JSON file or bundle directory |
 | `--count` | `0` | Number of notifications to receive before exit; `0` means run until interrupted |
 | `--numeric` | off | Render numeric OIDs in text output even when a bundle is loaded |
@@ -293,6 +301,9 @@ Examples:
 ```bash
 tsnmp listen --host 127.0.0.1 --port 9162 --count 1
 tsnmp listen --bundle ./mibs-json --community public --community traps --json
+tsnmp listen --snmp-version 3 --username notify \
+  --auth-protocol sha256 --auth-key-env TSNMP_AUTH \
+  --local-engine-id 8000010203 --local-engine-boots 7 --local-engine-time 99
 ```
 
 ---
@@ -303,12 +314,19 @@ tsnmp listen --bundle ./mibs-json --community public --community traps --json
 tsnmp decode-notification [OPTIONS]
 ```
 
-Offline decode for BER-encoded SNMPv2c traps and informs.
+Offline decode for BER-encoded SNMP notifications. Use `--snmp-version 3` with
+explicit user/auth/priv inputs when decoding captured USM notifications.
 
 Options:
 
 | Option | Default | Description |
 |---|---|---|
+| `--snmp-version {2c,3}` | `2c` | Protocol version of the captured notification |
+| `--username` | — | SNMPv3 username; required with `--snmp-version 3` |
+| `--auth-protocol {none,md5,sha1,sha256}` | `none` | SNMPv3 auth protocol |
+| `--auth-key` / `--auth-key-env` | — | Exactly one required when auth is enabled |
+| `--priv-protocol {none,aes128}` | `none` | SNMPv3 privacy protocol |
+| `--priv-key` / `--priv-key-env` | — | Exactly one required when privacy is enabled |
 | `--hex` | mutually exclusive | Hex-encoded SNMP message bytes |
 | `--file` | mutually exclusive | Path to raw BER-encoded SNMP message bytes |
 | `--bundle` | — | Compiled module JSON file or bundle directory |
@@ -320,6 +338,8 @@ Examples:
 ```bash
 tsnmp decode-notification --hex 302602010104067075626c6963...
 tsnmp decode-notification --file ./trap.ber --bundle ./mibs-json
+tsnmp decode-notification --snmp-version 3 --username notify \
+  --auth-protocol sha256 --auth-key-env TSNMP_AUTH --file ./inform-v3.ber
 ```
 
 ---
@@ -365,7 +385,5 @@ Deliberately still not included:
 - `set`
 - compile workflows
 - raw MIB file or directory ingestion
-- SNMPv3 `listen`
-- SNMPv3 `decode-notification`
 
 If you need rich runtime usage, prefer the Python API.

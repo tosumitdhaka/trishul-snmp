@@ -40,8 +40,8 @@ thin and secondary.
   - `bulkwalk`
 - outbound SNMPv2c trap and inform send
 - outbound SNMPv3 USM trap and inform send (`V3Notifier`; traps require `UsmLocalEngine`)
-- inbound SNMPv2c trap and inform listen
-- offline notification decode
+- inbound SNMPv2c and SNMPv3 USM trap and inform listen (`V3NotificationListener` handles one configured user)
+- offline SNMPv2c and strict SNMPv3 USM notification decode
 - narrow read-only SNMPv2c responder / simulator
 - simulation rules for dynamic OID values (counters, gauges, uptime, timestamps)
 - bundle-backed auto-population of simulator object sets
@@ -51,8 +51,7 @@ thin and secondary.
 - UDP transport and request dispatcher
 - optional symbolic translation and display enrichment from compiled JSON MIB artifacts
 - works with numeric OIDs and no MIB bundle loaded
-- live CLI commands cover SNMPv2c plus SNMPv3 manager and outbound notification send
-- `listen` and `decode-notification` remain SNMPv2c-only
+- live CLI commands cover SNMPv2c plus SNMPv3 manager, notification send, notification listen, and offline decode
 
 ## Scope
 
@@ -168,9 +167,11 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-`v0.4.1` CLI live coverage includes SNMPv2c plus SNMPv3 `get`, `getnext`, `getbulk`,
-`walk`, `bulkwalk`, `trap`, and `inform` via explicit `--snmp-version {2c,3}` selection.
-`listen` and `decode-notification` remain SNMPv2c-only.
+Current CLI coverage includes SNMPv2c plus SNMPv3 `get`, `getnext`, `getbulk`,
+`walk`, `bulkwalk`, `trap`, `inform`, `listen`, and `decode-notification` via
+explicit `--snmp-version {2c,3}` selection. SNMPv3 `listen` requires explicit
+`--local-engine-id`, `--local-engine-boots`, and `--local-engine-time`. SNMPv3
+`decode-notification` requires explicit user/auth/priv inputs.
 
 ## Documentation
 

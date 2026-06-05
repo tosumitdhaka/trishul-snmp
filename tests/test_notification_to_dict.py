@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 
 from trishul_snmp import IntegerValue, ObjectIdentifierValue, TimeTicksValue, load_bundle
-from trishul_snmp.notify.events import notification_event_from_message
+from trishul_snmp.notify.events import decode_notification, notification_event_from_message
+from trishul_snmp.security.usm import AuthProtocol, UsmLocalEngine, UsmModel, UsmUser
 from trishul_snmp.wire.message import SnmpMessage
 from trishul_snmp.wire.pdu import Pdu, PduType, RawVarBind
 
@@ -168,3 +169,35 @@ def test_to_dict_with_no_source_address() -> None:
     assert d["varbinds"] == []
     assert d["member_bindings"] == []
     json.dumps(d)
+
+
+def test_to_dict_v3_fields_are_json_safe() -> None:
+    user = UsmUser(username="notify", auth_protocol=AuthProtocol.NONE)
+    engine = UsmLocalEngine(
+        engine_id=b"\x80\x00\x01\x02\x03" + b"\x44" * 12,
+        engine_boots=9,
+        engine_time=321,
+    )
+    model = UsmModel(user=user, context_name=b"alerts", local_engine=engine)
+    raw = model.wrap_pdu(
+        Pdu(
+            pdu_type=PduType.SNMPV2_TRAP,
+            request_id=77,
+            error_status=0,
+            error_index=0,
+            varbinds=(),
+        )
+    )
+
+    d = decode_notification(raw, user=user, source_address=("10.0.0.2", 40162)).to_dict()
+
+    json.dumps(d)
+    assert d["community"] is None
+    assert d["snmp_version"] == "3"
+    assert d["username"] == "notify"
+    assert d["security_level"] == "noAuthNoPriv"
+    assert d["context_engine_id"] == engine.engine_id.hex()
+    assert d["context_name"] == b"alerts".hex()
+    assert d["authoritative_engine_id"] == engine.engine_id.hex()
+    assert d["authoritative_engine_boots"] == 9
+    assert d["authoritative_engine_time"] == 321

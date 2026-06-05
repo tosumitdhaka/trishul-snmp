@@ -16,20 +16,25 @@ from trishul_snmp import (
     V2cNotificationListener,
     V2cNotifier,
     V3Manager,
+    V3NotificationListener,
     V3Notifier,
     __version__,
     decode_notification,
 )
 from trishul_snmp.cli.common import (
     V2cCliSecurity,
+    V2cListenerCliSecurity,
     add_bundle_option,
+    add_decode_security_options,
     add_listener_options,
     add_live_options,
     add_local_engine_options,
     add_notifier_options,
     load_bundle_from_args,
     parse_cli_security,
+    parse_decode_notification_user,
     parse_hex_bytes,
+    parse_listener_cli_security,
     parse_notification_varbinds,
 )
 from trishul_snmp.cli.output import (
@@ -134,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inform.set_defaults(handler=_handle_inform)
 
-    listen = subparsers.add_parser("listen", help="Listen for inbound SNMPv2c traps and informs")
+    listen = subparsers.add_parser("listen", help="Listen for inbound SNMP notifications")
     add_listener_options(listen)
     listen.add_argument(
         "--count",
@@ -148,9 +153,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     decode_cmd = subparsers.add_parser(
         "decode-notification",
-        help="Decode a BER-encoded SNMPv2c trap or inform message",
+        help="Decode a BER-encoded SNMP trap or inform message",
     )
     add_bundle_option(decode_cmd, required=False)
+    add_decode_security_options(decode_cmd)
     decode_input_group = decode_cmd.add_mutually_exclusive_group(required=True)
     decode_input_group.add_argument("--hex", dest="hex_input", help="Hex-encoded SNMP message")
     decode_input_group.add_argument(
@@ -289,34 +295,61 @@ async def _handle_listen(args: argparse.Namespace) -> int:
     remaining = args.count
     received = 0
 
-    async with V2cNotificationListener(
-        host=args.host,
-        port=args.port,
-        communities=args.communities,
-        bundle=bundle,
-    ) as listener:
-        while remaining == 0 or received < remaining:
-            event = await listener.receive()
-            if received > 0 and not args.json_output:
-                print()
-            print(
-                render_notification_event(
-                    event,
-                    json_output=args.json_output,
-                    numeric=args.numeric,
-                    compact=args.json_output,
+    security = parse_listener_cli_security(args)
+    if isinstance(security, V2cListenerCliSecurity):
+        async with V2cNotificationListener(
+            host=args.host,
+            port=args.port,
+            communities=list(security.communities) if security.communities is not None else None,
+            bundle=bundle,
+        ) as listener:
+            while remaining == 0 or received < remaining:
+                event = await listener.receive()
+                if received > 0 and not args.json_output:
+                    print()
+                print(
+                    render_notification_event(
+                        event,
+                        json_output=args.json_output,
+                        numeric=args.numeric,
+                        compact=args.json_output,
+                    )
                 )
-            )
-            received += 1
+                received += 1
+    else:
+        local_engine = security.local_engine
+        assert local_engine is not None
+        async with V3NotificationListener(
+            host=args.host,
+            port=args.port,
+            user=security.user,
+            local_engine=local_engine,
+            bundle=bundle,
+        ) as listener:
+            while remaining == 0 or received < remaining:
+                event = await listener.receive()
+                if received > 0 and not args.json_output:
+                    print()
+                print(
+                    render_notification_event(
+                        event,
+                        json_output=args.json_output,
+                        numeric=args.numeric,
+                        compact=args.json_output,
+                    )
+                )
+                received += 1
 
     return 0
 
 
 def _handle_decode_notification(args: argparse.Namespace) -> int:
     bundle = load_bundle_from_args(args)
+    user = parse_decode_notification_user(args)
     event = decode_notification(
         _load_notification_bytes(args),
         bundle=bundle,
+        user=user,
     )
     print(
         render_notification_event(

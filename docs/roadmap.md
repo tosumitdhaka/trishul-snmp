@@ -79,13 +79,13 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 
 ---
 
-## v0.4.2 — planned
+## v0.4.2 — ready for release
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 1 | SNMPv3 notification listener | planned | Add a `V3NotificationListener` with explicit user/security configuration, inbound USM auth/decrypt, and correct v3 inform acknowledgement behavior. This is server-side SNMPv3 work and intentionally follows the `v0.4.1` client/CLI release. |
-| 2 | Offline SNMPv3 notification decode | planned | Extend the offline notification tooling and `decode-notification` CLI path with a v3-aware decode flow that accepts explicit security context rather than assuming v2c community-based decode. |
-| 3 | Notification event model expansion for v3 | planned | Add the security metadata needed for inbound v3 events and offline decode without regressing the current v2c event shape. |
+| 1 | SNMPv3 notification listener | done | `V3NotificationListener` now supports one configured USM user, inbound auth/decrypt, discovery REPORT handling for `V3Notifier.send_inform()`, and automatic v3 inform acknowledgement. The existing `SnmpNotificationListener` / `V2cNotificationListener` surface remains v2c-compatible. |
+| 2 | Offline SNMPv3 notification decode | done | `decode_notification(..., user=...)` now performs strict v3 decode, and `tsnmp decode-notification --snmp-version 3` accepts explicit user/auth/priv inputs for offline USM notification analysis. |
+| 3 | Notification event model expansion for v3 | done | `NotificationEvent` now carries additive v3 metadata (`username`, `security_level`, context engine/name, authoritative engine state) while keeping current v2c text/JSON output stable. |
 
 ## Near-term hardening
 
@@ -107,7 +107,7 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 | 4 | `pysnmp` API compatibility layer | deferred | Avoid carrying legacy surface area in `v0.1`. |
 | 5 | Sync wrapper | deferred | Async-first package API remains the primary runtime surface. |
 | 6 | SNMPv1 manager support | deferred | Not required for the initial modern runtime baseline. |
-| 7 | Broader SNMPv3 server-side/runtime work beyond `v0.4.2` | deferred | `v0.4.2` is expected to cover the inbound listener and offline decode path. Larger server-side SNMPv3 work such as responder/agent behavior and deeper state-management infrastructure remains follow-on. |
+| 7 | Broader SNMPv3 server-side/runtime work beyond `v0.4.2` | deferred | `v0.4.2` covers the inbound listener and offline decode path. Larger server-side SNMPv3 work such as responder/agent behavior, multi-user listeners, and deeper state-management infrastructure remains follow-on. |
 | 8 | `set` | deferred | Write operations need separate safety and API design. |
 | 9 | Daemon/service packaging for long-running listeners | deferred | Library-level listener and responder APIs exist on main branch; daemonization is still out of scope. |
 | 10 | Full agent framework or writable responder support | deferred | `v0.2.0` only targets a narrow read-only simulator/responder. |

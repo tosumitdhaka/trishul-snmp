@@ -8,10 +8,13 @@ import pytest
 
 from trishul_snmp.cli.common import (
     V2cCliSecurity,
+    V2cListenerCliSecurity,
     V3CliSecurity,
     load_bundle_from_args,
     parse_cli_security,
+    parse_decode_notification_user,
     parse_hex_bytes,
+    parse_listener_cli_security,
     parse_notification_varbind,
     parse_notification_varbinds,
     parse_snmp_value,
@@ -82,6 +85,40 @@ def _security_args(**overrides: object) -> argparse.Namespace:
         "local_engine_id": None,
         "local_engine_boots": None,
         "local_engine_time": None,
+    }
+    data.update(overrides)
+    return argparse.Namespace(**data)
+
+
+def _listener_security_args(**overrides: object) -> argparse.Namespace:
+    data: dict[str, object] = {
+        "snmp_version": "2c",
+        "communities": None,
+        "username": None,
+        "auth_protocol": "none",
+        "auth_key": None,
+        "auth_key_env": None,
+        "priv_protocol": "none",
+        "priv_key": None,
+        "priv_key_env": None,
+        "local_engine_id": None,
+        "local_engine_boots": None,
+        "local_engine_time": None,
+    }
+    data.update(overrides)
+    return argparse.Namespace(**data)
+
+
+def _decode_security_args(**overrides: object) -> argparse.Namespace:
+    data: dict[str, object] = {
+        "snmp_version": "2c",
+        "username": None,
+        "auth_protocol": "none",
+        "auth_key": None,
+        "auth_key_env": None,
+        "priv_protocol": "none",
+        "priv_key": None,
+        "priv_key_env": None,
     }
     data.update(overrides)
     return argparse.Namespace(**data)
@@ -221,6 +258,74 @@ def test_parse_cli_security_rejects_missing_env_secret(monkeypatch) -> None:
                 auth_key_env="TSNMP_AUTH",
             )
         )
+
+
+def test_parse_listener_cli_security_defaults_to_v2c() -> None:
+    parsed = parse_listener_cli_security(_listener_security_args())
+
+    assert isinstance(parsed, V2cListenerCliSecurity)
+    assert parsed.communities is None
+
+
+def test_parse_listener_cli_security_builds_v3_listener() -> None:
+    parsed = parse_listener_cli_security(
+        _listener_security_args(
+            snmp_version="3",
+            username="alice",
+            local_engine_id="80:00:01:02:03",
+            local_engine_boots=7,
+            local_engine_time=99,
+        )
+    )
+
+    assert isinstance(parsed, V3CliSecurity)
+    assert parsed.user.username == "alice"
+    assert parsed.local_engine is not None
+    assert parsed.local_engine.engine_id == bytes.fromhex("8000010203")
+
+
+def test_parse_listener_cli_security_requires_local_engine() -> None:
+    with pytest.raises(ValueError, match="SNMPv3 listener requires --local-engine-id"):
+        parse_listener_cli_security(_listener_security_args(snmp_version="3", username="alice"))
+
+
+def test_parse_listener_cli_security_rejects_community_on_v3() -> None:
+    with pytest.raises(ValueError, match="--community is invalid with --snmp-version 3"):
+        parse_listener_cli_security(
+            _listener_security_args(
+                snmp_version="3",
+                username="alice",
+                communities=["public"],
+                local_engine_id="8000010203",
+                local_engine_boots=1,
+                local_engine_time=2,
+            )
+        )
+
+
+def test_parse_decode_notification_user_defaults_to_v2c() -> None:
+    assert parse_decode_notification_user(_decode_security_args()) is None
+
+
+def test_parse_decode_notification_user_builds_v3_user() -> None:
+    parsed = parse_decode_notification_user(
+        _decode_security_args(
+            snmp_version="3",
+            username="alice",
+            auth_protocol="md5",
+            auth_key="secret",
+        )
+    )
+
+    assert parsed is not None
+    assert parsed.username == "alice"
+    assert parsed.auth_protocol is AuthProtocol.MD5
+    assert parsed.auth_key == b"secret"
+
+
+def test_parse_decode_notification_user_rejects_v2c_with_v3_args() -> None:
+    with pytest.raises(ValueError, match="--username is invalid with --snmp-version 2c"):
+        parse_decode_notification_user(_decode_security_args(username="alice"))
 
 
 def test_parse_notification_varbinds_empty_returns_empty_tuple() -> None:

@@ -10,6 +10,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.2] — unreleased
+
+### Added
+
+- **SNMPv3 notification listener** — `V3NotificationListener` now handles one configured USM user, inbound auth/decrypt, discovery REPORT replies for notifier engine discovery, and automatic v3 inform acknowledgement.
+- **Offline SNMPv3 notification decode** — `decode_notification(..., user=...)` and `tsnmp decode-notification --snmp-version 3` now support strict USM-backed v3 notification decode.
+
+### Changed
+
+- **Notification event model and rendering** — `NotificationEvent` now carries additive v3 metadata (`username`, `security_level`, context engine/name, authoritative engine state); CLI text/JSON rendering stays stable for v2c and emits the extra v3 metadata when present.
+- **CLI inbound notification coverage** — `tsnmp listen --snmp-version 3` now routes through `V3NotificationListener` and requires explicit `--local-engine-id`, `--local-engine-boots`, and `--local-engine-time`.
+
+---
+
 ## [0.4.1] — 2026-06-01
 
 ### Added

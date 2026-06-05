@@ -115,6 +115,26 @@ Behavior notes:
 
 ---
 
+## `V3NotificationListener` fields
+
+Requires `pip install "trishul-snmp[v3]"` for auth/priv listeners.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `host` | `str` | `0.0.0.0` | Listener bind hostname or IP address |
+| `port` | `int` | `162` | Listener UDP port |
+| `user` | `UsmUser` | required | USM credentials for one configured inbound user |
+| `local_engine` | `UsmLocalEngine` | required | Local authoritative engine state used for discovery REPORTs and inform acknowledgements |
+| `bundle` | `MibBundle \| None` | `None` | Optional bundle used for inbound enrichment |
+
+Behavior notes:
+
+- one listener instance handles one configured USM user in `v0.4.2`
+- v3 informs are acknowledged automatically
+- discovery probes are answered automatically so `V3Notifier.send_inform()` works against the listener
+
+---
+
 ## `V2cResponder` fields
 
 | Field | Type | Default | Description |
@@ -165,15 +185,15 @@ The CLI is a direct wrapper over the same runtime configuration:
 |---|---|
 | `--host` | Manager, notifier, or listener constructor `host=...` depending on the command |
 | `--port` | Manager, notifier, or listener constructor `port=...` depending on the command |
-| `--snmp-version` | Chooses `V2cManager` / `V3Manager` or `V2cNotifier` / `V3Notifier` |
-| `--community` | `V2cManager(community=...)`, `V2cNotifier(community=...)`, or listener allowlist entries |
-| `--username` | `UsmUser(username=...)` for SNMPv3 manager/notifier commands |
+| `--snmp-version` | Chooses the v2c/v3 manager, notifier, listener, or decode path |
+| `--community` | `V2cManager(community=...)`, `V2cNotifier(community=...)`, or v2c listener allowlist entries |
+| `--username` | `UsmUser(username=...)` for SNMPv3 manager/notifier/listener/decode commands |
 | `--auth-protocol` | `UsmUser(auth_protocol=...)` |
 | `--auth-key` / `--auth-key-env` | `UsmUser(auth_key=...)` |
 | `--priv-protocol` | `UsmUser(priv_protocol=...)` |
 | `--priv-key` / `--priv-key-env` | `UsmUser(priv_key=...)` |
 | `--context-name` | `V3Manager(context_name=...)` or `V3Notifier(context_name=...)` |
-| `--local-engine-id` / `--local-engine-boots` / `--local-engine-time` | `V3Notifier(local_engine=UsmLocalEngine(...))` for SNMPv3 trap only |
+| `--local-engine-id` / `--local-engine-boots` / `--local-engine-time` | `V3Notifier(local_engine=UsmLocalEngine(...))` for SNMPv3 trap, or `V3NotificationListener(local_engine=UsmLocalEngine(...))` for SNMPv3 listen |
 | `--timeout` | Manager or notifier `timeout=...` |
 | `--retries` | Manager or notifier `retries=...` |
 | `--bundle` | `load_bundle(path)` plus optional runtime bundle attachment |

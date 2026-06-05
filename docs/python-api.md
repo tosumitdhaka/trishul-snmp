@@ -14,8 +14,9 @@ same package surface.
 | `V2cNotifier` | class | Async SNMPv2c trap and inform sender |
 | `V3Notifier` | class | Async SNMPv3 USM notifier; informs use peer discovery, traps require `UsmLocalEngine` |
 | `V2cNotificationListener` | class | Async SNMPv2c trap and inform listener |
+| `V3NotificationListener` | class | Async SNMPv3 USM notification listener for one configured user |
 | `V2cResponder` | class | Async SNMPv2c read-only responder for simulator-style use |
-| `decode_notification(data, *, bundle=None, source_address=None)` | function | Offline decode for BER-encoded SNMPv2c traps and informs |
+| `decode_notification(data, *, bundle=None, source_address=None, user=None)` | function | Offline decode for BER-encoded v2c traps/informs or strict SNMPv3 USM notifications |
 | `load_bundle(path)` | function | Load a compiled module JSON file or bundle directory |
 | `MibBundle` | class | Bundle translation and enrichment handle |
 | `InMemoryObjectSource` | class | Mutable in-memory responder object source; accepts static values and simulation rules |
@@ -413,7 +414,7 @@ async with V2cNotificationListener(host="127.0.0.1", port=9162, communities=["pu
 | Field | Description |
 |---|---|
 | `request_id` | SNMP request identifier carried by the trap or inform |
-| `community` | Source SNMPv2c community string |
+| `community` | Source SNMPv2c community string, or `None` for v3 events |
 | `source_address` | Remote UDP source address tuple, or `None` for offline decode |
 | `pdu_type` | `"snmpv2-trap"` or `"inform-request"` |
 | `varbinds` | Tuple of decoded `VarBind` objects |
@@ -422,6 +423,19 @@ async with V2cNotificationListener(host="127.0.0.1", port=9162, communities=["pu
 | `notification_description` | Retained notification description when available |
 | `uptime` | Numeric `sysUpTime.0` value when present |
 | `member_bindings` | Declared notification members paired with received varbinds |
+
+Additional v3 event fields:
+
+| Field | Description |
+|---|---|
+| `snmp_version` | `"3"` when the event came from SNMPv3 |
+| `username` | Decoded USM username |
+| `security_level` | `noAuthNoPriv`, `authNoPriv`, or `authPriv` |
+| `context_engine_id` | ScopedPDU context engine-id bytes |
+| `context_name` | ScopedPDU context name bytes |
+| `authoritative_engine_id` | USM authoritative engine-id bytes |
+| `authoritative_engine_boots` | USM authoritative `engineBoots` |
+| `authoritative_engine_time` | USM authoritative `engineTime` |
 
 Convenience properties:
 
@@ -447,23 +461,61 @@ Convenience property:
 
 ---
 
+## `V3NotificationListener`
+
+```python
+from trishul_snmp import V3NotificationListener, UsmLocalEngine, UsmUser
+
+user = UsmUser(username="notify")
+local_engine = UsmLocalEngine(
+    engine_id=bytes.fromhex("8000010203"),
+    engine_boots=7,
+    engine_time=99,
+)
+
+listener = V3NotificationListener(
+    host="0.0.0.0",
+    port=162,
+    user=user,
+    local_engine=local_engine,
+    bundle=None,
+)
+```
+
+`V3NotificationListener` shares the same async context-manager and iterator model
+as `V2cNotificationListener`, but handles one configured USM user, replies to
+discovery probes for `V3Notifier.send_inform()`, and automatically acknowledges
+inbound informs with matching v3 RESPONSE messages.
+
+---
+
 ## Offline notification decode
 
 ```python
-from trishul_snmp import decode_notification, load_bundle
+from trishul_snmp import AuthProtocol, UsmUser, decode_notification, load_bundle
 
 bundle = load_bundle("./mibs-json")
 event = decode_notification(raw_bytes, bundle=bundle)
+
+user = UsmUser(
+    username="notify",
+    auth_protocol=AuthProtocol.SHA256,
+    auth_key=b"authpass123",
+)
+event_v3 = decode_notification(raw_v3_bytes, bundle=bundle, user=user)
 
 print(event.notification_name)
 print(event.member_bindings)
 ```
 
-`decode_notification()` accepts a BER-encoded SNMPv2c trap or inform message and
-returns the same `NotificationEvent` model used by the live listener API.
+`decode_notification()` accepts a BER-encoded trap or inform message and returns
+the same `NotificationEvent` model used by the live listener API.
 
 Notes:
 
+- omit `user` for SNMPv2c offline decode
+- supply `user=UsmUser(...)` for strict SNMPv3 USM offline decode
+- SNMPv3 auth failure raises `AuthenticationError`
 - `source_address` is optional because offline payloads may not have transport metadata
 - bundle-backed enrichment is optional; numeric decode still works with no bundle
 

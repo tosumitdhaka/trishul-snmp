@@ -55,11 +55,13 @@ def render_notification_event(
             return json.dumps(_notification_payload(event), separators=(",", ":"))
         return json.dumps(_notification_payload(event), indent=2)
 
-    header = [
-        f"type={event.pdu_type}",
-        f"request_id={event.request_id}",
-        f"community={event.community}",
-    ]
+    header = [f"type={event.pdu_type}", f"request_id={event.request_id}"]
+    if event.community is not None:
+        header.append(f"community={event.community}")
+    elif event.username is not None:
+        header.append(f"user={event.username}")
+        if event.security_level is not None:
+            header.append(f"level={event.security_level}")
     if event.source_address is not None:
         header.append(f"source={event.source_host}:{event.source_port}")
 
@@ -121,6 +123,22 @@ def _notification_payload(event: NotificationEvent) -> dict[str, object]:
         payload["notification_description"] = event.notification_description
     if event.uptime is not None:
         payload["uptime"] = event.uptime
+    if event.snmp_version is not None:
+        payload["snmp_version"] = event.snmp_version
+    if event.username is not None:
+        payload["username"] = event.username
+    if event.security_level is not None:
+        payload["security_level"] = event.security_level
+    if event.context_engine_id is not None:
+        payload["context_engine_id"] = event.context_engine_id.hex()
+    if event.context_name is not None:
+        payload["context_name"] = event.context_name.hex()
+    if event.authoritative_engine_id is not None:
+        payload["authoritative_engine_id"] = event.authoritative_engine_id.hex()
+    if event.authoritative_engine_boots is not None:
+        payload["authoritative_engine_boots"] = event.authoritative_engine_boots
+    if event.authoritative_engine_time is not None:
+        payload["authoritative_engine_time"] = event.authoritative_engine_time
     return payload
 
 

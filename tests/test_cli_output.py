@@ -190,3 +190,44 @@ def test_render_notification_event_omits_detail_line_when_no_notification_or_upt
 
     assert rendered_numeric == "type=snmpv2-trap request_id=5 community=public"
     assert rendered_symbolic == "type=snmpv2-trap request_id=5 community=public"
+
+
+def test_render_notification_event_v3_text_and_json() -> None:
+    event = NotificationEvent(
+        request_id=7,
+        community=None,
+        source_address=("127.0.0.1", 40162),
+        pdu_type="inform-request",
+        varbinds=(),
+        snmp_version="3",
+        username="alice",
+        security_level="authPriv",
+        context_engine_id=bytes.fromhex("8000010203"),
+        context_name=b"alerts",
+        authoritative_engine_id=bytes.fromhex("8000aabbcc"),
+        authoritative_engine_boots=9,
+        authoritative_engine_time=123,
+    )
+
+    rendered_text = render_notification_event(event, json_output=False, numeric=False)
+    rendered_json = render_notification_event(event, json_output=True, numeric=False)
+
+    assert rendered_text == (
+        "type=inform-request request_id=7 user=alice level=authPriv source=127.0.0.1:40162"
+    )
+    assert json.loads(rendered_json) == {
+        "request_id": 7,
+        "community": None,
+        "pdu_type": "inform-request",
+        "source_address": {"host": "127.0.0.1", "port": 40162},
+        "member_bindings": [],
+        "varbinds": [],
+        "snmp_version": "3",
+        "username": "alice",
+        "security_level": "authPriv",
+        "context_engine_id": "8000010203",
+        "context_name": "616c65727473",
+        "authoritative_engine_id": "8000aabbcc",
+        "authoritative_engine_boots": 9,
+        "authoritative_engine_time": 123,
+    }

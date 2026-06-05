@@ -21,7 +21,11 @@ from trishul_snmp.notify.events import (
     NotificationMemberBinding,
     decode_notification,
 )
-from trishul_snmp.notify.listener import SnmpNotificationListener, V2cNotificationListener
+from trishul_snmp.notify.listener import (
+    SnmpNotificationListener,
+    V2cNotificationListener,
+    V3NotificationListener,
+)
 from trishul_snmp.responder.rules import (
     CounterRule,
     RandomNumericRule,
@@ -120,6 +124,7 @@ __all__ = [
     "V2cNotificationListener",
     "V2cNotifier",
     "V2cResponder",
+    "V3NotificationListener",
     "V3Manager",
     "V3Notifier",
     "VarBind",
@@ -128,4 +133,4 @@ __all__ = [
     "load_bundle",
 ]
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"

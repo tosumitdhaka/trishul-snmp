@@ -6,9 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from trishul_snmp._runtime import public_varbinds_from_raw_varbinds
-from trishul_snmp.errors import UnknownOidError
+from trishul_snmp.errors import ProtocolError, UnknownOidError
 from trishul_snmp.mib.bundle import MibBundle
 from trishul_snmp.mib.models import MibMemberRef, MibNode
+from trishul_snmp.notify.v3 import V3NotificationEnvelope, decode_v3_notification_message
+from trishul_snmp.security.usm import UsmUser
 from trishul_snmp.types import (
     OID,
     ObjectIdentifierValue,
@@ -17,7 +19,7 @@ from trishul_snmp.types import (
     VarBind,
 )
 from trishul_snmp.wire.message import SnmpMessage, decode_message
-from trishul_snmp.wire.pdu import PduType
+from trishul_snmp.wire.pdu import Pdu, PduType
 
 _PDU_TYPE_NAMES = {
     PduType.SNMPV2_TRAP: "snmpv2-trap",
@@ -44,7 +46,7 @@ class NotificationEvent:
     """Structured inbound notification event."""
 
     request_id: int
-    community: str
+    community: str | None
     source_address: SocketAddress | None
     pdu_type: str
     varbinds: tuple[VarBind, ...]
@@ -53,6 +55,14 @@ class NotificationEvent:
     notification_description: str | None = None
     uptime: int | None = None
     member_bindings: tuple[NotificationMemberBinding, ...] = ()
+    snmp_version: str | None = None
+    username: str | None = None
+    security_level: str | None = None
+    context_engine_id: bytes | None = None
+    context_name: bytes | None = None
+    authoritative_engine_id: bytes | None = None
+    authoritative_engine_boots: int | None = None
+    authoritative_engine_time: int | None = None
 
     @property
     def source_host(self) -> str | None:
@@ -76,7 +86,7 @@ class NotificationEvent:
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-safe dict representation of this event."""
-        return {
+        payload: dict[str, Any] = {
             "request_id": self.request_id,
             "community": self.community,
             "source_host": self.source_host,
@@ -111,6 +121,23 @@ class NotificationEvent:
                 for binding in self.member_bindings
             ],
         }
+        if self.snmp_version is not None:
+            payload["snmp_version"] = self.snmp_version
+        if self.username is not None:
+            payload["username"] = self.username
+        if self.security_level is not None:
+            payload["security_level"] = self.security_level
+        if self.context_engine_id is not None:
+            payload["context_engine_id"] = self.context_engine_id.hex()
+        if self.context_name is not None:
+            payload["context_name"] = self.context_name.hex()
+        if self.authoritative_engine_id is not None:
+            payload["authoritative_engine_id"] = self.authoritative_engine_id.hex()
+        if self.authoritative_engine_boots is not None:
+            payload["authoritative_engine_boots"] = self.authoritative_engine_boots
+        if self.authoritative_engine_time is not None:
+            payload["authoritative_engine_time"] = self.authoritative_engine_time
+        return payload
 
 
 def notification_event_from_message(
@@ -120,11 +147,89 @@ def notification_event_from_message(
     bundle: MibBundle | None,
 ) -> NotificationEvent:
     """Convert a low-level notification message into the public event model."""
-    pdu_type = _PDU_TYPE_NAMES.get(message.pdu.pdu_type)
-    if pdu_type is None:
-        raise ValueError(f"Unsupported notification PDU type: {message.pdu.pdu_type!r}")
+    return _notification_event_from_pdu(
+        pdu=message.pdu,
+        request_id=message.pdu.request_id,
+        community=message.community,
+        source_address=source_address,
+        bundle=bundle,
+    )
 
-    varbinds = public_varbinds_from_raw_varbinds(message.pdu.varbinds, bundle=bundle)
+
+def notification_event_from_v3_envelope(
+    envelope: V3NotificationEnvelope,
+    *,
+    source_address: SocketAddress | None,
+    bundle: MibBundle | None,
+) -> NotificationEvent:
+    """Convert a decoded v3 notification envelope into the public event model."""
+    return _notification_event_from_pdu(
+        pdu=envelope.pdu,
+        request_id=envelope.pdu.request_id,
+        community=None,
+        source_address=source_address,
+        bundle=bundle,
+        snmp_version="3",
+        username=envelope.view.usm_params.username.decode("utf-8"),
+        security_level=envelope.security_level,
+        context_engine_id=envelope.context_engine_id,
+        context_name=envelope.context_name,
+        authoritative_engine_id=envelope.view.usm_params.engine_id,
+        authoritative_engine_boots=envelope.view.usm_params.engine_boots,
+        authoritative_engine_time=envelope.view.usm_params.engine_time,
+    )
+
+
+def decode_notification(
+    data: bytes,
+    *,
+    bundle: MibBundle | None = None,
+    source_address: SocketAddress | None = None,
+    user: UsmUser | None = None,
+) -> NotificationEvent:
+    """Decode a BER-encoded trap or inform message.
+
+    When ``user`` is omitted, the current SNMPv2c path is used. Supplying
+    ``user=...`` switches the function to strict SNMPv3 USM decode.
+    """
+    if user is None:
+        return notification_event_from_message(
+            decode_message(data),
+            source_address=source_address,
+            bundle=bundle,
+        )
+
+    envelope = decode_v3_notification_message(data, user=user)
+    if envelope is None:
+        raise ProtocolError("Message is not a valid SNMPv3 trap or inform for the configured user")
+    return notification_event_from_v3_envelope(
+        envelope,
+        source_address=source_address,
+        bundle=bundle,
+    )
+
+
+def _notification_event_from_pdu(
+    *,
+    pdu: Pdu,
+    request_id: int,
+    community: str | None,
+    source_address: SocketAddress | None,
+    bundle: MibBundle | None,
+    snmp_version: str | None = None,
+    username: str | None = None,
+    security_level: str | None = None,
+    context_engine_id: bytes | None = None,
+    context_name: bytes | None = None,
+    authoritative_engine_id: bytes | None = None,
+    authoritative_engine_boots: int | None = None,
+    authoritative_engine_time: int | None = None,
+) -> NotificationEvent:
+    pdu_type = _PDU_TYPE_NAMES.get(pdu.pdu_type)
+    if pdu_type is None:
+        raise ValueError(f"Unsupported notification PDU type: {pdu.pdu_type!r}")
+
+    varbinds = public_varbinds_from_raw_varbinds(pdu.varbinds, bundle=bundle)
     notification_oid = _extract_notification_oid(varbinds)
     uptime = _extract_uptime(varbinds)
     metadata = _notification_metadata(
@@ -134,8 +239,8 @@ def notification_event_from_message(
     )
 
     return NotificationEvent(
-        request_id=message.pdu.request_id,
-        community=message.community,
+        request_id=request_id,
+        community=community,
         source_address=source_address,
         pdu_type=pdu_type,
         varbinds=varbinds,
@@ -144,20 +249,14 @@ def notification_event_from_message(
         notification_description=metadata[1],
         uptime=uptime,
         member_bindings=metadata[2],
-    )
-
-
-def decode_notification(
-    data: bytes,
-    *,
-    bundle: MibBundle | None = None,
-    source_address: SocketAddress | None = None,
-) -> NotificationEvent:
-    """Decode a BER-encoded SNMPv2c trap or inform message."""
-    return notification_event_from_message(
-        decode_message(data),
-        source_address=source_address,
-        bundle=bundle,
+        snmp_version=snmp_version,
+        username=username,
+        security_level=security_level,
+        context_engine_id=context_engine_id,
+        context_name=context_name,
+        authoritative_engine_id=authoritative_engine_id,
+        authoritative_engine_boots=authoritative_engine_boots,
+        authoritative_engine_time=authoritative_engine_time,
     )
 
 

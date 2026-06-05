@@ -937,6 +937,7 @@ def _validate_responder(ctx: WorkerContext) -> str:
         load_bundle,
     )
     from trishul_snmp._runtime import response_from_pdu
+    from trishul_snmp.security.community import CommunityModel
     from trishul_snmp.transport.dispatcher import RequestDispatcher
     from trishul_snmp.transport.udp import UdpClient
     from trishul_snmp.wire.pdu import PduType, build_raw_varbinds
@@ -981,7 +982,7 @@ def _validate_responder(ctx: WorkerContext) -> str:
             client = UdpClient("127.0.0.1", port)
             dispatcher = RequestDispatcher(
                 client,
-                community=ctx.settings.community,
+                security=CommunityModel(ctx.settings.community),
                 timeout=ctx.settings.timeout,
                 retries=0,
             )
