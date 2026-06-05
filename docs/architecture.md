@@ -121,8 +121,9 @@ Security model abstraction. Responsibilities:
 - `UsmUser`: immutable credential dataclass (username, auth protocol/key, priv protocol/key)
 - `UsmLocalEngine`: explicit sender-authoritative engine state for SNMPv3 traps
 
-`UsmModel` imports `cryptography` lazily inside auth/priv methods only; the class is always
-importable without the `[v3]` extra.
+`UsmModel` imports `cryptography` lazily inside privacy methods only; the class is always
+importable without the `[v3]` extra, and base install still covers `noAuthNoPriv` plus
+`authNoPriv`.
 
 ### 3.2 `transport/`
 

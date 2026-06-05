@@ -57,7 +57,7 @@ repository and community entrypoints live under [`.github/`](../.github/).
 
 ## Quick links
 
-- **Install:** `pip install trishul-snmp` (add `[v3]` for SNMPv3 auth/priv: `pip install "trishul-snmp[v3]"`)
+- **Install:** `pip install trishul-snmp` (add `[v3]` for SNMPv3 privacy/authPriv: `pip install "trishul-snmp[v3]"`)
 - **Ecosystem status:** [Ecosystem and Compatibility](ecosystem.md)
 - **GitHub overview:** [README](../README.md)
 - **Repository:** [github.com/tosumitdhaka/trishul-snmp](https://github.com/tosumitdhaka/trishul-snmp)

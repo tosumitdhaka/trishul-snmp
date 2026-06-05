@@ -31,7 +31,8 @@ same package surface.
 | `NotificationEvent` | dataclass | Structured inbound notification event |
 | `NotificationMemberBinding` | dataclass | Declared notification member paired with the received varbind |
 
-SNMPv3 USM types (require `pip install "trishul-snmp[v3]"` for auth/priv methods):
+SNMPv3 USM types (base install covers `noAuthNoPriv` and `authNoPriv`; add
+`pip install "trishul-snmp[v3]"` for AES privacy/authPriv):
 
 - `UsmUser`
 - `UsmLocalEngine`
@@ -108,7 +109,8 @@ finally:
 
 ## `V3Manager`
 
-Requires `pip install "trishul-snmp[v3]"` for auth/priv methods.
+Base install covers `noAuthNoPriv` and `authNoPriv`. Add
+`pip install "trishul-snmp[v3]"` for AES privacy/authPriv.
 
 ```python
 from trishul_snmp import V3Manager, UsmUser, AuthProtocol, PrivProtocol
@@ -329,7 +331,8 @@ async with V2cNotifier(host="10.0.0.20", community="public", bundle=bundle) as n
 
 ## `V3Notifier`
 
-Requires `pip install "trishul-snmp[v3]"` for auth/priv methods.
+Base install covers `noAuthNoPriv` and `authNoPriv`. Add
+`pip install "trishul-snmp[v3]"` for AES privacy/authPriv.
 
 Constructor fields are identical to `V2cNotifier` except `community` is replaced by
 `user: UsmUser`, and SNMPv3 adds `context_name: bytes = b""` plus
@@ -486,6 +489,9 @@ listener = V3NotificationListener(
 as `V2cNotificationListener`, but handles one configured USM user, replies to
 discovery probes for `V3Notifier.send_inform()`, and automatically acknowledges
 inbound informs with matching v3 RESPONSE messages.
+
+Base install covers `noAuthNoPriv` and `authNoPriv` listeners. Add
+`pip install "trishul-snmp[v3]"` for AES privacy/authPriv listeners.
 
 ---
 

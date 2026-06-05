@@ -41,7 +41,8 @@ Validation notes:
 
 ## `V3Manager` fields
 
-Requires `pip install "trishul-snmp[v3]"` for auth/priv.
+Base install covers `noAuthNoPriv` and `authNoPriv`; add
+`pip install "trishul-snmp[v3]"` for AES privacy/authPriv.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -66,6 +67,9 @@ Requires `pip install "trishul-snmp[v3]"` for auth/priv.
 
 Same as `V3Manager` except `port` defaults to `162` and
 `local_engine: UsmLocalEngine | None = None` may be supplied for SNMPv3 traps.
+
+Base install covers `noAuthNoPriv` and `authNoPriv`; add
+`pip install "trishul-snmp[v3]"` for AES privacy/authPriv.
 
 Behavior notes:
 
@@ -117,7 +121,8 @@ Behavior notes:
 
 ## `V3NotificationListener` fields
 
-Requires `pip install "trishul-snmp[v3]"` for auth/priv listeners.
+Base install covers `noAuthNoPriv` and `authNoPriv` listeners; add
+`pip install "trishul-snmp[v3]"` for AES privacy/authPriv listeners.
 
 | Field | Type | Default | Description |
 |---|---|---|---|

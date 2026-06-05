@@ -83,13 +83,14 @@ Deliberately deferred:
 pip install trishul-snmp
 ```
 
-For SNMPv3 auth/priv support (HMAC and AES-128-CFB encryption):
+For SNMPv3 privacy/authPriv support (AES-128-CFB encryption):
 
 ```bash
 pip install "trishul-snmp[v3]"
 ```
 
-The base package imports without `[v3]`; only calling auth or priv methods at runtime requires it.
+The base package covers SNMPv2c plus SNMPv3 `noAuthNoPriv` and `authNoPriv`.
+Install `[v3]` only for privacy/authPriv flows.
 
 For local development:
 

@@ -92,7 +92,8 @@ Validation rules:
 - privacy requires auth plus exactly one of `--priv-key` or `--priv-key-env`
 - `trap --snmp-version 3` requires all three `--local-engine-*` options
 - `inform --snmp-version 3` rejects `--local-engine-*` as unused
-- auth/priv CLI flows require `pip install "trishul-snmp[v3]"`; noAuthNoPriv v3 flows do not
+- privacy/authPriv CLI flows require `pip install "trishul-snmp[v3]"`; `noAuthNoPriv`
+  and `authNoPriv` v3 flows do not
 
 ---
 

@@ -10,7 +10,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.4.2] — unreleased
+## [0.4.2] — 2026-06-05
 
 ### Added
 
@@ -35,7 +35,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - **`V3Notifier` behavior** — `send_inform()` discovers peer engine state lazily on first use, while trap-capable notifiers no longer depend on a discovery roundtrip during `open()`.
-- **CLI error handling** — missing `[v3]` extras for auth/priv workflows now surface as ordinary CLI errors with the install hint instead of a Python traceback.
+- **CLI error handling** — missing `[v3]` extras for privacy/authPriv workflows now surface as ordinary CLI errors with the install hint instead of a Python traceback.
 - **Documentation and release guidance** — package docs now describe the shipped SNMPv3 CLI surface and the `V3Notifier.send_trap()` local-engine requirement.
 
 ### Known limitations
@@ -54,7 +54,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`V3Manager`** — thin subclass of `SnmpManager` that accepts a `UsmUser` and wires a `UsmModel` internally, mirroring the `V2cManager` pattern.
 - **`V3Notifier`** — `send_inform()` supported; `send_trap()` raises `ProtocolError`. SNMPv3 traps require the sender's own authoritative engine state (RFC 3412 §7.1.9), which is unavailable after engine discovery against the receiver.
 - **`AuthenticationError`** — new exception raised on HMAC verification failure; subclass of `ProtocolError`.
-- **`cryptography>=40` optional extra** — `pip install trishul-snmp[v3]`; the package imports and works without it, only auth/priv method calls fail with a clear install hint.
+- **`cryptography>=40` optional extra** — `pip install trishul-snmp[v3]`; the package imports and works without it, `noAuthNoPriv` and `authNoPriv` stay available, and privacy/authPriv calls fail with a clear install hint when the extra is absent.
 
 ### Changed
 

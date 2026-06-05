@@ -97,7 +97,7 @@ Follow this checklist for every release. Steps should be completed in order.
 - [ ] Run ecosystem validation against the intended `tsmi` pairing:
   ```bash
   python3 scripts/validate_ecosystem.py \
-    --tsmi-version 0.4.3 \
+    --tsmi-version 0.4.5 \
     --mib-dir /var/lib/mibs/ietf \
     --mib-dir /var/lib/mibs/iana \
     --host 127.0.0.1 \

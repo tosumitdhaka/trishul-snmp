@@ -11,14 +11,14 @@ add compiled JSON only when you need symbolic resolution or better display metad
 pip install trishul-snmp
 ```
 
-For SNMPv3 auth/priv support (HMAC and AES-128-CFB encryption), install the `[v3]` extra:
+For SNMPv3 privacy/authPriv support (AES-128-CFB encryption), install the `[v3]` extra:
 
 ```bash
 pip install "trishul-snmp[v3]"
 ```
 
-The base package always imports correctly without `[v3]`; only calling auth or priv methods
-at runtime requires it.
+The base package always imports correctly without `[v3]` and covers SNMPv3
+`noAuthNoPriv` plus `authNoPriv`. Install `[v3]` only for privacy/authPriv flows.
 
 For local development:
 
@@ -81,7 +81,8 @@ asyncio.run(main())
 
 ## First SNMPv3 GET
 
-Requires `pip install "trishul-snmp[v3]"` for auth/priv methods.
+This authNoPriv example works with the base package. Install
+`pip install "trishul-snmp[v3]"` only if you also need AES privacy/authPriv.
 
 ```python
 import asyncio
@@ -193,7 +194,8 @@ asyncio.run(main())
 
 ## First SNMPv3 inform send
 
-Requires `pip install "trishul-snmp[v3]"` for auth/priv methods.
+This authNoPriv example works with the base package. Install
+`pip install "trishul-snmp[v3]"` only if you also need AES privacy/authPriv.
 
 ```python
 import asyncio

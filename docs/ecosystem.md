@@ -26,12 +26,12 @@ numeric OIDs are used.
 
 ## Current released pairing
 
-Latest known released pairing for the current documented contract:
+Latest released pairing validated for the current documented contract:
 
 | Package | Version |
 |---|---|
-| `trishul-snmp` | `0.1.1` |
-| `trishul-smi` | `0.4.3` |
+| `trishul-snmp` | `0.4.2` |
+| `trishul-smi` | `0.4.5` |
 
 What this pairing currently means in practice:
 
@@ -126,17 +126,17 @@ This is the better fit when you want:
 
 The main `tsnmp`/`tsmi` producer/runtime contract is now in a healthier state.
 
-Current state with `trishul-smi 0.4.3`:
+Current state with `trishul-smi 0.4.5`:
 
 - published Python API can emit standalone module JSON, `manifest.json`, and `oid_index.json`
 - published CLI can emit standalone module JSON and can optionally emit `manifest.json` and `oid_index.json`
 - module JSON remains the atomic downstream runtime artifact
-- grammar updates in `0.4.3` improve real-world compile coverage, but they do not change the `tsnmp` runtime input contract
+- the published compiler/runtime contract remains the same: module JSON is still the atomic runtime artifact and sidecars stay optional
 
 So:
 
 - runtime consumption is in good shape
-- published producer ergonomics are materially better than in `0.4.2`
+- published producer ergonomics are stable for the current release pairing
 - `tsnmp` still should not make sidecars mandatory or couple itself to compiler internals
 
 ---
@@ -165,7 +165,7 @@ At the current released pairing, the ecosystem is in a usable state:
 - single-file JSON and directory bundle flows both work
 - sidecars improve ergonomics/performance but do not gate correctness
 - published `tsmi` CLI now matches the optional-sidecar bundle contract expected by `tsnmp`
-- parser/grammar improvements in `tsmi 0.4.3` increase upstream compile coverage without widening the `tsnmp` runtime scope
+- the compiler/runtime boundary stays stable at the validated `0.4.2` / `0.4.5` pairing
 
 For deeper details, see:
 
