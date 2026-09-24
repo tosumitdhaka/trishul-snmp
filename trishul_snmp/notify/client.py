@@ -13,6 +13,7 @@ from trishul_snmp.security.community import CommunityModel
 from trishul_snmp.security.model import SecurityModel
 from trishul_snmp.security.usm import UsmLocalEngine, UsmModel, UsmUser
 from trishul_snmp.session import SnmpSession
+from trishul_snmp.transport.dispatcher import PreparedRequest
 from trishul_snmp.types import (
     OID,
     ObjectIdentifierValue,
@@ -20,7 +21,8 @@ from trishul_snmp.types import (
     SnmpValueType,
     TimeTicksValue,
 )
-from trishul_snmp.wire.pdu import PduType, RawVarBind, build_raw_varbinds
+from trishul_snmp.wire.message import SNMP_V1_VERSION
+from trishul_snmp.wire.pdu import PduType, RawVarBind, build_raw_varbinds, build_trap_pdu
 
 _TNotifier = TypeVar("_TNotifier", bound="SnmpNotifier")
 
@@ -139,6 +141,88 @@ class V2cNotifier(SnmpNotifier):
             bundle=bundle,
             max_datagram_size=max_datagram_size,
         )
+
+
+class V1Notifier(SnmpNotifier):
+    """Async SNMPv1 (RFC 1157) trap sender.
+
+    SNMPv1 traps identify themselves through the Trap-PDU's enterprise,
+    agent-address, generic-trap, specific-trap and timestamp fields rather
+    than a snmpTrapOID varbind. There is no inform concept in SNMPv1, so
+    :meth:`send_inform` raises instead of sending.
+    """
+
+    def __init__(
+        self,
+        *,
+        host: str,
+        community: str,
+        port: int = 162,
+        timeout: float = 2.0,
+        retries: int = 1,
+        bundle: MibBundle | None = None,
+        max_datagram_size: int = 65535,
+    ) -> None:
+        super().__init__(
+            host=host,
+            security=CommunityModel(community, version=SNMP_V1_VERSION),
+            port=port,
+            timeout=timeout,
+            retries=retries,
+            bundle=bundle,
+            max_datagram_size=max_datagram_size,
+        )
+
+    async def send_trap(  # type: ignore[override]  # v1-specific API, no uptime
+        self,
+        enterprise: str | Sequence[int],
+        *,
+        agent_addr: str = "0.0.0.0",
+        generic_trap: int = 6,
+        specific_trap: int = 0,
+        timestamp: int = 0,
+        varbinds: Sequence[NotificationVarBindInput] = (),
+    ) -> int:
+        """Send an SNMPv1 trap and return its timestamp field.
+
+        v1 Trap-PDUs carry no request-id; the returned value is the trap
+        timestamp (the sysUpTime value at the time the trap was generated).
+        ``generic_trap`` defaults to 6 (enterpriseSpecific) so callers can
+        pass just ``specific_trap`` for enterprise-specific traps. An explicit
+        ``sysUpTime.0`` varbind overrides both the auto-added varbind and the
+        Trap-PDU timestamp field.
+        """
+        enterprise_oid = _normalize_notification_target(enterprise, bundle=self._session.bundle)
+        normalized_varbinds, effective_timestamp = _build_v1_notification_varbinds(
+            timestamp=timestamp,
+            varbinds=varbinds,
+            bundle=self._session.bundle,
+        )
+        pdu = build_trap_pdu(
+            enterprise=enterprise_oid,
+            agent_addr=agent_addr,
+            generic_trap=generic_trap,
+            specific_trap=specific_trap,
+            timestamp=effective_timestamp,
+            varbinds=build_raw_varbinds(normalized_varbinds),
+        )
+        async with self._session.lock:
+            encoded = self._session._security.wrap_pdu(pdu)
+            await self._session.dispatcher.send_only(
+                PreparedRequest(request_id=0, encoded_message=encoded)
+            )
+        return effective_timestamp
+
+    async def send_inform(
+        self,
+        notification: str | Sequence[int],
+        *,
+        varbinds: Sequence[NotificationVarBindInput] = (),
+        uptime: int = 0,
+    ) -> Response:
+        """SNMPv1 has no inform concept; calling this always raises."""
+        del notification, varbinds, uptime
+        raise ProtocolError("SNMPv1 does not support informs")
 
 
 class V3Notifier(SnmpNotifier):
@@ -275,6 +359,35 @@ def _normalize_explicit_varbinds(
     return tuple((oid, value) for oid, (_, value) in zip(oids, varbinds, strict=True))
 
 
+def _build_v1_notification_varbinds(
+    *,
+    timestamp: int,
+    varbinds: Sequence[NotificationVarBindInput],
+    bundle: MibBundle | None,
+) -> tuple[tuple[tuple[OID, SnmpValueType], ...], int]:
+    """Build v1 trap varbinds plus the effective Trap-PDU timestamp.
+
+    SNMPv1 traps carry no snmpTrapOID varbind (the enterprise and
+    generic/specific-trap fields take that role), so the varbind list is the
+    sysUpTime instance followed by the caller's explicit varbinds. An
+    explicit ``sysUpTime.0`` varbind overrides the auto-added one and becomes
+    the effective timestamp used in the Trap-PDU header.
+    """
+    if timestamp < 0:
+        raise ValueError("timestamp cannot be negative")
+
+    normalized_explicit = _normalize_explicit_varbinds(varbinds, bundle=bundle)
+    sys_uptime = TimeTicksValue(timestamp)
+    extras: list[tuple[OID, SnmpValueType]] = []
+    for oid, value in normalized_explicit:
+        if oid == _SYS_UPTIME_INSTANCE_OID and isinstance(value, TimeTicksValue):
+            sys_uptime = value
+            continue
+        extras.append((oid, value))
+
+    return ((_SYS_UPTIME_INSTANCE_OID, sys_uptime), *extras), sys_uptime.value
+
+
 def build_notification_raw_varbinds(
     notification_oid: OID,
     *,
@@ -289,6 +402,20 @@ def build_notification_raw_varbinds(
         uptime=uptime,
         bundle=bundle,
     )
+
+
+def build_v1_notification_raw_varbinds(
+    *,
+    varbinds: Sequence[NotificationVarBindInput] = (),
+    timestamp: int = 0,
+    bundle: MibBundle | None = None,
+) -> tuple[tuple[OID, SnmpValueType], ...]:
+    """Build normalized SNMPv1 trap varbinds for tests and future reuse."""
+    return _build_v1_notification_varbinds(
+        timestamp=timestamp,
+        varbinds=varbinds,
+        bundle=bundle,
+    )[0]
 
 
 def encode_notification_raw_varbinds(

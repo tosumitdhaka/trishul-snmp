@@ -18,12 +18,12 @@ options:
 |---|---|---|
 | `--host` | required | Target agent hostname or IP address |
 | `--port` | `161` | Target UDP port |
-| `--snmp-version {2c,3}` | `2c` | Explicit live protocol version selection |
-| `--community` | `public` when omitted | SNMPv2c community string; valid only with `--snmp-version 2c` |
+| `--snmp-version {1,2c,3}` | `2c` | Explicit live protocol version selection |
+| `--community` | `public` when omitted | SNMPv1/v2c community string; valid with `--snmp-version 1` and `2c` |
 | `--username` | — | SNMPv3 username; required with `--snmp-version 3` |
-| `--auth-protocol {none,md5,sha1,sha256}` | `none` | SNMPv3 auth protocol |
+| `--auth-protocol {none,md5,sha1,sha224,sha256,sha384,sha512}` | `none` | SNMPv3 auth protocol (RFC 7860 SHA-2 family included) |
 | `--auth-key` / `--auth-key-env` | — | Exactly one required when auth is enabled |
-| `--priv-protocol {none,aes128}` | `none` | SNMPv3 privacy protocol |
+| `--priv-protocol {none,aes128,aes192,aes256,3des-ede,des}` | `none` | SNMPv3 privacy protocol; AES-192/256 use Reeder key derivation, `des` fails fast with an accurate error (no single-DES primitive in the `cryptography` backend) |
 | `--priv-key` / `--priv-key-env` | — | Exactly one required when privacy is enabled |
 | `--context-name` | empty | SNMPv3 context name (UTF-8 text) |
 | `--timeout` | `2.0` | Request timeout in seconds |
@@ -45,18 +45,23 @@ The outbound notification commands (`trap`, `inform`) share these options:
 |---|---|---|
 | `--host` | required | Target notification receiver hostname or IP address |
 | `--port` | `162` | Target UDP port |
-| `--snmp-version {2c,3}` | `2c` | Explicit live protocol version selection |
-| `--community` | `public` when omitted | SNMPv2c community string; valid only with `--snmp-version 2c` |
+| `--snmp-version {1,2c,3}` | `2c` | Explicit live protocol version selection |
+| `--community` | `public` when omitted | SNMPv1/v2c community string; valid with `--snmp-version 1` and `2c` |
 | `--username` | — | SNMPv3 username; required with `--snmp-version 3` |
-| `--auth-protocol {none,md5,sha1,sha256}` | `none` | SNMPv3 auth protocol |
+| `--auth-protocol {none,md5,sha1,sha224,sha256,sha384,sha512}` | `none` | SNMPv3 auth protocol (RFC 7860 SHA-2 family included) |
 | `--auth-key` / `--auth-key-env` | — | Exactly one required when auth is enabled |
-| `--priv-protocol {none,aes128}` | `none` | SNMPv3 privacy protocol |
+| `--priv-protocol {none,aes128,aes192,aes256,3des-ede,des}` | `none` | SNMPv3 privacy protocol; AES-192/256 use Reeder key derivation, `des` fails fast with an accurate error (no single-DES primitive in the `cryptography` backend) |
 | `--priv-key` / `--priv-key-env` | — | Exactly one required when privacy is enabled |
 | `--context-name` | empty | SNMPv3 context name (UTF-8 text) |
 | `--timeout` | `2.0` | Request timeout in seconds |
 | `--retries` | `1` | Retry count per request |
 | `--bundle` | — | Compiled module JSON file or bundle directory |
-| `--uptime` | `0` | `sysUpTime.0` value in centiseconds |
+| `--uptime` | `0` | `sysUpTime.0` value in centiseconds (v2c/v3 traps only) |
+| `--enterprise` | — | SNMPv1 trap: enterprise OID; required for `trap --snmp-version 1` |
+| `--agent-addr` | `0.0.0.0` | SNMPv1 trap: originating agent address |
+| `--generic-trap` | `6` | SNMPv1 trap: generic trap number (0-6) |
+| `--specific-trap` | `0` | SNMPv1 trap: specific trap code (with generic trap 6) |
+| `--timestamp` | `0` | SNMPv1 trap: time-stamp in centiseconds |
 | `--varbind` | repeatable | Notification payload varbind in `OID=TYPE:VALUE` form |
 | `--json` | off | Emit machine-readable JSON output |
 
@@ -86,8 +91,11 @@ Trap-only SNMPv3 options:
 
 Validation rules:
 
-- `--community` is invalid with `--snmp-version 3`
+- `--community` is invalid with `--snmp-version 3` (valid with `1` and `2c`)
 - `--username` is required with `--snmp-version 3`
+- `--snmp-version 1` accepts `--community` only; mixing v1 with v3 flags fails early
+- `trap --snmp-version 1` requires `--enterprise` and rejects `--uptime`
+- `inform --snmp-version 1` fails fast: SNMPv1 has no inform operations — use `trap`
 - auth requires exactly one of `--auth-key` or `--auth-key-env`
 - privacy requires auth plus exactly one of `--priv-key` or `--priv-key-env`
 - `trap --snmp-version 3` requires all three `--local-engine-*` options
@@ -275,7 +283,9 @@ tsnmp listen [OPTIONS]
 ```
 
 Listens for inbound SNMP notifications. Use `--snmp-version 2c` with optional
-repeated `--community` allowlists, or `--snmp-version 3` with explicit
+repeated `--community` allowlists — the community listener also receives SNMPv1
+traps from the same allowlist (`--snmp-version 1` is accepted as an alias for
+the community listener path) — or `--snmp-version 3` with explicit
 username/auth/priv inputs plus required local authoritative engine state.
 
 Options:
@@ -284,12 +294,12 @@ Options:
 |---|---|---|
 | `--host` | `0.0.0.0` | Listener bind hostname or IP address |
 | `--port` | `162` | Listener UDP port |
-| `--snmp-version {2c,3}` | `2c` | Inbound notification protocol version |
-| `--community` | repeatable | Optional SNMPv2c allowlist entry; invalid with `--snmp-version 3` |
+| `--snmp-version {1,2c,3}` | `2c` | Inbound notification protocol version |
+| `--community` | repeatable | Optional community allowlist entry (v1 and v2c traps share it); invalid with `--snmp-version 3` |
 | `--username` | — | SNMPv3 username; required with `--snmp-version 3` |
-| `--auth-protocol {none,md5,sha1,sha256}` | `none` | SNMPv3 auth protocol |
+| `--auth-protocol {none,md5,sha1,sha224,sha256,sha384,sha512}` | `none` | SNMPv3 auth protocol (RFC 7860 SHA-2 family included) |
 | `--auth-key` / `--auth-key-env` | — | Exactly one required when auth is enabled |
-| `--priv-protocol {none,aes128}` | `none` | SNMPv3 privacy protocol |
+| `--priv-protocol {none,aes128,aes192,aes256,3des-ede,des}` | `none` | SNMPv3 privacy protocol; AES-192/256 use Reeder key derivation, `des` fails fast with an accurate error (no single-DES primitive in the `cryptography` backend) |
 | `--priv-key` / `--priv-key-env` | — | Exactly one required when privacy is enabled |
 | `--local-engine-id` / `--local-engine-boots` / `--local-engine-time` | — | Required for `listen --snmp-version 3` |
 | `--bundle` | — | Compiled module JSON file or bundle directory |
@@ -322,11 +332,11 @@ Options:
 
 | Option | Default | Description |
 |---|---|---|
-| `--snmp-version {2c,3}` | `2c` | Protocol version of the captured notification |
+| `--snmp-version {1,2c,3}` | `2c` | Protocol version of the captured notification |
 | `--username` | — | SNMPv3 username; required with `--snmp-version 3` |
-| `--auth-protocol {none,md5,sha1,sha256}` | `none` | SNMPv3 auth protocol |
+| `--auth-protocol {none,md5,sha1,sha224,sha256,sha384,sha512}` | `none` | SNMPv3 auth protocol (RFC 7860 SHA-2 family included) |
 | `--auth-key` / `--auth-key-env` | — | Exactly one required when auth is enabled |
-| `--priv-protocol {none,aes128}` | `none` | SNMPv3 privacy protocol |
+| `--priv-protocol {none,aes128,aes192,aes256,3des-ede,des}` | `none` | SNMPv3 privacy protocol; AES-192/256 use Reeder key derivation, `des` fails fast with an accurate error (no single-DES primitive in the `cryptography` backend) |
 | `--priv-key` / `--priv-key-env` | — | Exactly one required when privacy is enabled |
 | `--hex` | mutually exclusive | Hex-encoded SNMP message bytes |
 | `--file` | mutually exclusive | Path to raw BER-encoded SNMP message bytes |

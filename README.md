@@ -30,18 +30,20 @@ thin and secondary.
 ## Features
 
 - async-first Python API
+- SNMPv1 manager runtime (`V1Manager`; GETBULK downgrades to GETNEXT loops)
 - SNMPv2c manager runtime
-- SNMPv3 USM manager runtime (`V3Manager`; noAuthNoPriv, authNoPriv, authPriv AES-128)
+- SNMPv3 USM manager runtime (`V3Manager`; noAuthNoPriv, authNoPriv HMAC-MD5/SHA-1/SHA-224/SHA-256/SHA-384/SHA-512, authPriv AES-128/192/256 (Reeder) and 3DES-EDE)
 - read-only operations:
   - `get`
   - `get_next`
   - `get_bulk`
   - `walk`
   - `bulkwalk`
+- outbound SNMPv1 trap send (`V1Notifier`; enterprise/generic/specific fields)
 - outbound SNMPv2c trap and inform send
 - outbound SNMPv3 USM trap and inform send (`V3Notifier`; traps require `UsmLocalEngine`)
-- inbound SNMPv2c and SNMPv3 USM trap and inform listen (`V3NotificationListener` handles one configured user)
-- offline SNMPv2c and strict SNMPv3 USM notification decode
+- inbound SNMPv1, SNMPv2c, and SNMPv3 USM trap and inform listen (`V3NotificationListener` handles one configured user) with drop counters, rate-limited warnings, and `on_error` hooks
+- offline SNMPv1, SNMPv2c, and strict SNMPv3 USM notification decode
 - narrow read-only SNMPv2c responder / simulator
 - simulation rules for dynamic OID values (counters, gauges, uptime, timestamps)
 - bundle-backed auto-population of simulator object sets
@@ -59,7 +61,7 @@ Current main-branch baseline:
 
 - manager operations plus notification send/listen/decode
 - narrow read-only responder / simulator support
-- SNMPv2c and SNMPv3 USM (noAuthNoPriv, authNoPriv, authPriv AES-128)
+- SNMPv1 (community), SNMPv2c, and SNMPv3 USM (noAuthNoPriv, authNoPriv HMAC-MD5/SHA-1/SHA-224/SHA-256/SHA-384/SHA-512, authPriv AES-128/192/256 Reeder and 3DES-EDE)
 - read-only operations only
 - async-first Python API first, CLI second
 - optional compiled-JSON enrichment via `tsmi` artifacts
@@ -71,7 +73,7 @@ Deliberately deferred:
 - `pysnmp` API compatibility shims
 - direct runtime dependency on the `trishul-smi` Python package
 - sync wrapper
-- SNMPv1
+- DES-CBC privacy (no single-DES primitive in the `cryptography` backend; `PrivProtocol.DES` fails fast with an accurate error)
 - `set`
 - full agent framework
 - writable responder support

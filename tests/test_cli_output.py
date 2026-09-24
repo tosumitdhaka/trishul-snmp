@@ -6,6 +6,7 @@ from trishul_snmp.cli.output import (
     render_notification_event,
     render_request_id,
     render_response,
+    render_v1_trap_timestamp,
     render_walk,
 )
 from trishul_snmp.mib.models import MibMemberRef
@@ -67,6 +68,11 @@ def test_render_request_id_json_output() -> None:
     rendered = render_request_id(17, json_output=True)
 
     assert json.loads(rendered) == {"request_id": 17}
+
+
+def test_render_v1_trap_timestamp_text_and_json() -> None:
+    assert render_v1_trap_timestamp(654321, json_output=False) == "timestamp=654321"
+    assert json.loads(render_v1_trap_timestamp(654321, json_output=True)) == {"timestamp": 654321}
 
 
 def test_render_notification_event_text_and_json() -> None:
@@ -137,6 +143,79 @@ def test_render_notification_event_text_and_json() -> None:
             }
         ],
     }
+
+
+def test_render_notification_event_v1_text_and_json() -> None:
+    event = NotificationEvent(
+        request_id=0,
+        community="public",
+        source_address=("192.0.2.10", 40162),
+        pdu_type="trap",
+        varbinds=(
+            _varbind(
+                (1, 3, 6, 1, 4, 1, 999, 0, 1),
+                display_name="APP-MIB::alarm.0",
+                display_value="7",
+            ),
+        ),
+        uptime=654321,
+        enterprise=(1, 3, 6, 1, 4, 1, 999),
+        agent_addr="192.0.2.10",
+        generic_trap=6,
+        specific_trap=0,
+        timestamp=654321,
+    )
+
+    rendered_text = render_notification_event(event, json_output=False, numeric=False)
+    rendered_json = render_notification_event(event, json_output=True, numeric=False)
+
+    assert rendered_text.splitlines() == [
+        "type=trap request_id=0 community=public source=192.0.2.10:40162",
+        "enterprise=1.3.6.1.4.1.999 agent-addr=192.0.2.10 generic-trap=6 specific-trap=0 "
+        "timestamp=654321",
+        "uptime=654321",
+        "APP-MIB::alarm.0 = 7",
+    ]
+
+    assert json.loads(rendered_json) == {
+        "request_id": 0,
+        "community": "public",
+        "pdu_type": "trap",
+        "source_address": {"host": "192.0.2.10", "port": 40162},
+        "member_bindings": [],
+        "varbinds": [
+            {
+                "oid": "1.3.6.1.4.1.999.0.1",
+                "value_type": "integer",
+                "display_name": "APP-MIB::alarm.0",
+                "display_value": "7",
+            }
+        ],
+        "uptime": 654321,
+        "enterprise": "1.3.6.1.4.1.999",
+        "agent_addr": "192.0.2.10",
+        "generic_trap": 6,
+        "specific_trap": 0,
+        "timestamp": 654321,
+    }
+
+
+def test_render_notification_event_omits_v1_fields_when_absent() -> None:
+    event = NotificationEvent(
+        request_id=8,
+        community="public",
+        source_address=None,
+        pdu_type="snmpv2-trap",
+        varbinds=(),
+    )
+
+    rendered_text = render_notification_event(event, json_output=False, numeric=False)
+    rendered_json = render_notification_event(event, json_output=True, numeric=False)
+
+    assert rendered_text == "type=snmpv2-trap request_id=8 community=public"
+    payload = json.loads(rendered_json)
+    for key in ("enterprise", "agent_addr", "generic_trap", "specific_trap", "timestamp"):
+        assert key not in payload
 
 
 def test_render_notification_event_handles_compact_json_and_fallback_labels() -> None:

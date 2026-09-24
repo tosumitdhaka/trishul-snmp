@@ -12,6 +12,8 @@ from typing import TypeAlias, cast
 from trishul_snmp import (
     SnmpManager,
     SnmpNotifier,
+    V1Manager,
+    V1Notifier,
     V2cManager,
     V2cNotificationListener,
     V2cNotifier,
@@ -30,18 +32,22 @@ from trishul_snmp.cli.common import (
     add_live_options,
     add_local_engine_options,
     add_notifier_options,
+    add_v1_trap_options,
     load_bundle_from_args,
     parse_cli_security,
     parse_decode_notification_user,
     parse_hex_bytes,
     parse_listener_cli_security,
     parse_notification_varbinds,
+    validate_inform_version,
+    validate_trap_version_flags,
 )
 from trishul_snmp.cli.output import (
     render_notification_event,
     render_request_id,
     render_response,
     render_translation,
+    render_v1_trap_timestamp,
     render_walk,
 )
 from trishul_snmp.errors import TsnmpError
@@ -132,6 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     trap = subparsers.add_parser("trap", help="Send an SNMP trap")
     _add_notification_send_arguments(trap)
+    add_v1_trap_options(trap)
     add_local_engine_options(trap)
     trap.set_defaults(handler=_handle_trap)
 
@@ -268,8 +275,25 @@ async def _run_response_command(args: argparse.Namespace, operation: ResponseOpe
 
 
 async def _handle_trap(args: argparse.Namespace) -> int:
+    validate_trap_version_flags(args)
     bundle = load_bundle_from_args(args)
     varbinds = parse_notification_varbinds(args.varbinds, bundle=bundle)
+    if args.snmp_version == "1":
+        v1_notifier = cast(V1Notifier, _notifier_from_args(args, bundle=bundle))
+        async with v1_notifier:
+            timestamp = await v1_notifier.send_trap(
+                args.enterprise,
+                agent_addr=args.agent_addr or "0.0.0.0",
+                generic_trap=args.generic_trap if args.generic_trap is not None else 6,
+                specific_trap=args.specific_trap if args.specific_trap is not None else 0,
+                timestamp=args.timestamp if args.timestamp is not None else 0,
+                varbinds=varbinds,
+            )
+        print(render_v1_trap_timestamp(timestamp, json_output=args.json_output))
+        return 0
+
+    if args.notification is None:
+        raise ValueError("trap requires a notification OID target")
     async with _notifier_from_args(args, bundle=bundle, require_local_engine=True) as notifier:
         request_id = await notifier.send_trap(
             args.notification,
@@ -281,6 +305,9 @@ async def _handle_trap(args: argparse.Namespace) -> int:
 
 
 async def _handle_inform(args: argparse.Namespace) -> int:
+    validate_inform_version(args)
+    if args.notification is None:
+        raise ValueError("inform requires a notification OID target")
     bundle = load_bundle_from_args(args)
     varbinds = parse_notification_varbinds(args.varbinds, bundle=bundle)
     async with _notifier_from_args(args, bundle=bundle) as notifier:
@@ -370,6 +397,15 @@ def _handle_decode_notification(args: argparse.Namespace) -> int:
 def _manager_from_args(args: argparse.Namespace, *, bundle: MibBundle | None) -> SnmpManager:
     security = parse_cli_security(args)
     if isinstance(security, V2cCliSecurity):
+        if security.version == "1":
+            return V1Manager(
+                host=args.host,
+                port=args.port,
+                community=security.community,
+                timeout=args.timeout,
+                retries=args.retries,
+                bundle=bundle,
+            )
         return V2cManager(
             host=args.host,
             port=args.port,
@@ -401,6 +437,15 @@ def _notifier_from_args(
         allow_local_engine=require_local_engine,
     )
     if isinstance(security, V2cCliSecurity):
+        if security.version == "1":
+            return V1Notifier(
+                host=args.host,
+                port=args.port,
+                community=security.community,
+                timeout=args.timeout,
+                retries=args.retries,
+                bundle=bundle,
+            )
         return V2cNotifier(
             host=args.host,
             port=args.port,
@@ -439,7 +484,11 @@ async def _perform_get_bulk(manager: SnmpManager, args: argparse.Namespace) -> R
 
 def _add_notification_send_arguments(parser: argparse.ArgumentParser) -> None:
     add_notifier_options(parser)
-    parser.add_argument("notification", help="Numeric OID or MODULE::symbol notification target")
+    parser.add_argument(
+        "notification",
+        nargs="?",
+        help="Numeric OID or MODULE::symbol notification target (not used with --snmp-version 1)",
+    )
     parser.add_argument(
         "--uptime",
         type=int,

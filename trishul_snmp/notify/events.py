@@ -22,6 +22,7 @@ from trishul_snmp.wire.message import SnmpMessage, decode_message
 from trishul_snmp.wire.pdu import Pdu, PduType
 
 _PDU_TYPE_NAMES = {
+    PduType.TRAP: "trap",
     PduType.SNMPV2_TRAP: "snmpv2-trap",
     PduType.INFORM_REQUEST: "inform-request",
 }
@@ -63,6 +64,12 @@ class NotificationEvent:
     authoritative_engine_id: bytes | None = None
     authoritative_engine_boots: int | None = None
     authoritative_engine_time: int | None = None
+    # v1 Trap-PDU (RFC 1157) metadata — populated only when the source is a v1 trap.
+    enterprise: OID | None = None
+    agent_addr: str | None = None
+    generic_trap: int | None = None
+    specific_trap: int | None = None
+    timestamp: int | None = None
 
     @property
     def source_host(self) -> str | None:
@@ -121,6 +128,16 @@ class NotificationEvent:
                 for binding in self.member_bindings
             ],
         }
+        if self.enterprise is not None:
+            payload["enterprise"] = ".".join(str(arc) for arc in self.enterprise)
+        if self.agent_addr is not None:
+            payload["agent_addr"] = self.agent_addr
+        if self.generic_trap is not None:
+            payload["generic_trap"] = self.generic_trap
+        if self.specific_trap is not None:
+            payload["specific_trap"] = self.specific_trap
+        if self.timestamp is not None:
+            payload["timestamp"] = self.timestamp
         if self.snmp_version is not None:
             payload["snmp_version"] = self.snmp_version
         if self.username is not None:
@@ -238,6 +255,19 @@ def _notification_event_from_pdu(
         varbinds=varbinds,
     )
 
+    if pdu.pdu_type is PduType.TRAP:
+        enterprise = pdu.enterprise
+        agent_addr = pdu.agent_addr
+        generic_trap = pdu.generic_trap
+        specific_trap = pdu.specific_trap
+        timestamp = pdu.timestamp
+    else:
+        enterprise = None
+        agent_addr = None
+        generic_trap = None
+        specific_trap = None
+        timestamp = None
+
     return NotificationEvent(
         request_id=request_id,
         community=community,
@@ -257,6 +287,11 @@ def _notification_event_from_pdu(
         authoritative_engine_id=authoritative_engine_id,
         authoritative_engine_boots=authoritative_engine_boots,
         authoritative_engine_time=authoritative_engine_time,
+        enterprise=enterprise,
+        agent_addr=agent_addr,
+        generic_trap=generic_trap,
+        specific_trap=specific_trap,
+        timestamp=timestamp,
     )
 
 

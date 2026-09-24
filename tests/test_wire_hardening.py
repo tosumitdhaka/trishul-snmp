@@ -38,7 +38,7 @@ def test_decode_tlv_rejects_truncated_content() -> None:
 def test_decode_message_rejects_unsupported_version() -> None:
     encoded = encode_message(
         SnmpMessage(
-            version=0,
+            version=2,
             community="public",
             pdu=Pdu(
                 pdu_type=PduType.GET,
@@ -50,7 +50,7 @@ def test_decode_message_rejects_unsupported_version() -> None:
         )
     )
 
-    with pytest.raises(ProtocolError, match="Unsupported SNMP version 0"):
+    with pytest.raises(ProtocolError, match="Unsupported SNMP version 2"):
         decode_message(encoded)
 
 

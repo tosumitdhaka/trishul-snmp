@@ -11,7 +11,9 @@ from trishul_snmp.wire.pdu import Pdu, decode_pdu, encode_pdu
 _SEQUENCE_TAG = 0x30
 _INTEGER_TAG = 0x02
 _OCTET_STRING_TAG = 0x04
-_SNMP_V2C_VERSION = 1
+
+SNMP_V1_VERSION = 0
+SNMP_V2C_VERSION = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +59,7 @@ def _decode_message_python(data: bytes) -> SnmpMessage:
     pdu = decode_pdu(bytes([pdu_tag]) + _reencode_length_prefixed(pdu_content))
     inner_offset = pdu_offset
     expect_end(content, inner_offset)
-    if version != _SNMP_V2C_VERSION:
+    if version not in (SNMP_V1_VERSION, SNMP_V2C_VERSION):
         raise ProtocolError(f"Unsupported SNMP version {version}")
     return SnmpMessage(version=version, community=community, pdu=pdu)
 

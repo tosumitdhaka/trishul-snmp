@@ -190,7 +190,7 @@ The CLI is a direct wrapper over the same runtime configuration:
 |---|---|
 | `--host` | Manager, notifier, or listener constructor `host=...` depending on the command |
 | `--port` | Manager, notifier, or listener constructor `port=...` depending on the command |
-| `--snmp-version` | Chooses the v2c/v3 manager, notifier, listener, or decode path |
+| `--snmp-version` | Chooses the v1/v2c/v3 manager, notifier, listener, or decode path |
 | `--community` | `V2cManager(community=...)`, `V2cNotifier(community=...)`, or v2c listener allowlist entries |
 | `--username` | `UsmUser(username=...)` for SNMPv3 manager/notifier/listener/decode commands |
 | `--auth-protocol` | `UsmUser(auth_protocol=...)` |

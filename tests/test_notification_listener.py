@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from trishul_snmp import (
 from trishul_snmp.errors import TransportError
 from trishul_snmp.notify.events import notification_event_from_message
 from trishul_snmp.notify.listener import _community_allowed
+from trishul_snmp.notify.v3 import DropReason
 from trishul_snmp.types import SocketAddress
 from trishul_snmp.wire.message import SnmpMessage, encode_message
 from trishul_snmp.wire.pdu import Pdu, PduType, RawVarBind
@@ -103,6 +105,39 @@ class _FakeServer:
 
     async def sendto(self, data: bytes, addr: SocketAddress) -> None:
         self.sent.append((data, addr))
+
+
+class _FakeClock:
+    def __init__(self) -> None:
+        self._now = 0.0
+
+    def __call__(self) -> float:
+        return self._now
+
+    def advance(self, seconds: float) -> None:
+        self._now += seconds
+
+
+def _v2c_message(
+    *,
+    community: str,
+    request_id: int,
+    version: int = 1,
+    pdu_type: PduType = PduType.SNMPV2_TRAP,
+) -> bytes:
+    return encode_message(
+        SnmpMessage(
+            version=version,
+            community=community,
+            pdu=Pdu(
+                pdu_type=pdu_type,
+                request_id=request_id,
+                error_status=0,
+                error_index=0,
+                varbinds=(RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 1, 0), value=IntegerValue(7)),),
+            ),
+        )
+    )
 
 
 def test_notification_listener_receives_trap_event() -> None:
@@ -427,3 +462,159 @@ def test_decode_notification_exposes_metadata_without_source_address(tmp_path: P
     assert event.declared_members[0].symbolic == "NOTIF-MIB::ifIndex"
     assert event.member_bindings[0].varbind is not None
     assert event.member_bindings[0].varbind.display_name == "NOTIF-MIB::ifIndex.7"
+
+
+def test_notification_listener_wrong_community_drop_counts_and_calls_on_error() -> None:
+    dropped: list[tuple[DropReason, SocketAddress, bytes]] = []
+
+    def on_error(reason: DropReason, addr: SocketAddress, prefix: bytes) -> None:
+        dropped.append((reason, addr, prefix))
+
+    wrong_community = _v2c_message(community="public", request_id=5)
+    accepted = _v2c_message(community="private", request_id=6)
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=wrong_community, source_address=("127.0.0.1", 40010)),
+            _FakeDatagram(data=accepted, source_address=("127.0.0.1", 40011)),
+        ]
+    )
+
+    async def scenario() -> None:
+        listener = V2cNotificationListener(communities=["private"], on_error=on_error)
+        listener._server = server  # type: ignore[attr-defined]
+        event = await listener.receive()
+
+        assert event.request_id == 6
+        assert event.community == "private"
+        assert listener.dropped == 1
+        assert listener.drop_counts == {DropReason.WRONG_COMMUNITY: 1}
+        assert dropped == [(DropReason.WRONG_COMMUNITY, ("127.0.0.1", 40010), wrong_community[:8])]
+
+    asyncio.run(scenario())
+
+
+def test_notification_listener_undecodable_ber_drops_are_counted() -> None:
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=b"not-snmp", source_address=("127.0.0.1", 40020)),
+            _FakeDatagram(data=b"\x30\x05\x02\x01\x01", source_address=("127.0.0.1", 40021)),
+            _FakeDatagram(
+                data=_v2c_message(community="public", request_id=7),
+                source_address=("127.0.0.1", 40022),
+            ),
+        ]
+    )
+
+    async def scenario() -> None:
+        listener = V2cNotificationListener()
+        listener._server = server  # type: ignore[attr-defined]
+        event = await listener.receive()
+
+        assert event.request_id == 7
+        assert listener.dropped == 2
+        assert listener.drop_counts == {DropReason.UNDECODABLE_BER: 2}
+
+    asyncio.run(scenario())
+
+
+def test_notification_listener_drop_totals_reconcile_with_per_reason_counts() -> None:
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=b"not-snmp", source_address=("127.0.0.1", 40030)),
+            _FakeDatagram(
+                data=_v2c_message(community="public", request_id=1, version=2),
+                source_address=("127.0.0.1", 40031),
+            ),
+            _FakeDatagram(
+                data=_v2c_message(community="public", request_id=2),
+                source_address=("127.0.0.1", 40032),
+            ),
+            _FakeDatagram(
+                data=_v2c_message(community="private", request_id=3, pdu_type=PduType.GET),
+                source_address=("127.0.0.1", 40033),
+            ),
+            _FakeDatagram(
+                data=_v2c_message(community="private", request_id=4),
+                source_address=("127.0.0.1", 40034),
+            ),
+        ]
+    )
+
+    async def scenario() -> None:
+        listener = V2cNotificationListener(communities=["private"])
+        listener._server = server  # type: ignore[attr-defined]
+        event = await listener.receive()
+
+        assert event.request_id == 4
+        assert listener.dropped == 4
+        assert listener.drop_counts == {
+            DropReason.UNDECODABLE_BER: 1,
+            DropReason.UNSUPPORTED_VERSION: 1,
+            DropReason.WRONG_COMMUNITY: 1,
+            DropReason.NOT_NOTIFICATION: 1,
+        }
+        assert sum(listener.drop_counts.values()) == listener.dropped
+
+    asyncio.run(scenario())
+
+
+def test_notification_listener_ratelimits_warning_per_drop_reason(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    bad = b"not-snmp"
+    valid = _v2c_message(community="public", request_id=8)
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=bad, source_address=("127.0.0.1", 40040)),
+            _FakeDatagram(data=bad, source_address=("127.0.0.1", 40041)),
+            _FakeDatagram(data=bad, source_address=("127.0.0.1", 40042)),
+            _FakeDatagram(data=valid, source_address=("127.0.0.1", 40043)),
+            _FakeDatagram(data=bad, source_address=("127.0.0.1", 40044)),
+            _FakeDatagram(data=valid, source_address=("127.0.0.1", 40045)),
+        ]
+    )
+    clock = _FakeClock()
+
+    async def scenario() -> None:
+        listener = V2cNotificationListener(clock=clock)
+        listener._server = server  # type: ignore[attr-defined]
+        with caplog.at_level(logging.WARNING, logger="trishul_snmp.notify.listener"):
+            await listener.receive()
+            assert len(caplog.records) == 1
+            message = caplog.records[0].getMessage()
+            assert "undecodable-ber" in message
+            assert "127.0.0.1:40040" in message
+            assert bad[:8].hex() in message
+
+            caplog.clear()
+            clock.advance(6.0)
+            await listener.receive()
+            assert len(caplog.records) == 1
+
+    asyncio.run(scenario())
+
+
+def test_notification_listener_on_error_exceptions_are_contained() -> None:
+    def on_error(reason: DropReason, addr: SocketAddress, prefix: bytes) -> None:
+        raise RuntimeError("callback exploded")
+
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=b"not-snmp", source_address=("127.0.0.1", 40050)),
+            _FakeDatagram(
+                data=_v2c_message(community="public", request_id=9),
+                source_address=("127.0.0.1", 40051),
+            ),
+        ]
+    )
+
+    async def scenario() -> None:
+        listener = V2cNotificationListener(on_error=on_error)
+        listener._server = server  # type: ignore[attr-defined]
+        event = await listener.receive()
+
+        assert event.request_id == 9
+        assert listener.dropped == 1
+        assert listener.drop_counts == {DropReason.UNDECODABLE_BER: 1}
+
+    asyncio.run(scenario())

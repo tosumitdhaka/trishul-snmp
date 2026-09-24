@@ -298,6 +298,60 @@ class FakeV3Notifier(FakeNotifier):
         type(self).created.append(self)
 
 
+class FakeV1Notifier:
+    created: list[FakeV1Notifier] = []
+
+    def __init__(
+        self,
+        *,
+        host: str,
+        community: str,
+        port: int = 162,
+        timeout: float = 2.0,
+        retries: int = 1,
+        bundle=None,
+    ) -> None:
+        self.host = host
+        self.community = community
+        self.port = port
+        self.timeout = timeout
+        self.retries = retries
+        self.bundle = bundle
+        self.calls: list[tuple[str, object]] = []
+        type(self).created.append(self)
+
+    async def __aenter__(self) -> FakeV1Notifier:
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def send_trap(
+        self,
+        enterprise: str,
+        *,
+        agent_addr: str = "0.0.0.0",
+        generic_trap: int = 6,
+        specific_trap: int = 0,
+        timestamp: int = 0,
+        varbinds=(),
+    ) -> int:
+        self.calls.append(
+            (
+                "send_trap",
+                {
+                    "enterprise": enterprise,
+                    "agent_addr": agent_addr,
+                    "generic_trap": generic_trap,
+                    "specific_trap": specific_trap,
+                    "timestamp": timestamp,
+                    "varbinds": tuple(varbinds),
+                },
+            )
+        )
+        return 123456
+
+
 class FakeListener:
     created: list[FakeListener] = []
     queued_events: list[NotificationEvent] = []
@@ -410,6 +464,22 @@ def _v3_notification_event() -> NotificationEvent:
         authoritative_engine_id=bytes.fromhex("8000010203"),
         authoritative_engine_boots=7,
         authoritative_engine_time=99,
+    )
+
+
+def _v1_notification_event() -> NotificationEvent:
+    return NotificationEvent(
+        request_id=0,
+        community="public",
+        source_address=("127.0.0.1", 49164),
+        pdu_type="trap",
+        varbinds=(),
+        uptime=654321,
+        enterprise=(1, 3, 6, 1, 4, 1, 999),
+        agent_addr="192.0.2.10",
+        generic_trap=6,
+        specific_trap=0,
+        timestamp=654321,
     )
 
 
@@ -991,6 +1061,350 @@ def test_cli_run_exits_with_main_status(monkeypatch) -> None:
 def test_handle_translate_requires_bundle() -> None:
     with pytest.raises(ValueError, match="translate requires --bundle"):
         _handle_translate(argparse.Namespace(bundle=None, target="IF-MIB::ifDescr.1"))
+
+
+def test_cli_get_v1_uses_v1manager(monkeypatch, capsys) -> None:
+    FakeManager.created.clear()
+    monkeypatch.setattr("trishul_snmp.cli.main.V1Manager", FakeManager)
+
+    exit_code = main(
+        [
+            "get",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "1",
+            "--community",
+            "private",
+            "1.3.6.1.2.1.1.3.0",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out.strip() == "IF-MIB::ifDescr.1 = eth0"
+    assert FakeManager.created[0].community == "private"
+    assert FakeManager.created[0].calls == [("get", ("1.3.6.1.2.1.1.3.0",))]
+
+
+def test_cli_get_v1_rejects_v3_flags(capsys) -> None:
+    exit_code = main(
+        [
+            "get",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "1",
+            "--username",
+            "alice",
+            "1.3.6.1.2.1.2.2",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err.strip() == "tsnmp: --username is invalid with --snmp-version 1"
+
+
+def test_cli_bulkwalk_v1_routes_to_v1manager(monkeypatch, capsys) -> None:
+    FakeManager.created.clear()
+    monkeypatch.setattr("trishul_snmp.cli.main.V1Manager", FakeManager)
+
+    exit_code = main(
+        [
+            "bulkwalk",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "1",
+            "1.3.6.1.2.1.2.2",
+        ]
+    )
+
+    capsys.readouterr()
+    assert exit_code == 0
+    assert FakeManager.created[0].calls[0][0] == "bulkwalk"
+
+
+def test_cli_trap_v1_routes_to_v1notifier(monkeypatch, capsys) -> None:
+    FakeV1Notifier.created.clear()
+    monkeypatch.setattr("trishul_snmp.cli.main.V1Notifier", FakeV1Notifier)
+
+    exit_code = main(
+        [
+            "trap",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "1",
+            "--enterprise",
+            "1.3.6.1.4.1.999",
+            "--agent-addr",
+            "192.0.2.10",
+            "--generic-trap",
+            "1",
+            "--specific-trap",
+            "5",
+            "--timestamp",
+            "123456",
+            "--varbind",
+            "1.3.6.1.2.1.2.2.1.1.7=int:7",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured.out.strip() == "timestamp=123456"
+    assert FakeV1Notifier.created[0].community == "public"
+    assert FakeV1Notifier.created[0].calls == [
+        (
+            "send_trap",
+            {
+                "enterprise": "1.3.6.1.4.1.999",
+                "agent_addr": "192.0.2.10",
+                "generic_trap": 1,
+                "specific_trap": 5,
+                "timestamp": 123456,
+                "varbinds": (("1.3.6.1.2.1.2.2.1.1.7", IntegerValue(7)),),
+            },
+        )
+    ]
+
+
+def test_cli_trap_v1_applies_default_trap_fields(monkeypatch, capsys) -> None:
+    FakeV1Notifier.created.clear()
+    monkeypatch.setattr("trishul_snmp.cli.main.V1Notifier", FakeV1Notifier)
+
+    exit_code = main(
+        [
+            "trap",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "1",
+            "--enterprise",
+            "1.3.6.1.4.1.999",
+        ]
+    )
+
+    capsys.readouterr()
+    assert exit_code == 0
+    assert FakeV1Notifier.created[0].calls == [
+        (
+            "send_trap",
+            {
+                "enterprise": "1.3.6.1.4.1.999",
+                "agent_addr": "0.0.0.0",
+                "generic_trap": 6,
+                "specific_trap": 0,
+                "timestamp": 0,
+                "varbinds": (),
+            },
+        )
+    ]
+
+
+def test_cli_trap_v1_requires_enterprise(capsys) -> None:
+    exit_code = main(["trap", "--host", "127.0.0.1", "--snmp-version", "1"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err.strip() == "tsnmp: --enterprise is required with --snmp-version 1"
+
+
+def test_cli_trap_v1_rejects_uptime(capsys) -> None:
+    exit_code = main(
+        [
+            "trap",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "1",
+            "--uptime",
+            "55",
+            "--enterprise",
+            "1.3.6.1.4.1.999",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err.strip() == (
+        "tsnmp: --uptime is invalid with --snmp-version 1; use --timestamp"
+    )
+
+
+def test_cli_trap_v1_rejects_positional_target(capsys) -> None:
+    exit_code = main(
+        [
+            "trap",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "1",
+            "--enterprise",
+            "1.3.6.1.4.1.999",
+            "1.3.6.1.6.3.1.1.5.3",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err.strip() == (
+        "tsnmp: a positional notification OID is invalid with --snmp-version 1; use --enterprise"
+    )
+
+
+def test_cli_trap_v2c_rejects_enterprise(capsys) -> None:
+    exit_code = main(
+        [
+            "trap",
+            "--host",
+            "127.0.0.1",
+            "--enterprise",
+            "1.3.6.1.4.1.999",
+            "1.3.6.1.6.3.1.1.5.3",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err.strip() == "tsnmp: --enterprise requires --snmp-version 1"
+
+
+def test_cli_inform_v1_fails_fast(capsys) -> None:
+    exit_code = main(
+        [
+            "inform",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "1",
+            "1.3.6.1.6.3.1.1.5.3",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err.strip() == "tsnmp: SNMPv1 has no inform operations — use trap"
+
+
+def test_cli_listen_v1_uses_community_listener(monkeypatch, capsys) -> None:
+    FakeListener.created.clear()
+    FakeListener.queued_events = [_v1_notification_event()]
+    monkeypatch.setattr("trishul_snmp.cli.main.V2cNotificationListener", FakeListener)
+
+    exit_code = main(
+        [
+            "listen",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "1",
+            "--community",
+            "public",
+            "--count",
+            "1",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "type=trap request_id=0 community=public source=127.0.0.1:49164" in captured.out
+    assert (
+        "enterprise=1.3.6.1.4.1.999 agent-addr=192.0.2.10 generic-trap=6 specific-trap=0 "
+        "timestamp=654321"
+    ) in captured.out
+    assert FakeListener.created[0].host == "127.0.0.1"
+    assert FakeListener.created[0].communities == ["public"]
+
+
+def test_cli_decode_notification_v1_renders_trap_metadata(monkeypatch, capsys) -> None:
+    def fake_decode_notification(data: bytes, *, bundle=None, user=None):
+        del data, bundle, user
+        return _v1_notification_event()
+
+    monkeypatch.setattr("trishul_snmp.cli.main.decode_notification", fake_decode_notification)
+
+    exit_code = main(
+        [
+            "decode-notification",
+            "--snmp-version",
+            "1",
+            "--hex",
+            "30 01",
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "type=trap request_id=0 community=public" in captured.out
+    assert "enterprise=1.3.6.1.4.1.999" in captured.out
+    assert "generic-trap=6" in captured.out
+    assert "timestamp=654321" in captured.out
+
+
+def test_cli_decode_notification_v1_json_output(monkeypatch, capsys) -> None:
+    def fake_decode_notification(data: bytes, *, bundle=None, user=None):
+        del data, bundle, user
+        return _v1_notification_event()
+
+    monkeypatch.setattr("trishul_snmp.cli.main.decode_notification", fake_decode_notification)
+
+    exit_code = main(
+        [
+            "decode-notification",
+            "--snmp-version",
+            "1",
+            "--json",
+            "--hex",
+            "30 01",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["enterprise"] == "1.3.6.1.4.1.999"
+    assert payload["agent_addr"] == "192.0.2.10"
+    assert payload["generic_trap"] == 6
+    assert payload["specific_trap"] == 0
+    assert payload["timestamp"] == 654321
+
+
+def test_cli_get_v3_accepts_sha2_and_reeder_protocols(monkeypatch, capsys) -> None:
+    FakeV3Manager.created.clear()
+    monkeypatch.setattr("trishul_snmp.cli.main.V3Manager", FakeV3Manager)
+
+    exit_code = main(
+        [
+            "get",
+            "--host",
+            "127.0.0.1",
+            "--snmp-version",
+            "3",
+            "--username",
+            "alice",
+            "--auth-protocol",
+            "sha512",
+            "--auth-key",
+            "auth-secret",
+            "--priv-protocol",
+            "3des-ede",
+            "--priv-key",
+            "priv-secret",
+            "1.3.6.1.2.1.2.2",
+        ]
+    )
+
+    capsys.readouterr()
+    assert exit_code == 0
+    assert FakeV3Manager.created[0].user.auth_protocol is not None
+    assert FakeV3Manager.created[0].user.auth_protocol.name == "SHA512"
+    assert FakeV3Manager.created[0].user.priv_protocol.name == "THREEDES_EDE"
 
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib requires Python 3.11+")

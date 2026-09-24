@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from trishul_snmp.errors import AuthenticationError, ProtocolError
 from trishul_snmp.wire.pdu import Pdu, PduType, RawVarBind
@@ -42,21 +42,57 @@ def _require_cryptography() -> None:
         ) from None
 
 
+def _import_3des_algorithm() -> Any:
+    """Return the 3DES algorithm class for the installed cryptography (lazy).
+
+    TripleDES moved to ``hazmat.decrepit`` in cryptography 48.0.0; earlier
+    releases exposed it (or the legacy DES3 name) in ``hazmat.primitives``.
+    The fallbacks only apply to non-installed versions, so they are excluded
+    from coverage.
+    """
+    import importlib
+
+    try:
+        module = importlib.import_module("cryptography.hazmat.decrepit.ciphers.algorithms")
+    except ImportError:  # pragma: no cover - only on cryptography < 48
+        module = importlib.import_module("cryptography.hazmat.primitives.ciphers.algorithms")
+    namespace = module.__dict__
+    if "TripleDES" in namespace:
+        return namespace["TripleDES"]
+    return namespace["DES3"]  # pragma: no cover - only on cryptography < 42
+
+
 class AuthProtocol(Enum):
-    """Supported USM authentication protocols."""
+    """Supported USM authentication protocols.
+
+    HMAC-MD5-96 and HMAC-SHA-1-96 (RFC 3414) plus the RFC 7860 HMAC-SHA-2
+    variants (SHA-224/256/384/512). All truncate the digest to 12 octets.
+    """
 
     NONE = "none"
     MD5 = "md5"
     SHA1 = "sha1"
+    SHA224 = "sha224"
     SHA256 = "sha256"
+    SHA384 = "sha384"
+    SHA512 = "sha512"
 
 
 class PrivProtocol(Enum):
-    """Supported USM privacy protocols."""
+    """Supported USM privacy protocols.
+
+    AES-192/AES-256 and 3DES-EDE use the draft-reeder-snmpv3-usm key
+    derivation (Ku extended to the cipher key length before localization);
+    Blumenthal-style variants (RFC 8963) are intentionally deferred and, if
+    added later, must become distinct enum members.
+    """
 
     NONE = "none"
     DES = "des"
     AES128 = "aes128"
+    AES192 = "aes192"
+    AES256 = "aes256"
+    THREEDES_EDE = "3des-ede"
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,15 +145,27 @@ class UsmModel:
     # RFC 3414 §2.6 KDF caches — see _ku() / _localize_key().
     # Ku (engine-independent user key) is derived once per (auth protocol, password);
     # localized keys once per (engine_id, password), invalidated by _adopt_engine_state().
+    # Reeder privacy protocols (AES-192/AES-256/3DES-EDE) derive an *extended* Ku
+    # (24/32 bytes) before localization, so their Ku and localized caches are keyed
+    # by (priv protocol, ...) to stay distinct from the digest-length keys.
     _ku_cache: dict[tuple[AuthProtocol, bytes], bytes] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _reeder_ku_cache: dict[tuple[PrivProtocol, bytes], bytes] = field(
         default_factory=dict, init=False, repr=False
     )
     _localized_cache: dict[tuple[bytes, bytes], bytes] = field(
         default_factory=dict, init=False, repr=False
     )
+    _reeder_localized_cache: dict[tuple[PrivProtocol, bytes, bytes], bytes] = field(
+        default_factory=dict, init=False, repr=False
+    )
     # time.monotonic() reference taken when authoritative engine state was adopted;
     # lets wrap_pdu() advance engineTime between messages without a new discovery probe.
     _monotonic_ref: float | None = field(default=None, init=False, repr=False)
+    # first octet of the last CBC (DES/3DES) privacy salt, to keep consecutive
+    # message IVs distinct per RFC 3414 §8.1.1
+    _last_cbc_salt_first_octet: int | None = field(default=None, init=False, repr=False)
     # set when a usmStatsNotInTimeWindows REPORT was received and adopted
     _engine_recovery_needed: bool = field(default=False, init=False, repr=False)
 
@@ -360,8 +408,14 @@ class UsmModel:
             return lambda data: hashlib.md5(data)  # noqa: S324
         if proto is AuthProtocol.SHA1:
             return lambda data: hashlib.sha1(data)  # noqa: S324
+        if proto is AuthProtocol.SHA224:
+            return lambda data: hashlib.sha224(data)
         if proto is AuthProtocol.SHA256:
             return lambda data: hashlib.sha256(data)
+        if proto is AuthProtocol.SHA384:
+            return lambda data: hashlib.sha384(data)
+        if proto is AuthProtocol.SHA512:
+            return lambda data: hashlib.sha512(data)
         raise ProtocolError(f"Unsupported auth protocol: {proto}")
 
     def _hmac_key(self, engine_id: bytes | None = None) -> bytes:
@@ -382,8 +436,14 @@ class UsmModel:
             alg = "md5"
         elif proto is AuthProtocol.SHA1:
             alg = "sha1"
+        elif proto is AuthProtocol.SHA224:
+            alg = "sha224"
         elif proto is AuthProtocol.SHA256:
             alg = "sha256"
+        elif proto is AuthProtocol.SHA384:
+            alg = "sha384"
+        elif proto is AuthProtocol.SHA512:
+            alg = "sha512"
         else:
             raise ProtocolError(f"Unsupported auth protocol: {proto}")
 
@@ -417,7 +477,7 @@ class UsmModel:
         if not _hmac.compare_digest(expected, received_tag[:_AUTH_TAG_LEN]):
             raise AuthenticationError("USM authentication verification failed")
 
-    # ── priv helpers (stubs — filled in Step 4) ──────────────────────────
+    # ── priv helpers ─────────────────────────────────────────────────────
 
     def _encrypt_scoped_pdu(
         self, scoped_bytes: bytes, engine: UsmLocalEngine
@@ -432,6 +492,16 @@ class UsmModel:
                 engine.engine_boots,
                 engine.engine_time,
             )
+        if proto in {PrivProtocol.AES192, PrivProtocol.AES256}:
+            return self._encrypt_aes_cfb(
+                self._priv_key_length(),
+                scoped_bytes,
+                engine.engine_id,
+                engine.engine_boots,
+                engine.engine_time,
+            )
+        if proto is PrivProtocol.THREEDES_EDE:
+            return self._encrypt_3des_ede(scoped_bytes, engine.engine_id)
         if proto is PrivProtocol.DES:
             return self._encrypt_des(scoped_bytes)
         raise ProtocolError(f"Unsupported priv protocol: {proto}")
@@ -451,6 +521,17 @@ class UsmModel:
             return self._decrypt_aes128(
                 msg_data, priv_params, engine_id, msg_engine_boots, msg_engine_time
             )
+        if proto in {PrivProtocol.AES192, PrivProtocol.AES256}:
+            return self._decrypt_aes_cfb(
+                self._priv_key_length(),
+                msg_data,
+                priv_params,
+                engine_id,
+                msg_engine_boots,
+                msg_engine_time,
+            )
+        if proto is PrivProtocol.THREEDES_EDE:
+            return self._decrypt_3des_ede(msg_data, priv_params, engine_id)
         if proto is PrivProtocol.DES:
             return self._decrypt_des(msg_data, priv_params)
         raise ProtocolError(f"Unsupported priv protocol: {proto}")
@@ -462,13 +543,34 @@ class UsmModel:
         engine_boots: int,
         engine_time: int,
     ) -> tuple[bytes, bytes]:
+        """AES-128-CFB variant of the shared CFB path."""
+        return self._encrypt_aes_cfb(16, plaintext, engine_id, engine_boots, engine_time)
+
+    def _encrypt_aes_cfb(
+        self,
+        key_length: int,
+        plaintext: bytes,
+        engine_id: bytes,
+        engine_boots: int,
+        engine_time: int,
+    ) -> tuple[bytes, bytes]:
+        """Encrypt a ScopedPDU with AES-CFB using a *key_length*-byte key.
+
+        AES-128/192/256 share the exact wire format (RFC 3826 §3): the
+        privacyParameters are an 8-octet random salt, and the 16-octet IV is
+        ``engineBoots || engineTime || salt``.
+        """
         import os
         import struct
         import warnings
 
         from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-        aes_key = self._priv_key_aes128(engine_id)
+        aes_key = self._priv_key(engine_id)
+        if len(aes_key) != key_length:
+            raise ProtocolError(
+                f"AES-{key_length * 8} privacy key must be {key_length} octets, got {len(aes_key)}"
+            )
         local_iv = os.urandom(8)
         iv = struct.pack(">I", engine_boots) + struct.pack(">I", engine_time) + local_iv
         with warnings.catch_warnings():
@@ -488,6 +590,20 @@ class UsmModel:
         msg_engine_boots: int,
         msg_engine_time: int,
     ) -> bytes:
+        """AES-128-CFB variant of the shared CFB path."""
+        return self._decrypt_aes_cfb(
+            16, msg_data, priv_params, engine_id, msg_engine_boots, msg_engine_time
+        )
+
+    def _decrypt_aes_cfb(
+        self,
+        key_length: int,
+        msg_data: bytes,
+        priv_params: bytes,
+        engine_id: bytes,
+        msg_engine_boots: int,
+        msg_engine_time: int,
+    ) -> bytes:
         import struct
         import warnings
 
@@ -500,10 +616,11 @@ class UsmModel:
             raise ProtocolError(f"Expected encryptedPDU OCTET STRING, found 0x{tag:02x}")
         if len(priv_params) != 8:
             raise ProtocolError(
-                f"AES-128 privacyParameters must be exactly 8 octets, got {len(priv_params)}"
+                f"AES-{key_length * 8} privacyParameters must be exactly 8 octets, "
+                f"got {len(priv_params)}"
             )
 
-        aes_key = self._priv_key_aes128(engine_id)
+        aes_key = self._priv_key(engine_id)
         local_iv = priv_params[:8]
         # IV uses boots/time from the inbound message header, not the cached local state.
         iv = struct.pack(">I", msg_engine_boots) + struct.pack(">I", msg_engine_time) + local_iv
@@ -513,12 +630,77 @@ class UsmModel:
         dec = cipher.decryptor()
         return dec.update(ciphertext) + dec.finalize()
 
+    def _encrypt_3des_ede(self, plaintext: bytes, engine_id: bytes) -> tuple[bytes, bytes]:
+        """Encrypt a ScopedPDU with 3DES-EDE-CBC (draft-reeder usm3DESEDEPrivProtocol).
+
+        The 32-octet localized key splits into a 24-octet 3DES-EDE key and an
+        8-octet pre-IV; the CBC IV is ``pre-IV XOR salt`` where *salt* is the
+        8-octet privacyParameters.  The plaintext uses PKCS#7 padding (the
+        RFC 3414 DES-CBC scheme inherited by the draft).
+        """
+        from cryptography.hazmat.primitives.ciphers import Cipher, modes
+        from cryptography.hazmat.primitives.padding import PKCS7
+
+        from trishul_snmp.wire.ber import encode_tlv as _enc_tlv
+
+        des3 = _import_3des_algorithm()
+        key_material = self._priv_key(engine_id)
+        des_key = key_material[:24]
+        pre_iv = key_material[24:32]
+        salt = self._fresh_cbc_salt()
+        iv = bytes(a ^ b for a, b in zip(pre_iv, salt, strict=True))
+        padder = PKCS7(64).padder()
+        padded = padder.update(plaintext) + padder.finalize()
+        cipher = Cipher(des3(des_key), modes.CBC(iv))
+        enc = cipher.encryptor()
+        ciphertext = enc.update(padded) + enc.finalize()
+        return salt, _enc_tlv(0x04, ciphertext)
+
+    def _decrypt_3des_ede(self, msg_data: bytes, priv_params: bytes, engine_id: bytes) -> bytes:
+        from cryptography.hazmat.primitives.ciphers import Cipher, modes
+        from cryptography.hazmat.primitives.padding import PKCS7
+
+        from trishul_snmp.wire.ber import decode_tlv as _dec_tlv
+
+        des3 = _import_3des_algorithm()
+        tag, ciphertext, _ = _dec_tlv(msg_data, 0)
+        if tag != 0x04:
+            raise ProtocolError(f"Expected encryptedPDU OCTET STRING, found 0x{tag:02x}")
+        if len(priv_params) != 8:
+            raise ProtocolError(
+                f"3DES-EDE privacyParameters must be exactly 8 octets, got {len(priv_params)}"
+            )
+        key_material = self._priv_key(engine_id)
+        des_key = key_material[:24]
+        pre_iv = key_material[24:32]
+        iv = bytes(a ^ b for a, b in zip(pre_iv, priv_params, strict=True))
+        cipher = Cipher(des3(des_key), modes.CBC(iv))
+        dec = cipher.decryptor()
+        padded = dec.update(ciphertext) + dec.finalize()
+        unpadder = PKCS7(64).unpadder()
+        try:
+            return unpadder.update(padded) + unpadder.finalize()
+        except ValueError:
+            # A wrong privacy key (or corruption) yields undecodable plaintext;
+            # leave the padding in place so the ScopedPDU decode rejects the
+            # message and unwrap_message() returns None, matching the AES paths.
+            return padded
+
     def _priv_key_aes128(self, engine_id: bytes) -> bytes:
         """Derive the 16-byte AES-128 privacy key (first 16 bytes of the localized priv key)."""
-        if self.user.priv_key:
-            raw = self._localize_priv_key(self.user.priv_key, engine_id)
-            return raw[:16]
-        raise ProtocolError("AES-128 privacy requires a priv_key")
+        return self._priv_key(engine_id)
+
+    def _priv_key(self, engine_id: bytes) -> bytes:
+        """Localized privacy key for the configured protocol, at its full key length."""
+        if not self.user.priv_key:
+            raise ProtocolError(f"{self.user.priv_protocol.name} privacy requires a priv_key")
+        if self.user.priv_protocol in {
+            PrivProtocol.AES192,
+            PrivProtocol.AES256,
+            PrivProtocol.THREEDES_EDE,
+        }:
+            return self._localize_priv_key_reeder(self.user.priv_key, engine_id)
+        return self._localize_priv_key(self.user.priv_key, engine_id)[:16]
 
     def _localize_priv_key(self, password: bytes, engine_id: bytes) -> bytes:
         """Localize a priv passphrase using the same cached RFC 3414 KDF as the auth key."""
@@ -526,11 +708,94 @@ class UsmModel:
             raise ProtocolError("Cannot derive priv key without an auth protocol")
         return self._localize_key(password, engine_id)
 
+    def _priv_key_length(self) -> int:
+        """Required localized privacy key length for the configured protocol."""
+        proto = self.user.priv_protocol
+        if proto in {PrivProtocol.AES128, PrivProtocol.DES}:
+            return 16
+        if proto is PrivProtocol.AES192:
+            return 24
+        if proto in {PrivProtocol.AES256, PrivProtocol.THREEDES_EDE}:
+            return 32
+        raise ProtocolError(f"Unsupported priv protocol: {proto}")
+
+    def _extend_reeder_key(self, key: bytes, length: int) -> bytes:
+        """Reeder key extension: repeatedly append H(accumulated key) up to *length*.
+
+        draft-reeder-snmpv3-usm extends the engine-independent Ku *before*
+        localization by hashing the accumulated key material and appending the
+        digest until the target length is reached, truncating at the end.
+        """
+        if len(key) >= length:
+            return key[:length]
+        extended = bytearray(key)
+        h = self._hash_engine()
+        while len(extended) < length:
+            extended.extend(h(bytes(extended)).digest())
+        return bytes(extended[:length])
+
+    def _reeder_ku(self, password: bytes) -> bytes:
+        """Reeder-extended engine-independent user key (24/32 bytes), cached.
+
+        The cache key includes the priv protocol because the extension length
+        depends on it — the extended Ku must not collide with the digest-length
+        Ku cached under (auth protocol, password).
+        """
+        cache_key = (self.user.priv_protocol, password)
+        cached = self._reeder_ku_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        extended = self._extend_reeder_key(self._ku(password), self._priv_key_length())
+        self._reeder_ku_cache[cache_key] = extended
+        return extended
+
+    def _localize_priv_key_reeder(self, password: bytes, engine_id: bytes) -> bytes:
+        """Localize a Reeder privacy key: extend Ku, localize, extend to length.
+
+        RFC 3414 §2.6 localization applied to the extended Ku, with the result
+        extended again when the auth digest is shorter than the cipher key.
+        """
+        if self.user.auth_protocol is AuthProtocol.NONE:
+            raise ProtocolError("Cannot derive priv key without an auth protocol")
+        cache_key = (self.user.priv_protocol, engine_id, password)
+        cached = self._reeder_localized_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        ku = self._reeder_ku(password)
+        localized = self._hash_engine()(ku + engine_id + ku).digest()
+        extended = self._extend_reeder_key(localized, self._priv_key_length())
+        self._reeder_localized_cache[cache_key] = extended
+        return extended
+
+    def _fresh_cbc_salt(self) -> bytes:
+        """8-octet random salt whose first octet differs from the previous message's.
+
+        RFC 3414 §8.1.1 and draft-reeder require the first salt octet to change
+        between successive CBC messages so the IV (pre-IV XOR salt) cannot be
+        reused.
+        """
+        import os
+
+        salt = os.urandom(8)
+        last = self._last_cbc_salt_first_octet
+        if last is not None and salt[0] == last:
+            salt = bytes([salt[0] ^ 0x01]) + salt[1:]
+        self._last_cbc_salt_first_octet = salt[0]
+        return salt
+
     def _encrypt_des(self, plaintext: bytes) -> tuple[bytes, bytes]:
-        raise ProtocolError("DES-CBC is not supported; use AES-128 or upgrade to cryptography>=42")
+        raise ProtocolError(
+            "DES-CBC privacy requires a single-DES primitive, which the installed "
+            "cryptography package no longer exposes (DES/DES3 removed in cryptography 42); "
+            "use AES-128-CFB or AES-192/256 instead"
+        )
 
     def _decrypt_des(self, ciphertext: bytes, priv_params: bytes) -> bytes:
-        raise ProtocolError("DES-CBC is not supported; use AES-128 or upgrade to cryptography>=42")
+        raise ProtocolError(
+            "DES-CBC privacy requires a single-DES primitive, which the installed "
+            "cryptography package no longer exposes (DES/DES3 removed in cryptography 42); "
+            "use AES-128-CFB or AES-192/256 instead"
+        )
 
     # ── discovery helpers ─────────────────────────────────────────────────
 
@@ -605,6 +870,7 @@ class UsmModel:
         """
         if engine_id != self._peer_engine_id or boots != self._peer_engine_boots:
             self._localized_cache.clear()
+            self._reeder_localized_cache.clear()
         self._peer_engine_id = engine_id
         self._peer_engine_boots = boots
         self._peer_engine_time = engine_time

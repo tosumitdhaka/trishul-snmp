@@ -49,9 +49,11 @@ Deliberately out of scope:
 - SNMPv1
 - full agent or writable responder behavior
 
-Current CLI coverage includes SNMPv2c plus SNMPv3 `get`, `getnext`, `getbulk`,
-`walk`, `bulkwalk`, `trap`, `inform`, `listen`, and `decode-notification` via
-explicit `--snmp-version {2c,3}` selection. SNMPv3 `listen` requires explicit
+Current CLI coverage includes SNMPv1, SNMPv2c, plus SNMPv3 `get`, `getnext`,
+`getbulk`, `walk`, `bulkwalk`, `trap`, `inform`, `listen`, and `decode-notification`
+via explicit `--snmp-version {1,2c,3}` selection (SNMPv1 covers `get`, `getnext`,
+`walk`, `trap`, `listen`, and `decode-notification`; it has no informs or getbulk —
+`getbulk`/`bulkwalk` downgrade to GETNEXT loops). SNMPv3 `listen` requires explicit
 `--local-engine-*` values, and SNMPv3 `decode-notification` requires explicit
 user/auth/priv inputs.
 

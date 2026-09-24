@@ -19,6 +19,8 @@ from trishul_snmp.cli.common import (
     parse_notification_varbinds,
     parse_snmp_value,
     resolve_oid_target,
+    validate_inform_version,
+    validate_trap_version_flags,
 )
 from trishul_snmp.security.usm import AuthProtocol, PrivProtocol
 from trishul_snmp.types import (
@@ -258,6 +260,195 @@ def test_parse_cli_security_rejects_missing_env_secret(monkeypatch) -> None:
                 auth_key_env="TSNMP_AUTH",
             )
         )
+
+
+def test_parse_cli_security_builds_v1_community() -> None:
+    parsed = parse_cli_security(_security_args(snmp_version="1", community="private"))
+
+    assert isinstance(parsed, V2cCliSecurity)
+    assert parsed.community == "private"
+    assert parsed.version == "1"
+
+
+def test_parse_cli_security_v1_defaults_to_public_community() -> None:
+    parsed = parse_cli_security(_security_args(snmp_version="1"))
+
+    assert isinstance(parsed, V2cCliSecurity)
+    assert parsed.community == "public"
+    assert parsed.version == "1"
+
+
+def test_parse_cli_security_rejects_v3_flags_with_v1() -> None:
+    with pytest.raises(ValueError, match="--username is invalid with --snmp-version 1"):
+        parse_cli_security(_security_args(snmp_version="1", username="alice"))
+    with pytest.raises(ValueError, match="--context-name is invalid with --snmp-version 1"):
+        parse_cli_security(_security_args(snmp_version="1", context_name="alerts"))
+    with pytest.raises(
+        ValueError, match=r"--local-engine-\* options are invalid with --snmp-version 1"
+    ):
+        parse_cli_security(
+            _security_args(
+                snmp_version="1",
+                local_engine_id="8000010203",
+                local_engine_boots=1,
+                local_engine_time=2,
+            )
+        )
+
+
+def test_parse_listener_cli_security_accepts_v1_community_listener() -> None:
+    parsed = parse_listener_cli_security(
+        _listener_security_args(snmp_version="1", communities=["public"])
+    )
+
+    assert isinstance(parsed, V2cListenerCliSecurity)
+    assert parsed.communities == ("public",)
+
+
+def test_parse_listener_cli_security_rejects_v3_flags_with_v1() -> None:
+    with pytest.raises(ValueError, match="--auth-protocol is invalid with --snmp-version 1"):
+        parse_listener_cli_security(_listener_security_args(snmp_version="1", auth_protocol="md5"))
+
+
+def test_parse_decode_notification_user_accepts_v1_without_credentials() -> None:
+    assert parse_decode_notification_user(_decode_security_args(snmp_version="1")) is None
+
+
+def test_parse_decode_notification_user_rejects_v3_flags_with_v1() -> None:
+    with pytest.raises(ValueError, match="--username is invalid with --snmp-version 1"):
+        parse_decode_notification_user(_decode_security_args(snmp_version="1", username="alice"))
+
+
+@pytest.mark.parametrize(
+    ("auth_choice", "protocol"),
+    [
+        ("sha224", AuthProtocol.SHA224),
+        ("sha384", AuthProtocol.SHA384),
+        ("sha512", AuthProtocol.SHA512),
+    ],
+)
+def test_parse_cli_security_supports_sha2_auth_choices(auth_choice: str, protocol) -> None:
+    parsed = parse_cli_security(
+        _security_args(
+            snmp_version="3",
+            username="alice",
+            auth_protocol=auth_choice,
+            auth_key="secret",
+        )
+    )
+
+    assert isinstance(parsed, V3CliSecurity)
+    assert parsed.user.auth_protocol is protocol
+
+
+@pytest.mark.parametrize(
+    ("priv_choice", "protocol"),
+    [
+        ("aes192", PrivProtocol.AES192),
+        ("aes256", PrivProtocol.AES256),
+        ("3des-ede", PrivProtocol.THREEDES_EDE),
+    ],
+)
+def test_parse_cli_security_supports_reeder_priv_choices(priv_choice: str, protocol) -> None:
+    parsed = parse_cli_security(
+        _security_args(
+            snmp_version="3",
+            username="alice",
+            auth_protocol="md5",
+            auth_key="secret",
+            priv_protocol=priv_choice,
+            priv_key="priv-secret",
+        )
+    )
+
+    assert isinstance(parsed, V3CliSecurity)
+    assert parsed.user.priv_protocol is protocol
+
+
+def test_parse_cli_security_rejects_des_priv_at_cli_level() -> None:
+    with pytest.raises(ValueError, match="single-DES primitive"):
+        parse_cli_security(
+            _security_args(
+                snmp_version="3",
+                username="alice",
+                auth_protocol="md5",
+                auth_key="secret",
+                priv_protocol="des",
+                priv_key="priv-secret",
+            )
+        )
+
+
+def _trap_args(**overrides: object) -> argparse.Namespace:
+    data: dict[str, object] = {
+        "snmp_version": "2c",
+        "notification": "1.3.6.1.6.3.1.1.5.3",
+        "uptime": 0,
+        "enterprise": None,
+        "agent_addr": None,
+        "generic_trap": None,
+        "specific_trap": None,
+        "timestamp": None,
+    }
+    data.update(overrides)
+    return argparse.Namespace(**data)
+
+
+def test_validate_trap_version_flags_passes_v1_with_enterprise() -> None:
+    validate_trap_version_flags(
+        _trap_args(
+            snmp_version="1",
+            notification=None,
+            enterprise="1.3.6.1.4.1.999",
+        )
+    )
+
+
+def test_validate_trap_version_flags_rejects_v1_without_enterprise() -> None:
+    with pytest.raises(ValueError, match="--enterprise is required with --snmp-version 1"):
+        validate_trap_version_flags(_trap_args(snmp_version="1", notification=None))
+
+
+def test_validate_trap_version_flags_rejects_v1_positional_target() -> None:
+    with pytest.raises(ValueError, match="positional notification OID is invalid"):
+        validate_trap_version_flags(_trap_args(snmp_version="1", enterprise="1.3.6.1.4.1.999"))
+
+
+def test_validate_trap_version_flags_rejects_v1_uptime() -> None:
+    with pytest.raises(ValueError, match="--uptime is invalid with --snmp-version 1"):
+        validate_trap_version_flags(
+            _trap_args(
+                snmp_version="1",
+                notification=None,
+                enterprise="1.3.6.1.4.1.999",
+                uptime=55,
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("flag", "name"),
+    [
+        ("enterprise", "--enterprise"),
+        ("agent_addr", "--agent-addr"),
+        ("generic_trap", "--generic-trap"),
+        ("specific_trap", "--specific-trap"),
+        ("timestamp", "--timestamp"),
+    ],
+)
+def test_validate_trap_version_flags_rejects_v1_flags_with_v2c(flag: str, name: str) -> None:
+    with pytest.raises(ValueError, match=f"{name} requires --snmp-version 1"):
+        validate_trap_version_flags(_trap_args(**{flag: 1}))
+
+
+def test_validate_inform_version_passes_for_v2c_and_v3() -> None:
+    validate_inform_version(_trap_args(snmp_version="2c"))
+    validate_inform_version(_trap_args(snmp_version="3"))
+
+
+def test_validate_inform_version_rejects_v1() -> None:
+    with pytest.raises(ValueError, match="SNMPv1 has no inform operations — use trap"):
+        validate_inform_version(_trap_args(snmp_version="1"))
 
 
 def test_parse_listener_cli_security_defaults_to_v2c() -> None:

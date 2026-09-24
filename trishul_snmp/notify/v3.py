@@ -1,4 +1,4 @@
-"""Listener-side SNMPv3 notification helpers."""
+"""Listener-side SNMP notification helpers: shared drop taxonomy and v3 verdict mapping."""
 
 from __future__ import annotations
 
@@ -68,6 +68,54 @@ class V3ReceiveVerdict(Enum):
     ENGINE_BOOTS_REPLAY = "engine-boots-replay"
     OUTSIDE_TIME_WINDOW = "outside-time-window"
     DUPLICATE_SALT = "duplicate-salt"
+
+
+class DropReason(Enum):
+    """Shared drop taxonomy for the v2c and v3 notification listeners.
+
+    One member per reason a received datagram is discarded instead of being
+    surfaced as a notification event. The replay/time-window members map
+    one-to-one onto :class:`V3ReceiveVerdict`; the remaining members cover
+    the v2c and v3 decode paths.
+    """
+
+    UNDECODABLE_BER = "undecodable-ber"
+    WRONG_COMMUNITY = "wrong-community"
+    UNSUPPORTED_VERSION = "unsupported-version"
+    WRONG_USER = "wrong-user"
+    NOT_NOTIFICATION = "not-notification"
+    AUTHENTICATION_FAILED = "authentication-failed"
+    ENGINE_BOOTS_REPLAY = "engine-boots-replay"
+    OUTSIDE_TIME_WINDOW = "outside-time-window"
+    DUPLICATE_SALT = "duplicate-salt"
+
+
+def drop_reason_from_verdict(verdict: V3ReceiveVerdict) -> DropReason:
+    """Map a non-``ACCEPT`` :class:`V3ReceiveVerdict` onto the shared taxonomy."""
+    if verdict is V3ReceiveVerdict.ENGINE_BOOTS_REPLAY:
+        return DropReason.ENGINE_BOOTS_REPLAY
+    if verdict is V3ReceiveVerdict.OUTSIDE_TIME_WINDOW:
+        return DropReason.OUTSIDE_TIME_WINDOW
+    if verdict is V3ReceiveVerdict.DUPLICATE_SALT:
+        return DropReason.DUPLICATE_SALT
+    raise ValueError(f"{verdict!r} is not a drop reason")
+
+
+def classify_v3_unmatched(data: bytes, *, user: UsmUser) -> DropReason:
+    """Classify a v3 datagram that decoded to no notification for *user*.
+
+    ``decode_v3_notification_message`` returns ``None`` both when the
+    message names a different user and when it is a well-formed message
+    that is not a notification PDU; this helper picks the drop reason
+    between the two.
+    """
+    try:
+        view = decode_v3_message(data)
+    except ProtocolError:
+        return DropReason.UNDECODABLE_BER
+    if view.usm_params.username != user.username.encode():
+        return DropReason.WRONG_USER
+    return DropReason.NOT_NOTIFICATION
 
 
 @dataclass(frozen=True, slots=True)

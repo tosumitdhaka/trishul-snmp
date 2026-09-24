@@ -103,15 +103,15 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 
 ---
 
-## v0.5.0 — planned
+## v0.5.0 — shipped 2026-09-24
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 1 | SNMPv1 support | planned | `#8`. v1 message/PDU codec, GET/GETNEXT manager operations (GETBULK downgrades to GETNEXT loops), v1 trap send/receive, and `decode_notification` v1 support with enterprise/agent-addr metadata. Pysnmp-replacement blocker; v1 trap receive is the most urgent slice. |
-| 2 | USM crypto parity (Reeder) | planned | `#10`. SHA-224/384/512 auth (RFC 7860), AES-192/256 with Reeder key derivation, and 3DES-EDE. Blumenthal (RFC 8963) variants stay deferred until a concrete deployment requires them. Depends on the v0.4.3 key-derivation caching. |
-| 3 | DES-CBC privacy | planned | `#11`. Implement RFC 3414 §8.1.1 DES-CBC for legacy-device compatibility; the `PrivProtocol.DES` enum currently raises at wire time. Decision recorded on `#11`. |
-| 4 | Listener observability | planned | `#9`. Drop counters, rate-limited warnings, and an `on_error` channel for undecodable and replay-rejected datagrams, with one drop-reason taxonomy shared with the v0.4.3 replay guard. |
-| 5 | Decoder fuzz/property tests and real-agent CI | planned | BER fuzz/property coverage for the untrusted-input decode path plus snmpd-backed integration tests in CI. |
+| 1 | SNMPv1 support | done | `#8`. v1 message/PDU codec (0xa0–0xa4 incl. Trap-PDU), `V1Manager` GET/GETNEXT (GETBULK downgrades to GETNEXT loops), `V1Notifier` trap send, v1 trap receive on the community listener, and `decode_notification` v1 support with enterprise/agent-addr/generic/specific/timestamp metadata on `NotificationEvent`. CLI `--snmp-version 1` across manager/trap/listen/decode. |
+| 2 | USM crypto parity (Reeder) | done | `#10`. SHA-224/384/512 auth (RFC 7860), AES-192/256 with Reeder key derivation, and 3DES-EDE. Blumenthal (RFC 8963) variants stay deferred until a concrete deployment requires them. |
+| 3 | DES-CBC privacy | deferred | `#11`. Attempted, empirically blocked: `cryptography` 48.0.0 exposes no single-DES primitive (TripleDES only) and vendoring crypto is out of the question. `PrivProtocol.DES` and the CLI selection fail fast with accurate errors instead of wire-time surprises. |
+| 4 | Listener observability | done | `#9`. Shared `DropReason` taxonomy (including the v0.4.3 replay verdicts), drop counters, rate-limited warnings, and `on_error` callbacks on both community and v3 listeners. |
+| 5 | Decoder fuzz/property tests and real-agent CI | done | `hypothesis` property/fuzz coverage for the untrusted-input BER decode path (no decoder bugs found: 700+ arbitrary inputs, only `ProtocolError` or clean decodes) plus snmpd-backed integration tests (`-m snmpd`) with a CI job on 127.0.0.1:1161. |
 
 ## Near-term hardening
 
@@ -138,3 +138,4 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 | 9 | Full agent framework or writable responder support | deferred | `v0.2.0` only targets a narrow read-only simulator/responder. |
 | 10 | Native codec experiment | deferred | Pure codec microbenchmarks improved, but end-to-end manager and responder paths did not justify the extra Rust build, packaging, and dual-implementation maintenance cost. Revisit only if a broader native hot-path effort is planned. The v0.4.3 USM key-caching work removed the main end-to-end performance motivation. |
 | 11 | Blumenthal AES-192/256 key derivation (RFC 8963) | deferred | The v0.5.0 crypto-parity work (`#10`) ships the Reeder variants first — dominant in field AES-192/256 device configs. Blumenthal variants are added only if a concrete deployment requires them. |
+| 12 | DES-CBC privacy (single DES) | deferred | Empirically blocked (v0.5.0, `#11`): the `cryptography` backend exposes no single-DES primitive (TripleDES only, in `decrepit`). `PrivProtocol.DES` fails fast with an accurate error; revisit only if a legacy device absolutely requires single-DES and a supported backend appears. |

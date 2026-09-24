@@ -13,6 +13,7 @@ from trishul_snmp import (
     V3Notifier,
 )
 from trishul_snmp.errors import TransportError
+from trishul_snmp.notify.v3 import DropReason
 from trishul_snmp.security.usm import (
     AuthProtocol,
     PrivProtocol,
@@ -516,5 +517,104 @@ def test_v3_notification_listener_does_not_ack_replayed_inform() -> None:
         assert second_event.request_id == 52
         # exactly one ack per accepted inform; the replayed one gets none
         assert len(server.sent) == 2
+
+    asyncio.run(scenario())
+
+
+def test_v3_notification_listener_counts_replay_drops_under_shared_taxonomy() -> None:
+    user = _make_user(level="authPriv")
+    dropped: list[tuple[DropReason, SocketAddress, bytes]] = []
+
+    def on_error(reason: DropReason, addr: SocketAddress, prefix: bytes) -> None:
+        dropped.append((reason, addr, prefix))
+
+    replayed = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=61,
+        local_engine=_make_local_engine(0x91, boots=5, time=100),
+    )
+    fresh = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=62,
+        local_engine=_make_local_engine(0x91, boots=5, time=101),
+    )
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=replayed, source_address=("127.0.0.1", 40070)),
+            _FakeDatagram(data=replayed, source_address=("127.0.0.1", 40071)),
+            _FakeDatagram(data=replayed, source_address=("127.0.0.1", 40072)),
+            _FakeDatagram(data=fresh, source_address=("127.0.0.1", 40073)),
+        ]
+    )
+
+    async def scenario() -> None:
+        listener = V3NotificationListener(
+            user=user,
+            local_engine=_make_local_engine(0x92),
+            on_error=on_error,
+        )
+        listener._server = server  # type: ignore[attr-defined]
+        first_event = await listener.receive()
+        second_event = await listener.receive()
+
+        assert first_event.request_id == 61
+        assert second_event.request_id == 62
+        assert listener.dropped == 2
+        assert listener.drop_counts == {DropReason.DUPLICATE_SALT: 2}
+        assert sum(listener.drop_counts.values()) == listener.dropped
+        assert dropped == [
+            (DropReason.DUPLICATE_SALT, ("127.0.0.1", 40071), replayed[:8]),
+            (DropReason.DUPLICATE_SALT, ("127.0.0.1", 40072), replayed[:8]),
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_v3_notification_listener_counts_decode_and_auth_drops() -> None:
+    user = _make_user(level="authNoPriv", username="good")
+    other_user = _make_user(level="authNoPriv", username="other")
+    peer_engine = _make_local_engine(0x95)
+    valid = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=71,
+        local_engine=peer_engine,
+    )
+    view = decode_v3_message(valid)
+    bad_auth = (
+        valid[: view.auth_params_offset]
+        + bytes([valid[view.auth_params_offset] ^ 0xFF])
+        + valid[view.auth_params_offset + 1 :]
+    )
+    wrong_user = _make_raw_notification(
+        user=other_user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=72,
+        local_engine=peer_engine,
+    )
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=b"not-snmp", source_address=("127.0.0.1", 40080)),
+            _FakeDatagram(data=bad_auth, source_address=("127.0.0.1", 40081)),
+            _FakeDatagram(data=wrong_user, source_address=("127.0.0.1", 40082)),
+            _FakeDatagram(data=valid, source_address=("127.0.0.1", 40083)),
+        ]
+    )
+
+    async def scenario() -> None:
+        listener = V3NotificationListener(user=user, local_engine=_make_local_engine(0x96))
+        listener._server = server  # type: ignore[attr-defined]
+        event = await listener.receive()
+
+        assert event.request_id == 71
+        assert listener.dropped == 3
+        assert listener.drop_counts == {
+            DropReason.UNDECODABLE_BER: 1,
+            DropReason.AUTHENTICATION_FAILED: 1,
+            DropReason.WRONG_USER: 1,
+        }
+        assert sum(listener.drop_counts.values()) == listener.dropped
 
     asyncio.run(scenario())

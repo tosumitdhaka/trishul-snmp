@@ -12,10 +12,10 @@ from trishul_snmp.errors import (
     UnknownOidError,
     UnknownSymbolError,
 )
-from trishul_snmp.manager.client import SnmpManager, V2cManager, V3Manager
+from trishul_snmp.manager.client import SnmpManager, V1Manager, V2cManager, V3Manager
 from trishul_snmp.mib.bundle import MibBundle
 from trishul_snmp.mib.loader import load_bundle
-from trishul_snmp.notify.client import SnmpNotifier, V2cNotifier, V3Notifier
+from trishul_snmp.notify.client import SnmpNotifier, V1Notifier, V2cNotifier, V3Notifier
 from trishul_snmp.notify.events import (
     NotificationEvent,
     NotificationMemberBinding,
@@ -26,6 +26,7 @@ from trishul_snmp.notify.listener import (
     V2cNotificationListener,
     V3NotificationListener,
 )
+from trishul_snmp.notify.v3 import DropReason
 from trishul_snmp.responder.rules import (
     CounterRule,
     RandomNumericRule,
@@ -77,6 +78,7 @@ __all__ = [
     "Counter32Value",
     "Counter64Value",
     "CounterRule",
+    "DropReason",
     "EndOfMibViewValue",
     "ErrorStatus",
     "Gauge32Value",
@@ -120,6 +122,8 @@ __all__ = [
     "UsmLocalEngine",
     "UsmModel",
     "UsmUser",
+    "V1Manager",
+    "V1Notifier",
     "V2cManager",
     "V2cNotificationListener",
     "V2cNotifier",
@@ -133,4 +137,4 @@ __all__ = [
     "load_bundle",
 ]
 
-__version__ = "0.4.3"
+__version__ = "0.5.0"

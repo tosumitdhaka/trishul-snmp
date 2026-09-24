@@ -42,6 +42,13 @@ def render_request_id(request_id: int, *, json_output: bool) -> str:
     return f"request_id={request_id}"
 
 
+def render_v1_trap_timestamp(timestamp: int, *, json_output: bool) -> str:
+    """Render the timestamp returned by an SNMPv1 trap send."""
+    if json_output:
+        return json.dumps({"timestamp": timestamp}, indent=2)
+    return f"timestamp={timestamp}"
+
+
 def render_notification_event(
     event: NotificationEvent,
     *,
@@ -66,6 +73,9 @@ def render_notification_event(
         header.append(f"source={event.source_host}:{event.source_port}")
 
     lines = [" ".join(header)]
+    v1_line = _v1_trap_detail_line(event)
+    if v1_line is not None:
+        lines.append(v1_line)
     detail_line = _notification_detail_line(event, numeric=numeric)
     if detail_line is not None:
         lines.append(detail_line)
@@ -139,7 +149,40 @@ def _notification_payload(event: NotificationEvent) -> dict[str, object]:
         payload["authoritative_engine_boots"] = event.authoritative_engine_boots
     if event.authoritative_engine_time is not None:
         payload["authoritative_engine_time"] = event.authoritative_engine_time
+    if event.enterprise is not None:
+        payload["enterprise"] = ".".join(str(arc) for arc in event.enterprise)
+    if event.agent_addr is not None:
+        payload["agent_addr"] = event.agent_addr
+    if event.generic_trap is not None:
+        payload["generic_trap"] = event.generic_trap
+    if event.specific_trap is not None:
+        payload["specific_trap"] = event.specific_trap
+    if event.timestamp is not None:
+        payload["timestamp"] = event.timestamp
     return payload
+
+
+def _v1_trap_detail_line(event: NotificationEvent) -> str | None:
+    if (
+        event.enterprise is None
+        and event.agent_addr is None
+        and event.generic_trap is None
+        and event.specific_trap is None
+        and event.timestamp is None
+    ):
+        return None
+    details: list[str] = []
+    if event.enterprise is not None:
+        details.append("enterprise=" + ".".join(str(arc) for arc in event.enterprise))
+    if event.agent_addr is not None:
+        details.append(f"agent-addr={event.agent_addr}")
+    if event.generic_trap is not None:
+        details.append(f"generic-trap={event.generic_trap}")
+    if event.specific_trap is not None:
+        details.append(f"specific-trap={event.specific_trap}")
+    if event.timestamp is not None:
+        details.append(f"timestamp={event.timestamp}")
+    return " ".join(details)
 
 
 def _member_binding_payload(binding: NotificationMemberBinding) -> dict[str, object]:

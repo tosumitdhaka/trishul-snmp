@@ -6,6 +6,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.0] — 2026-09-24
+
+### Added
+
+- **SNMPv1 support (#8)** — `V1Manager` (GET/GETNEXT with GETBULK downgraded to GETNEXT loops), `V1Notifier` v1 trap send (enterprise/agent-addr/generic/specific/timestamp), v1 trap receive on the community listener (one allowlist serves both v1 and v2c datagrams), and `decode_notification` v1 support with the trap metadata on `NotificationEvent` and `to_dict()`. CLI: `--snmp-version 1` across manager, trap, listen, and decode-notification commands.
+- **USM crypto parity (#10)** — SHA-224/SHA-384/SHA-512 auth (RFC 7860), AES-192/AES-256 privacy with Reeder key derivation, and 3DES-EDE privacy. Blumenthal (RFC 8963) variants remain deferred.
+- **Listener observability (#9)** — shared `DropReason` taxonomy (including the v0.4.3 replay verdicts), drop counters (`dropped`, `drop_counts`), rate-limited warning logging, and `on_error` callbacks on both the community and v3 listeners.
+- **Decoder fuzz/property tests and snmpd CI** — `hypothesis` property tests asserting the BER decoder never crashes on arbitrary input (no decoder bugs found), plus snmpd-backed live integration tests (`pytest -m snmpd`) with a dedicated CI job.
+
+### Known limitations
+
+- **DES-CBC (#11) remains unimplemented** — empirically blocked: the `cryptography` backend (48.0.0) exposes no single-DES primitive (TripleDES only). `PrivProtocol.DES` and the CLI `--priv-protocol des` selection fail fast with accurate errors instead of wire-time surprises.
+- SNMPv1 has no inform operations; `inform --snmp-version 1` fails fast.
+
+---
+
 ## [0.4.3] — 2026-09-24
 
 ### Fixed
