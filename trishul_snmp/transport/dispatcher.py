@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
 from dataclasses import dataclass
-from itertools import count
 
-from trishul_snmp.errors import ProtocolError, RequestTimeoutError
+from trishul_snmp.errors import AuthenticationError, ProtocolError, RequestTimeoutError
 from trishul_snmp.security.model import SecurityModel
 from trishul_snmp.transport.udp import UdpClient
 from trishul_snmp.wire.pdu import Pdu, PduType, RawVarBind
+
+_REQUEST_ID_MASK = (1 << 31) - 1  # RFC 3412: request-id ranges over 0..2**31 - 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +36,15 @@ class RequestDispatcher:
         self._security = security
         self._timeout = timeout
         self._retries = retries
-        self._request_ids = count(1)
+        self._issued_request_ids: set[int] = set()
+
+    def _new_request_id(self) -> int:
+        """Return an unpredictable nonzero 31-bit ID not in use by a live request."""
+        while True:
+            request_id = int.from_bytes(os.urandom(4), "big") & _REQUEST_ID_MASK
+            if request_id != 0 and request_id not in self._issued_request_ids:
+                self._issued_request_ids.add(request_id)
+                return request_id
 
     def prepare_request(
         self,
@@ -44,7 +55,7 @@ class RequestDispatcher:
         error_index: int = 0,
     ) -> PreparedRequest:
         """Prepare an outbound request without deciding how it will be sent."""
-        request_id = next(self._request_ids)
+        request_id = self._new_request_id()
         pdu = Pdu(
             pdu_type=pdu_type,
             request_id=request_id,
@@ -63,7 +74,10 @@ class RequestDispatcher:
 
     async def receive_response(self, request_id: int) -> Pdu:
         """Wait for a matching response to an earlier prepared request."""
-        return await self._receive_matching_response(request_id)
+        try:
+            return await self._receive_matching_response(request_id)
+        finally:
+            self._issued_request_ids.discard(request_id)
 
     async def send_prepared_request(self, request: PreparedRequest) -> Pdu:
         """Send a prepared request and wait for a matching response."""
@@ -113,9 +127,19 @@ class RequestDispatcher:
         raise last_timeout
 
     async def _receive_matching_response(self, request_id: int) -> Pdu:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._timeout
         while True:
-            data = await self._client.receive(self._timeout)
-            pdu = self._security.unwrap_message(data)
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise RequestTimeoutError("SNMP request timed out waiting for a response")
+            data = await self._client.receive(remaining)
+            try:
+                pdu = self._security.unwrap_message(data)
+            except AuthenticationError:
+                raise
+            except ProtocolError:
+                continue
             if pdu is None:
                 continue
             if pdu.pdu_type != PduType.RESPONSE:

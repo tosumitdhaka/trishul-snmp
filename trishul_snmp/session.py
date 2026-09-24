@@ -73,3 +73,20 @@ class SnmpSession:
     @property
     def lock(self) -> asyncio.Lock:
         return self._lock
+
+    def consume_engine_recovery(self) -> bool:
+        """Return True once when the USM model requests a post-REPORT retry.
+
+        A ``usmStatsNotInTimeWindows`` REPORT is swallowed by the dispatcher as
+        a non-matching datagram, so the pending request ends in a timeout.  The
+        manager consults this flag and re-issues the request once, after the
+        model has adopted the peer's authoritative engine state carried in the
+        report.
+        """
+        from trishul_snmp.security.usm import UsmModel
+
+        security = self._security
+        if isinstance(security, UsmModel) and security.engine_recovery_needed:
+            security.clear_engine_recovery()
+            return True
+        return False

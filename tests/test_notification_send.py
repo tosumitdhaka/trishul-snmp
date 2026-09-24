@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -71,7 +72,7 @@ def _notification_payload() -> dict[object, object]:
 
 
 class FakeUdpClient:
-    def __init__(self, replies: list[bytes | Exception]) -> None:
+    def __init__(self, replies: list[bytes | Exception | Callable[[bytes], bytes]]) -> None:
         self._replies = list(replies)
         self.sent: list[bytes] = []
 
@@ -81,6 +82,8 @@ class FakeUdpClient:
     async def receive(self, timeout: float) -> bytes:
         del timeout
         reply = self._replies.pop(0)
+        if callable(reply):
+            reply = reply(self.sent[-1])
         if isinstance(reply, Exception):
             raise reply
         return reply
@@ -115,10 +118,15 @@ def _inform_response_bytes(*, request_id: int, community: str = "public") -> byt
     )
 
 
+def _echo_inform_response(sent: bytes) -> bytes:
+    request = decode_message(sent)
+    return _inform_response_bytes(request_id=request.pdu.request_id)
+
+
 def _build_notifier(
     *,
     bundle_path: Path | None = None,
-    replies: list[bytes | Exception] | None = None,
+    replies: list[bytes | Exception | Callable[[bytes], bytes]] | None = None,
 ):
     bundle = load_bundle(bundle_path) if bundle_path is not None else None
     notifier = V2cNotifier(host="127.0.0.1", port=162, community="public", bundle=bundle, retries=0)
@@ -177,9 +185,9 @@ def test_v2c_notifier_send_trap_encodes_notification_pdu_and_varbinds() -> None:
     request_id = asyncio.run(scenario())
     message = decode_message(fake_client.sent[0])
 
-    assert request_id == 1
+    assert 0 < request_id < 2**31
     assert message.pdu.pdu_type is PduType.SNMPV2_TRAP
-    assert message.pdu.request_id == 1
+    assert message.pdu.request_id == request_id
     assert message.pdu.varbinds[0].oid == (1, 3, 6, 1, 2, 1, 1, 3, 0)
     assert message.pdu.varbinds[0].value == TimeTicksValue(123)
     assert message.pdu.varbinds[1].oid == (1, 3, 6, 1, 6, 3, 1, 1, 4, 1, 0)
@@ -200,7 +208,7 @@ def test_v2c_notifier_send_trap_supports_symbolic_targets_with_bundle(tmp_path: 
     request_id = asyncio.run(scenario())
     message = decode_message(fake_client.sent[0])
 
-    assert request_id == 1
+    assert 0 < request_id < 2**31
     assert message.pdu.pdu_type is PduType.SNMPV2_TRAP
     assert message.pdu.varbinds[1].value == ObjectIdentifierValue((1, 3, 6, 1, 6, 3, 1, 1, 5, 3))
     assert message.pdu.varbinds[2].oid == (1, 3, 6, 1, 2, 1, 2, 2, 1, 1, 7)
@@ -208,7 +216,7 @@ def test_v2c_notifier_send_trap_supports_symbolic_targets_with_bundle(tmp_path: 
 
 
 def test_v2c_notifier_send_inform_returns_response() -> None:
-    notifier, _ = _build_notifier(replies=[_inform_response_bytes(request_id=1)])
+    notifier, fake_client = _build_notifier(replies=[_echo_inform_response])
 
     async def scenario():
         return await notifier.send_inform(
@@ -220,7 +228,7 @@ def test_v2c_notifier_send_inform_returns_response() -> None:
     response = asyncio.run(scenario())
 
     assert response.error_status is ErrorStatus.NO_ERROR
-    assert response.request_id == 1
+    assert response.request_id == decode_message(fake_client.sent[0]).pdu.request_id
     assert response.varbinds[0].oid == (1, 3, 6, 1, 2, 1, 1, 3, 0)
     assert response.varbinds[2].value == IntegerValue(7)
 

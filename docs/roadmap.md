@@ -87,11 +87,37 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 | 2 | Offline SNMPv3 notification decode | done | `decode_notification(..., user=...)` now performs strict v3 decode, and `tsnmp decode-notification --snmp-version 3` accepts explicit user/auth/priv inputs for offline USM notification analysis. |
 | 3 | Notification event model expansion for v3 | done | `NotificationEvent` now carries additive v3 metadata (`username`, `security_level`, context engine/name, authoritative engine state) while keeping current v2c text/JSON output stable. |
 
+---
+
+## v0.4.3 — shipped 2026-09-24
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | USM session-state fixes | done | `#12`. RFC 3414 key-derivation caching (Ku plus localized keys per user/engine), monotonic engine-time advance after discovery, and `usmStatsNotInTimeWindows` REPORT recovery with engine re-adoption and a single automatic manager retry. authPriv throughput is no longer KDF-bound (previously ~0.073s per message). |
+| 2 | v3 listener replay protection | done | `#13`. RFC 3414 §3.2.7 receive-side checks: engine boots/time window tracking and a bounded per-user salt cache. Replayed traps are dropped and replayed informs are no longer re-ACKed. Drop reasons are plumbed (verdict enum) for the observability work in `#9`. |
+| 3 | Wire codec hardening | done | `#14`. Encode/decode range validation for Counter32/Gauge32/TimeTicks (≤ 2^32-1) and Counter64 (≤ 2^64-1), rejection of non-minimal unsigned BER, `ProtocolError` for OID first/second-arc overflow, and latin-1 fallback for non-UTF-8 community strings. |
+| 4 | Dispatcher robustness | done | `#15`. Malformed datagrams no longer abort in-flight requests (behavior now uniform across v2c and v3 security models), request IDs are urandom-derived per RFC 3412, and per-request deadlines cannot be extended by junk datagrams. |
+| 5 | Bundle schema-version gate | done | `schema_version` above the supported maximum (`1.1`) is rejected at load time (module payloads and `manifest.json`) with an actionable error — the consumer-side half of the documented `tsmi` bundle-compatibility policy. |
+| 6 | `trishul-snmp` CLI entry point | done | Both `tsnmp` and `trishul-snmp` console scripts now install and invoke the same CLI; usage strings reflect the invoked name. |
+| 7 | `trishul-smi 0.5.0` compatibility | done | Full ecosystem validation via `scripts/validate_ecosystem.py` (compile, bundle contract, runtime load, CLI translate, live agent, notification, responder) passes against `trishul-smi 0.5.0`. |
+
+---
+
+## v0.5.0 — planned
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | SNMPv1 support | planned | `#8`. v1 message/PDU codec, GET/GETNEXT manager operations (GETBULK downgrades to GETNEXT loops), v1 trap send/receive, and `decode_notification` v1 support with enterprise/agent-addr metadata. Pysnmp-replacement blocker; v1 trap receive is the most urgent slice. |
+| 2 | USM crypto parity (Reeder) | planned | `#10`. SHA-224/384/512 auth (RFC 7860), AES-192/256 with Reeder key derivation, and 3DES-EDE. Blumenthal (RFC 8963) variants stay deferred until a concrete deployment requires them. Depends on the v0.4.3 key-derivation caching. |
+| 3 | DES-CBC privacy | planned | `#11`. Implement RFC 3414 §8.1.1 DES-CBC for legacy-device compatibility; the `PrivProtocol.DES` enum currently raises at wire time. Decision recorded on `#11`. |
+| 4 | Listener observability | planned | `#9`. Drop counters, rate-limited warnings, and an `on_error` channel for undecodable and replay-rejected datagrams, with one drop-reason taxonomy shared with the v0.4.3 replay guard. |
+| 5 | Decoder fuzz/property tests and real-agent CI | planned | BER fuzz/property coverage for the untrusted-input decode path plus snmpd-backed integration tests in CI. |
+
 ## Near-term hardening
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 1 | Forward-compatibility with future `tsmi` IR version fields | planned | Accept explicit schema/version metadata once upstream lands it without making sidecars mandatory. |
+| 1 | Forward-compatibility with future `tsmi` IR version fields | done | Landed in `v0.4.3`: explicit `schema_version` metadata is read and enforced at load time (accept ≤ `1.1`, reject newer with an actionable error) without making sidecars mandatory. |
 | 2 | Better optional rendering fidelity from bundle metadata | planned | Improve display names and values when metadata is available without moving compiler logic into `tsnmp`. |
 | 3 | Broader live-agent compatibility coverage | planned | Expand UDP integration coverage around walk behavior and device quirks. |
 
@@ -106,10 +132,9 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 | 3 | Public generic JSON normalization layer for non-`tsmi` schemas | deferred | Only add with an explicit adapter contract and real cross-schema use cases. |
 | 4 | `pysnmp` API compatibility layer | deferred | Avoid carrying legacy surface area in `v0.1`. |
 | 5 | Sync wrapper | deferred | Async-first package API remains the primary runtime surface. |
-| 6 | SNMPv1 manager support | deferred | Not required for the initial modern runtime baseline. |
-| 7 | Broader SNMPv3 server-side/runtime work beyond `v0.4.2` | deferred | `v0.4.2` covers the inbound listener and offline decode path. Larger server-side SNMPv3 work such as responder/agent behavior, multi-user listeners, and deeper state-management infrastructure remains follow-on. |
-| 8 | `set` | deferred | Write operations need separate safety and API design. |
-| 9 | Daemon/service packaging for long-running listeners | deferred | Library-level listener and responder APIs exist on main branch; daemonization is still out of scope. |
-| 10 | Full agent framework or writable responder support | deferred | `v0.2.0` only targets a narrow read-only simulator/responder. |
-| 11 | Native codec experiment | deferred | Pure codec microbenchmarks improved, but end-to-end manager and responder paths did not justify the extra Rust build, packaging, and dual-implementation maintenance cost. Revisit only if a broader native hot-path effort is planned. |
-| 12 | DES-CBC privacy (USM) | deferred | DES is a broken cipher (56-bit key). Not present in `cryptography>=41`; the `PrivProtocol.DES` enum value is retained for wire-level identification but `_encrypt_des`/`_decrypt_des` raise `ProtocolError`. Revisit only if required for a legacy-device integration with no alternative. |
+| 6 | Broader SNMPv3 server-side/runtime work beyond `v0.4.2` | deferred | `v0.4.2` covers the inbound listener and offline decode path. Larger server-side SNMPv3 work such as responder/agent behavior, multi-user listeners, and deeper state-management infrastructure remains follow-on. |
+| 7 | `set` | deferred | Write operations need separate safety and API design. |
+| 8 | Daemon/service packaging for long-running listeners | deferred | Library-level listener and responder APIs exist on main branch; daemonization is still out of scope. |
+| 9 | Full agent framework or writable responder support | deferred | `v0.2.0` only targets a narrow read-only simulator/responder. |
+| 10 | Native codec experiment | deferred | Pure codec microbenchmarks improved, but end-to-end manager and responder paths did not justify the extra Rust build, packaging, and dual-implementation maintenance cost. Revisit only if a broader native hot-path effort is planned. The v0.4.3 USM key-caching work removed the main end-to-end performance motivation. |
+| 11 | Blumenthal AES-192/256 key derivation (RFC 8963) | deferred | The v0.5.0 crypto-parity work (`#10`) ships the Reeder variants first — dominant in field AES-192/256 device configs. Blumenthal variants are added only if a concrete deployment requires them. |

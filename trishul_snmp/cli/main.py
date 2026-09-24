@@ -53,10 +53,16 @@ Handler: TypeAlias = Callable[[argparse.Namespace], HandlerResult]
 ResponseOperation: TypeAlias = Callable[[SnmpManager, argparse.Namespace], Awaitable[Response]]
 
 
+def _invoked_prog() -> str:
+    """Report the console-script name the CLI was invoked as, when known."""
+    invoked = Path(sys.argv[0]).name if sys.argv else ""
+    return invoked if invoked in {"tsnmp", "trishul-snmp"} else "tsnmp"
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level argument parser."""
     parser = argparse.ArgumentParser(
-        prog="tsnmp",
+        prog=_invoked_prog(),
         description="Modern SNMP manager runtime CLI with optional compiled-JSON MIB enrichment",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)

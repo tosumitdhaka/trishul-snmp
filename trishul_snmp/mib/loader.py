@@ -15,6 +15,7 @@ from trishul_snmp.mib.registry import (
     _OidIndexEntry,
     normalize_module_payload,
     parse_oid,
+    validate_schema_version,
 )
 from trishul_snmp.types import OID
 
@@ -81,6 +82,13 @@ def _module_paths_from_manifest(bundle_dir: Path, manifest_path: Path) -> tuple[
     manifest = _read_json(manifest_path)
     if not isinstance(manifest, dict):
         raise BundleValidationError("Manifest must be a JSON object", path=manifest_path)
+
+    producer = manifest.get("producer_version")
+    validate_schema_version(
+        manifest.get("schema_version"),
+        path=manifest_path,
+        producer_version=producer if isinstance(producer, str) else None,
+    )
 
     raw_modules = manifest.get("modules")
     if not isinstance(raw_modules, list) or not raw_modules:

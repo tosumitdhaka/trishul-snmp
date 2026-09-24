@@ -37,7 +37,7 @@ def _encode_message_python(message: SnmpMessage) -> bytes:
     content = b"".join(
         [
             _encode_integer(message.version),
-            _encode_octet_string(message.community.encode("utf-8")),
+            _encode_octet_string(_encode_community(message.community)),
             encode_pdu(message.pdu),
         ]
     )
@@ -90,9 +90,17 @@ def _decode_octet_string(data: bytes, offset: int) -> tuple[str, int]:
     if tag != _OCTET_STRING_TAG:
         raise ProtocolError(f"Expected OCTET STRING tag, found 0x{tag:02x}")
     try:
-        return content.decode("utf-8"), new_offset
-    except UnicodeDecodeError as exc:
-        raise ProtocolError("SNMP OCTET STRING contained invalid UTF-8 text") from exc
+        community = content.decode("utf-8")
+    except UnicodeDecodeError:
+        community = content.decode("latin-1")
+    return community, new_offset
+
+
+def _encode_community(community: str) -> bytes:
+    try:
+        return community.encode("utf-8")
+    except UnicodeEncodeError:
+        return community.encode("latin-1")
 
 
 def _reencode_length_prefixed(content: bytes) -> bytes:

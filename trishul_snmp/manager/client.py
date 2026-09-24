@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from types import TracebackType
 from typing import TypeVar
 
+from trishul_snmp.errors import RequestTimeoutError
 from trishul_snmp.manager.operations import (
     build_request_varbinds,
     normalize_targets,
@@ -139,12 +140,25 @@ class SnmpManager:
         oids = normalize_targets(targets, bundle=self._session.bundle)
         raw_varbinds = build_request_varbinds(oids)
         async with self._session.lock:
-            pdu = await self._session.dispatcher.send_pdu(
-                pdu_type,
-                raw_varbinds,
-                error_status=error_status,
-                error_index=error_index,
-            )
+            try:
+                pdu = await self._session.dispatcher.send_pdu(
+                    pdu_type,
+                    raw_varbinds,
+                    error_status=error_status,
+                    error_index=error_index,
+                )
+            except RequestTimeoutError:
+                # A usmStatsNotInTimeWindows REPORT means the peer's engine
+                # clock moved past our cached state; the model adopted the
+                # authoritative state from the report, so retry once.
+                if not self._session.consume_engine_recovery():
+                    raise
+                pdu = await self._session.dispatcher.send_pdu(
+                    pdu_type,
+                    raw_varbinds,
+                    error_status=error_status,
+                    error_index=error_index,
+                )
         return response_from_pdu(pdu, bundle=self._session.bundle)
 
 

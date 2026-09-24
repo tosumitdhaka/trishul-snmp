@@ -6,7 +6,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.4.3] — 2026-09-24
+
+### Fixed
+
+- **USM session state (#12)** — RFC 3414 key derivation is now cached per user/engine instead of re-running the 1 MiB password-to-key loop for every message; engine time advances monotonically after discovery; and a `usmStatsNotInTimeWindows` REPORT now triggers engine re-adoption with a single automatic manager retry instead of leaving the session permanently broken.
+- **v3 listener replay protection (#13)** — the v3 notification path now enforces RFC 3414 §3.2.7 receive checks (engine boots/time window plus a bounded per-user salt cache). Replayed traps are dropped and replayed informs are no longer acknowledged.
+- **Wire codec hardening (#14)** — unsigned integer ranges are validated on encode and decode (Counter32/Gauge32/TimeTicks ≤ 2^32-1, Counter64 ≤ 2^64-1), non-minimal unsigned BER is rejected, OID arc overflow raises `ProtocolError` instead of `ValueError`, and non-UTF-8 community strings round-trip via latin-1 fallback.
+- **Dispatcher robustness (#15)** — malformed datagrams no longer abort in-flight requests for v2c (matching v3 behavior), request IDs are urandom-derived per RFC 3412, and per-request deadlines cannot be extended by junk datagrams.
+
+### Added
+
+- **Bundle schema-version gate** — `schema_version` above the supported maximum (`1.1`) is rejected at load time (module payloads and `manifest.json`) with an actionable error, implementing the consumer-side half of the documented `tsmi` bundle-compatibility policy.
+- **`trishul-snmp` CLI entry point** — the package now installs both `tsnmp` and `trishul-snmp` console scripts targeting the same CLI.
+
+### Changed
+
+- CLI usage strings now display the invoked command name (`tsnmp` or `trishul-snmp`).
+
+### Compatibility
+
+- Validated end-to-end against `trishul-smi 0.5.0` via `scripts/validate_ecosystem.py` (compile, bundle contract, runtime load, CLI translate, live agent, notification, responder).
 
 ---
 

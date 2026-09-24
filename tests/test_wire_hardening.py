@@ -70,20 +70,21 @@ def test_decode_message_rejects_empty_integer_content() -> None:
         decode_message(encoded)
 
 
-def test_decode_message_rejects_invalid_community_text() -> None:
+def test_decode_message_accepts_non_utf8_community_bytes() -> None:
     encoded = encode_tlv(
         0x30,
         b"".join(
             [
                 encode_tlv(0x02, b"\x01"),
-                encode_tlv(0x04, b"\xff"),
+                encode_tlv(0x04, b"\xff\xfe"),
                 _valid_pdu_bytes(),
             ]
         ),
     )
 
-    with pytest.raises(ProtocolError, match="invalid UTF-8"):
-        decode_message(encoded)
+    decoded = decode_message(encoded)
+
+    assert decoded.community == "\xff\xfe"
 
 
 def _valid_message_bytes() -> bytes:

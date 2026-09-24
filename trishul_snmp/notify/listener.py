@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from collections.abc import Sequence
 from types import TracebackType
 
@@ -14,6 +16,8 @@ from trishul_snmp.notify.events import (
 )
 from trishul_snmp.notify.v3 import (
     V3NotificationEnvelope,
+    V3ReceiveVerdict,
+    V3ReplayGuard,
     decode_v3_notification_message,
     encode_discovery_report,
     encode_inform_response,
@@ -24,6 +28,10 @@ from trishul_snmp.transport.udp import UdpServer
 from trishul_snmp.types import SocketAddress
 from trishul_snmp.wire.message import SnmpMessage, decode_message, encode_message
 from trishul_snmp.wire.pdu import Pdu, PduType
+
+logger = logging.getLogger(__name__)
+
+_DROP_LOG_INTERVAL_SECONDS = 5.0
 
 
 class _BaseNotificationListener:
@@ -144,6 +152,8 @@ class V3NotificationListener(_BaseNotificationListener):
         super().__init__(host=host, port=port, bundle=bundle)
         self._user = user
         self._local_engine = local_engine
+        self._replay_guard = V3ReplayGuard()
+        self._drop_log_last: dict[V3ReceiveVerdict, float] = {}
 
     async def receive(self) -> NotificationEvent:
         """Wait for the next matching SNMPv3 trap or inform event."""
@@ -166,6 +176,19 @@ class V3NotificationListener(_BaseNotificationListener):
                 continue
             if envelope is None:
                 continue
+
+            params = envelope.view.usm_params
+            verdict = self._replay_guard.check(
+                engine_id=params.engine_id,
+                engine_boots=params.engine_boots,
+                engine_time=params.engine_time,
+                username=self._user.username,
+                salt=params.priv_params,
+            )
+            if verdict is not V3ReceiveVerdict.ACCEPT:
+                self._log_drop(verdict, envelope)
+                continue
+
             if envelope.pdu.pdu_type is PduType.INFORM_REQUEST:
                 await self._send_inform_ack(envelope, datagram.source_address)
             return notification_event_from_v3_envelope(
@@ -173,6 +196,20 @@ class V3NotificationListener(_BaseNotificationListener):
                 source_address=datagram.source_address,
                 bundle=self._bundle,
             )
+
+    def _log_drop(self, verdict: V3ReceiveVerdict, envelope: V3NotificationEnvelope) -> None:
+        """Rate-limited debug log for dropped datagrams (issue #9 owns the full story)."""
+        now = time.monotonic()
+        last = self._drop_log_last.get(verdict)
+        if last is not None and now - last < _DROP_LOG_INTERVAL_SECONDS:
+            return
+        self._drop_log_last[verdict] = now
+        logger.debug(
+            "Dropping SNMPv3 notification from engine %s for user %s: %s",
+            envelope.view.usm_params.engine_id.hex(),
+            self._user.username,
+            verdict.value,
+        )
 
     async def _send_inform_ack(
         self,

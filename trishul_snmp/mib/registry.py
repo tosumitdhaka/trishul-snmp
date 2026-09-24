@@ -17,6 +17,57 @@ from trishul_snmp.mib.models import MibMemberRef, MibModuleRecord, MibNode, MibT
 from trishul_snmp.types import OID, OidMatch
 
 _SUPPORTED_PRODUCER = "trishul-smi"
+_SUPPORTED_SCHEMA_VERSION = "1.1"
+
+
+def _schema_version_key(value: str) -> tuple[int, ...]:
+    """Parse a dotted numeric schema version into a comparable tuple."""
+    parts = value.split(".")
+    if not parts or any(not part.isdigit() for part in parts):
+        raise ValueError(f"invalid schema version: {value!r}")
+    return tuple(int(part) for part in parts)
+
+
+def validate_schema_version(
+    schema_version: object,
+    *,
+    path: Path,
+    producer_version: str | None = None,
+) -> str | None:
+    """Validate a bundle artifact's schema_version against the supported maximum.
+
+    trishul-smi bumps schema_version only on breaking IR changes, so bundles
+    at or below ``_SUPPORTED_SCHEMA_VERSION`` are accepted and anything newer
+    is rejected as coming from a newer, incompatible producer. Returns the
+    normalized version string, or None when the artifact has no schema_version.
+    """
+    if schema_version is None:
+        return None
+    if not isinstance(schema_version, str) or not schema_version.strip():
+        raise BundleValidationError(
+            "schema_version must be a dotted numeric string",
+            path=path,
+        )
+
+    normalized = schema_version.strip()
+    try:
+        version_key = _schema_version_key(normalized)
+    except ValueError as exc:
+        raise BundleValidationError(
+            f"schema_version {schema_version!r} is not a valid dotted numeric version",
+            path=path,
+        ) from exc
+
+    if version_key <= _schema_version_key(_SUPPORTED_SCHEMA_VERSION):
+        return normalized
+
+    producer_note = f" (producer_version {producer_version})" if producer_version else ""
+    raise BundleValidationError(
+        f"schema_version {schema_version!r} is newer than the supported maximum "
+        f"{_SUPPORTED_SCHEMA_VERSION!r}; the bundle was produced by a newer "
+        f"incompatible trishul-smi{producer_note}",
+        path=path,
+    )
 
 
 def oid_to_string(oid: OID) -> str:
@@ -452,6 +503,16 @@ def normalize_module_payload(payload: object, *, path: Path) -> MibModuleRecord:
             "Module JSON is missing a valid 'generated_by' field",
             path=path,
         )
+    producer_version = (
+        payload.get("producer_version")
+        if isinstance(payload.get("producer_version"), str)
+        else None
+    )
+    schema_version = validate_schema_version(
+        payload.get("schema_version"),
+        path=path,
+        producer_version=producer_version,
+    )
 
     module_record = MibModuleRecord(
         module=module_name,
@@ -460,12 +521,8 @@ def normalize_module_payload(payload: object, *, path: Path) -> MibModuleRecord:
         generated_at=(
             payload.get("generated_at") if isinstance(payload.get("generated_at"), str) else None
         ),
-        schema_version=payload.get("schema_version")
-        if isinstance(payload.get("schema_version"), str)
-        else None,
-        producer_version=payload.get("producer_version")
-        if isinstance(payload.get("producer_version"), str)
-        else None,
+        schema_version=schema_version,
+        producer_version=producer_version,
         imports=normalize_imports(payload.get("imports", {}), path=path),
         objects=normalize_node_map(payload.get("objects", {}), module_name=module_name, path=path),
         notifications=normalize_node_map(

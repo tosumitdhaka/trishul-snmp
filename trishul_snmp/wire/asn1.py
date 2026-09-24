@@ -35,6 +35,10 @@ _NO_SUCH_OBJECT_TAG = 0x80
 _NO_SUCH_INSTANCE_TAG = 0x81
 _END_OF_MIB_VIEW_TAG = 0x82
 
+_UINT32_MAX = (1 << 32) - 1
+_UINT64_MAX = (1 << 64) - 1
+_OID_ARC_MAX = (1 << 32) - 1
+
 
 def encode_value(value: SnmpValueType) -> bytes:
     """Encode an SNMP value object to BER."""
@@ -49,15 +53,27 @@ def encode_value(value: SnmpValueType) -> bytes:
     if isinstance(value, IpAddressValue):
         return encode_tlv(_IP_ADDRESS_TAG, _encode_ip_address(value.value))
     if isinstance(value, Counter32Value):
-        return encode_tlv(_COUNTER32_TAG, _encode_unsigned_integer(value.value))
+        return encode_tlv(
+            _COUNTER32_TAG,
+            _encode_unsigned_integer(value.value, max_value=_UINT32_MAX, field="Counter32"),
+        )
     if isinstance(value, Gauge32Value):
-        return encode_tlv(_GAUGE32_TAG, _encode_unsigned_integer(value.value))
+        return encode_tlv(
+            _GAUGE32_TAG,
+            _encode_unsigned_integer(value.value, max_value=_UINT32_MAX, field="Gauge32"),
+        )
     if isinstance(value, TimeTicksValue):
-        return encode_tlv(_TIMETICKS_TAG, _encode_unsigned_integer(value.value))
+        return encode_tlv(
+            _TIMETICKS_TAG,
+            _encode_unsigned_integer(value.value, max_value=_UINT32_MAX, field="TimeTicks"),
+        )
     if isinstance(value, OpaqueValue):
         return encode_tlv(_OPAQUE_TAG, value.value)
     if isinstance(value, Counter64Value):
-        return encode_tlv(_COUNTER64_TAG, _encode_unsigned_integer(value.value))
+        return encode_tlv(
+            _COUNTER64_TAG,
+            _encode_unsigned_integer(value.value, max_value=_UINT64_MAX, field="Counter64"),
+        )
     if isinstance(value, NoSuchObjectValue):
         return encode_tlv(_NO_SUCH_OBJECT_TAG, b"")
     if isinstance(value, NoSuchInstanceValue):
@@ -84,15 +100,23 @@ def decode_value(data: bytes) -> SnmpValueType:
     if tag == _IP_ADDRESS_TAG:
         return IpAddressValue(_decode_ip_address(content))
     if tag == _COUNTER32_TAG:
-        return Counter32Value(_decode_unsigned_integer(content))
+        return Counter32Value(
+            _decode_unsigned_integer(content, max_value=_UINT32_MAX, field="Counter32")
+        )
     if tag == _GAUGE32_TAG:
-        return Gauge32Value(_decode_unsigned_integer(content))
+        return Gauge32Value(
+            _decode_unsigned_integer(content, max_value=_UINT32_MAX, field="Gauge32")
+        )
     if tag == _TIMETICKS_TAG:
-        return TimeTicksValue(_decode_unsigned_integer(content))
+        return TimeTicksValue(
+            _decode_unsigned_integer(content, max_value=_UINT32_MAX, field="TimeTicks")
+        )
     if tag == _OPAQUE_TAG:
         return OpaqueValue(content)
     if tag == _COUNTER64_TAG:
-        return Counter64Value(_decode_unsigned_integer(content))
+        return Counter64Value(
+            _decode_unsigned_integer(content, max_value=_UINT64_MAX, field="Counter64")
+        )
     if tag == _NO_SUCH_OBJECT_TAG:
         _require_empty(content, tag=tag)
         return NoSuchObjectValue()
@@ -124,9 +148,16 @@ def _decode_signed_integer(content: bytes) -> int:
     return int.from_bytes(content, "big", signed=True)
 
 
-def _encode_unsigned_integer(value: int) -> bytes:
+def _encode_unsigned_integer(
+    value: int,
+    *,
+    max_value: int | None = None,
+    field: str = "Unsigned integer",
+) -> bytes:
     if value < 0:
         raise ProtocolError("Unsigned SNMP values cannot be negative")
+    if max_value is not None and value > max_value:
+        raise ProtocolError(f"{field} value {value} exceeds maximum {max_value}")
     if value == 0:
         return b"\x00"
     encoded = value.to_bytes((value.bit_length() + 7) // 8, "big")
@@ -135,24 +166,36 @@ def _encode_unsigned_integer(value: int) -> bytes:
     return encoded
 
 
-def _decode_unsigned_integer(content: bytes) -> int:
+def _decode_unsigned_integer(
+    content: bytes,
+    *,
+    max_value: int | None = None,
+    field: str = "Unsigned integer",
+) -> int:
     if not content:
         raise ProtocolError("Unsigned integer content cannot be empty")
-    return int.from_bytes(content, "big", signed=False)
+    value = int.from_bytes(content, "big", signed=False)
+    if content != _encode_unsigned_integer(value):
+        raise ProtocolError(f"{field} content is not minimally encoded")
+    if max_value is not None and value > max_value:
+        raise ProtocolError(f"{field} value {value} exceeds maximum {max_value}")
+    return value
 
 
 def _encode_oid(oid: tuple[int, ...]) -> bytes:
     if len(oid) < 2:
         raise ProtocolError("OBJECT IDENTIFIER requires at least two arcs")
-    if oid[0] > 2:
+    if oid[0] < 0 or oid[0] > 2:
         raise ProtocolError("First OID arc must be 0, 1, or 2")
-    if oid[0] < 2 and oid[1] >= 40:
-        raise ProtocolError("Second OID arc must be < 40 when the first arc is 0 or 1")
+    if oid[1] < 0 or oid[1] >= 40:
+        raise ProtocolError("Second OID arc must be < 40 when the first arc is 0, 1, or 2")
 
     content = bytearray([oid[0] * 40 + oid[1]])
     for arc in oid[2:]:
         if arc < 0:
             raise ProtocolError("OID arcs cannot be negative")
+        if arc > _OID_ARC_MAX:
+            raise ProtocolError(f"OID arc {arc} exceeds maximum {_OID_ARC_MAX}")
         content.extend(_encode_base128(arc))
     return bytes(content)
 
@@ -172,6 +215,8 @@ def _decode_oid(content: bytes) -> tuple[int, ...]:
     offset = 1
     while offset < len(content):
         arc, offset = _decode_base128(content, offset)
+        if arc > _OID_ARC_MAX:
+            raise ProtocolError(f"OID subidentifier {arc} exceeds maximum {_OID_ARC_MAX}")
         arcs.append(arc)
     return tuple(arcs)
 

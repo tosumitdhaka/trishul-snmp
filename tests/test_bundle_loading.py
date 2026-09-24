@@ -223,3 +223,75 @@ def test_unknown_symbol_raises_error(tmp_path: Path) -> None:
 
     with pytest.raises(UnknownSymbolError):
         bundle.resolve("IF-MIB::doesNotExist")
+
+
+@pytest.mark.parametrize("schema_version", ["1.1", "1", "1.0"])
+def test_schema_version_at_or_below_maximum_is_accepted(
+    tmp_path: Path, schema_version: str
+) -> None:
+    payload = _if_mib_payload()
+    payload["schema_version"] = schema_version
+    _write_json(tmp_path / "IF-MIB.json", payload)
+
+    bundle = load_bundle(tmp_path / "IF-MIB.json")
+
+    assert bundle.modules["IF-MIB"].schema_version == schema_version
+
+
+def test_missing_schema_version_is_accepted(tmp_path: Path) -> None:
+    payload = _if_mib_payload()
+    assert "schema_version" not in payload
+    _write_json(tmp_path / "IF-MIB.json", payload)
+
+    bundle = load_bundle(tmp_path / "IF-MIB.json")
+
+    assert bundle.modules["IF-MIB"].schema_version is None
+
+
+@pytest.mark.parametrize("schema_version", ["1.2", "2.0"])
+def test_newer_schema_version_is_rejected(tmp_path: Path, schema_version: str) -> None:
+    payload = _if_mib_payload()
+    payload["schema_version"] = schema_version
+    payload["producer_version"] = "9.9.9"
+    _write_json(tmp_path / "IF-MIB.json", payload)
+
+    with pytest.raises(BundleValidationError) as exc_info:
+        load_bundle(tmp_path / "IF-MIB.json")
+
+    message = str(exc_info.value)
+    assert schema_version in message
+    assert "1.1" in message
+    assert "trishul-smi" in message
+    assert "9.9.9" in message
+
+
+@pytest.mark.parametrize("schema_version", ["abc", "", "1.1.0-beta", 2, 1.5])
+def test_malformed_schema_version_is_rejected(tmp_path: Path, schema_version: object) -> None:
+    payload = _if_mib_payload()
+    payload["schema_version"] = schema_version
+    _write_json(tmp_path / "IF-MIB.json", payload)
+
+    with pytest.raises(BundleValidationError):
+        load_bundle(tmp_path / "IF-MIB.json")
+
+
+def test_directory_bundle_rejects_newer_manifest_schema_version(tmp_path: Path) -> None:
+    _write_json(tmp_path / "IF-MIB.json", _if_mib_payload())
+    _write_json(
+        tmp_path / "manifest.json",
+        {
+            "schema_version": "2.0",
+            "producer_version": "9.9.9",
+            "generated_by": "trishul-smi",
+            "generated_at": "2026-05-06T12:00:00Z",
+            "modules": [{"module": "IF-MIB", "file": "IF-MIB.json"}],
+        },
+    )
+
+    with pytest.raises(BundleValidationError) as exc_info:
+        load_bundle(tmp_path)
+
+    message = str(exc_info.value)
+    assert "2.0" in message
+    assert "1.1" in message
+    assert "9.9.9" in message

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import time
+from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
 
 from trishul_snmp.errors import ProtocolError
 from trishul_snmp.security.usm import (
@@ -45,6 +49,168 @@ class V3NotificationEnvelope:
     context_engine_id: bytes
     context_name: bytes
     security_level: str
+
+
+_TIME_WINDOW_SECONDS = 150.0
+_SALT_CACHE_SIZE = 64
+
+
+class V3ReceiveVerdict(Enum):
+    """Receive-side disposition for an inbound SNMPv3 notification.
+
+    ``ACCEPT`` is the only pass verdict; every other member names the reason
+    an RFC 3414 §3.2.7 receive-side check rejected the datagram. The reason
+    stays available to callers (listener logging, future observability) so
+    dropped notifications can be surfaced without re-deriving the cause.
+    """
+
+    ACCEPT = "accept"
+    ENGINE_BOOTS_REPLAY = "engine-boots-replay"
+    OUTSIDE_TIME_WINDOW = "outside-time-window"
+    DUPLICATE_SALT = "duplicate-salt"
+
+
+@dataclass(frozen=True, slots=True)
+class _EngineBaseline:
+    """Snapshot of an authoritative engine's boots/time and its monotonic anchor."""
+
+    engine_boots: int
+    engine_time: int
+    monotonic: float
+
+
+class _SaltCache:
+    """Bounded LRU of recently seen (engine_boots, engine_time, salt) tuples.
+
+    Mirrors the RFC 3414 §3.2.7 privacy salt cache. Entries are keyed by the
+    full (boots, time, salt) tuple so a salt may be legitimately reused once
+    either boots or time advances.
+    """
+
+    __slots__ = ("_entries", "_capacity")
+
+    def __init__(self, capacity: int) -> None:
+        self._entries: OrderedDict[tuple[int, int, bytes], None] = OrderedDict()
+        self._capacity = capacity
+
+    def check_and_record(self, *, engine_boots: int, engine_time: int, salt: bytes) -> bool:
+        """Record *salt* unless already seen for the same boots/time.
+
+        Returns ``True`` when the salt is fresh, ``False`` when the exact
+        (engine_boots, engine_time, salt) tuple was seen before (replay).
+        """
+        key = (engine_boots, engine_time, salt)
+        if key in self._entries:
+            self._entries.move_to_end(key)
+            return False
+        self._entries[key] = None
+        if len(self._entries) > self._capacity:
+            self._entries.popitem(last=False)
+        return True
+
+    def clear(self) -> None:
+        """Drop all recorded salts (called when the engine reboots)."""
+        self._entries.clear()
+
+
+class V3ReplayGuard:
+    """RFC 3414 §3.2.7 receive-side replay and time-window checks.
+
+    Tracks the authoritative engine (boots, time) baseline per engine_id,
+    anchored to :func:`time.monotonic`, plus a bounded per-(engine_id,
+    username) salt cache. Notifications that fail a check are dropped by the
+    caller; the returned :class:`V3ReceiveVerdict` carries the reason.
+    """
+
+    __slots__ = ("_baselines", "_salt_caches", "_time_window", "_salt_cache_size", "_clock")
+
+    def __init__(
+        self,
+        *,
+        time_window: float = _TIME_WINDOW_SECONDS,
+        salt_cache_size: int = _SALT_CACHE_SIZE,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._baselines: dict[bytes, _EngineBaseline] = {}
+        self._salt_caches: dict[tuple[bytes, str], _SaltCache] = {}
+        self._time_window = time_window
+        self._salt_cache_size = salt_cache_size
+        self._clock = clock
+
+    def check(
+        self,
+        *,
+        engine_id: bytes,
+        engine_boots: int,
+        engine_time: int,
+        username: str,
+        salt: bytes,
+    ) -> V3ReceiveVerdict:
+        """Return ``ACCEPT`` for a fresh message, otherwise the drop reason."""
+        verdict = self._check_boots_and_time(
+            engine_id=engine_id,
+            engine_boots=engine_boots,
+            engine_time=engine_time,
+        )
+        if verdict is not V3ReceiveVerdict.ACCEPT:
+            return verdict
+        if salt and not self._check_salt(
+            engine_id=engine_id,
+            username=username,
+            engine_boots=engine_boots,
+            engine_time=engine_time,
+            salt=salt,
+        ):
+            return V3ReceiveVerdict.DUPLICATE_SALT
+        return V3ReceiveVerdict.ACCEPT
+
+    def _check_boots_and_time(
+        self, *, engine_id: bytes, engine_boots: int, engine_time: int
+    ) -> V3ReceiveVerdict:
+        baseline = self._baselines.get(engine_id)
+        if baseline is None:
+            self._baselines[engine_id] = _EngineBaseline(
+                engine_boots=engine_boots,
+                engine_time=engine_time,
+                monotonic=self._clock(),
+            )
+            return V3ReceiveVerdict.ACCEPT
+        if engine_boots < baseline.engine_boots:
+            return V3ReceiveVerdict.ENGINE_BOOTS_REPLAY
+        if engine_boots == baseline.engine_boots:
+            expected_time = baseline.engine_time + (self._clock() - baseline.monotonic)
+            if abs(engine_time - expected_time) > self._time_window:
+                return V3ReceiveVerdict.OUTSIDE_TIME_WINDOW
+            return V3ReceiveVerdict.ACCEPT
+        # engine rebooted: accept and rebase the baseline (and the salt cache)
+        self._baselines[engine_id] = _EngineBaseline(
+            engine_boots=engine_boots,
+            engine_time=engine_time,
+            monotonic=self._clock(),
+        )
+        self._reset_salt_caches(engine_id)
+        return V3ReceiveVerdict.ACCEPT
+
+    def _check_salt(
+        self,
+        *,
+        engine_id: bytes,
+        username: str,
+        engine_boots: int,
+        engine_time: int,
+        salt: bytes,
+    ) -> bool:
+        key = (engine_id, username)
+        cache = self._salt_caches.get(key)
+        if cache is None:
+            cache = _SaltCache(self._salt_cache_size)
+            self._salt_caches[key] = cache
+        return cache.check_and_record(engine_boots=engine_boots, engine_time=engine_time, salt=salt)
+
+    def _reset_salt_caches(self, engine_id: bytes) -> None:
+        for (cached_engine_id, _username), cache in self._salt_caches.items():
+            if cached_engine_id == engine_id:
+                cache.clear()
 
 
 def decode_v3_notification_message(data: bytes, *, user: UsmUser) -> V3NotificationEnvelope | None:

@@ -338,3 +338,183 @@ def test_v3_notification_listener_anext_re_raises_transport_when_not_closed() ->
             await listener.__anext__()
 
     asyncio.run(scenario())
+
+
+def test_v3_notification_listener_drops_replayed_authpriv_trap() -> None:
+    user = _make_user(level="authPriv")
+    replayed = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=11,
+        local_engine=_make_local_engine(0x42, boots=5, time=100),
+    )
+    fresh = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=12,
+        local_engine=_make_local_engine(0x42, boots=5, time=101),
+    )
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=replayed, source_address=("127.0.0.1", 40020)),
+            _FakeDatagram(data=replayed, source_address=("127.0.0.1", 40021)),
+            _FakeDatagram(data=fresh, source_address=("127.0.0.1", 40022)),
+        ]
+    )
+
+    async def scenario() -> None:
+        listener = V3NotificationListener(user=user, local_engine=_make_local_engine(0x43))
+        listener._server = server  # type: ignore[attr-defined]
+        first_event = await listener.receive()
+        second_event = await listener.receive()
+
+        # the identical replay is dropped, only the fresh trap surfaces
+        assert first_event.request_id == 11
+        assert second_event.request_id == 12
+        assert second_event.source_address == ("127.0.0.1", 40022)
+
+    asyncio.run(scenario())
+
+
+def test_v3_notification_listener_accepts_distinct_salts_with_advancing_time() -> None:
+    user = _make_user(level="authPriv")
+    first = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=21,
+        local_engine=_make_local_engine(0x51, boots=5, time=100),
+    )
+    second = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=22,
+        local_engine=_make_local_engine(0x51, boots=5, time=101),
+    )
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=first, source_address=("127.0.0.1", 40030)),
+            _FakeDatagram(data=second, source_address=("127.0.0.1", 40031)),
+        ]
+    )
+
+    async def scenario() -> None:
+        listener = V3NotificationListener(user=user, local_engine=_make_local_engine(0x52))
+        listener._server = server  # type: ignore[attr-defined]
+        first_event = await listener.receive()
+        second_event = await listener.receive()
+
+        assert first_event.request_id == 21
+        assert second_event.request_id == 22
+
+    asyncio.run(scenario())
+
+
+def test_v3_notification_listener_drops_out_of_window_time() -> None:
+    user = _make_user(level="authPriv")
+    first = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=31,
+        local_engine=_make_local_engine(0x61, boots=5, time=100),
+    )
+    stale = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=32,
+        local_engine=_make_local_engine(0x61, boots=5, time=1100),
+    )
+    fresh = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=33,
+        local_engine=_make_local_engine(0x61, boots=5, time=101),
+    )
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=first, source_address=("127.0.0.1", 40040)),
+            _FakeDatagram(data=stale, source_address=("127.0.0.1", 40041)),
+            _FakeDatagram(data=fresh, source_address=("127.0.0.1", 40042)),
+        ]
+    )
+
+    async def scenario() -> None:
+        listener = V3NotificationListener(user=user, local_engine=_make_local_engine(0x62))
+        listener._server = server  # type: ignore[attr-defined]
+        first_event = await listener.receive()
+        second_event = await listener.receive()
+
+        assert first_event.request_id == 31
+        # the out-of-window datagram is dropped, the fresh one surfaces
+        assert second_event.request_id == 33
+
+    asyncio.run(scenario())
+
+
+def test_v3_notification_listener_accepts_higher_boots_reboot() -> None:
+    user = _make_user(level="authPriv")
+    before_reboot = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=41,
+        local_engine=_make_local_engine(0x71, boots=5, time=100),
+    )
+    after_reboot = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=42,
+        local_engine=_make_local_engine(0x71, boots=6, time=100),
+    )
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=before_reboot, source_address=("127.0.0.1", 40050)),
+            _FakeDatagram(data=after_reboot, source_address=("127.0.0.1", 40051)),
+        ]
+    )
+
+    async def scenario() -> None:
+        listener = V3NotificationListener(user=user, local_engine=_make_local_engine(0x72))
+        listener._server = server  # type: ignore[attr-defined]
+        first_event = await listener.receive()
+        second_event = await listener.receive()
+
+        assert first_event.request_id == 41
+        assert second_event.request_id == 42
+
+    asyncio.run(scenario())
+
+
+def test_v3_notification_listener_does_not_ack_replayed_inform() -> None:
+    user = _make_user(level="authPriv")
+    receiver_engine = _make_local_engine(0x81, boots=13, time=456)
+    replayed = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.INFORM_REQUEST,
+        request_id=51,
+        peer_engine=receiver_engine,
+    )
+    fresh = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.INFORM_REQUEST,
+        request_id=52,
+        peer_engine=_make_local_engine(0x81, boots=13, time=457),
+    )
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=replayed, source_address=("127.0.0.1", 40060)),
+            _FakeDatagram(data=replayed, source_address=("127.0.0.1", 40061)),
+            _FakeDatagram(data=fresh, source_address=("127.0.0.1", 40062)),
+        ]
+    )
+
+    async def scenario() -> None:
+        listener = V3NotificationListener(user=user, local_engine=receiver_engine)
+        listener._server = server  # type: ignore[attr-defined]
+        first_event = await listener.receive()
+        second_event = await listener.receive()
+
+        assert first_event.request_id == 51
+        assert second_event.request_id == 52
+        # exactly one ack per accepted inform; the replayed one gets none
+        assert len(server.sent) == 2
+
+    asyncio.run(scenario())

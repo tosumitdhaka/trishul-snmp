@@ -216,7 +216,8 @@ async def test_v3notifier_send_trap_uses_local_engine_state() -> None:
     view = decode_v3_message(request.encoded_message)
     scoped_engine_id, _ctx, pdu = decode_scoped_pdu(view.msg_data_bytes)
 
-    assert request_id == 1
+    assert 0 < request_id < 2**31
+    assert request_id == pdu.request_id
     assert view.usm_params.engine_id == local_engine.engine_id
     assert view.usm_params.engine_boots == local_engine.engine_boots
     assert view.usm_params.engine_time == local_engine.engine_time

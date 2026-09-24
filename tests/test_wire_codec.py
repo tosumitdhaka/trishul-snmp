@@ -59,6 +59,25 @@ def test_snmp_response_message_roundtrip() -> None:
     assert decoded.pdu.varbinds[1].value.value == b"eth0"
 
 
+def test_snmp_message_community_latin1_roundtrip() -> None:
+    message = SnmpMessage(
+        version=1,
+        community="\xff\xfe",
+        pdu=Pdu(
+            pdu_type=PduType.GET,
+            request_id=1,
+            error_status=0,
+            error_index=0,
+            varbinds=(RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 3, 0), value=NullValue()),),
+        ),
+    )
+
+    encoded = encode_message(message)
+    decoded = decode_message(encoded)
+
+    assert decoded.community == "\xff\xfe"
+
+
 def test_raw_varbind_builder_helpers() -> None:
     null_varbinds = build_null_varbinds(((1, 3, 6), (1, 3, 7)))
     explicit_varbinds = build_raw_varbinds(

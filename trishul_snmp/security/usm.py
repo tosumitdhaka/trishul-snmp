@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import hashlib
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
 from trishul_snmp.errors import AuthenticationError, ProtocolError
-from trishul_snmp.wire.pdu import Pdu, PduType
+from trishul_snmp.wire.pdu import Pdu, PduType, RawVarBind
 from trishul_snmp.wire.v3message import (
     MSG_FLAG_AUTH,
     MSG_FLAG_PRIV,
     MSG_FLAG_REPORTABLE,
     UsmParams,
+    V3MessageView,
     decode_v3_message,
     encode_scoped_pdu,
     encode_v3_message,
@@ -25,6 +27,10 @@ if TYPE_CHECKING:
 
 _AUTH_TAG_LEN = 12  # RFC 3414: HMAC truncated to 12 bytes
 _REPORT_PDU_TAG = 0xA8  # SNMPv3 REPORT PDU tag — not in PduType enum
+_SEQUENCE_TAG = 0x30  # BER SEQUENCE tag
+_OCTET_STRING_TAG = 0x04  # BER OCTET STRING tag
+# usmStatsNotInTimeWindows.0 (RFC 3414 §5.2.3)
+_USM_STATS_NOT_IN_TIME_WINDOWS_OID: tuple[int, ...] = (1, 3, 6, 1, 6, 3, 15, 1, 1, 2, 0)
 
 
 def _require_cryptography() -> None:
@@ -99,6 +105,21 @@ class UsmModel:
     _peer_engine_boots: int = field(default=0, init=False, repr=False)
     _peer_engine_time: int = field(default=0, init=False, repr=False)
     _msg_id_counter: int = field(default=0, init=False, repr=False)
+
+    # RFC 3414 §2.6 KDF caches — see _ku() / _localize_key().
+    # Ku (engine-independent user key) is derived once per (auth protocol, password);
+    # localized keys once per (engine_id, password), invalidated by _adopt_engine_state().
+    _ku_cache: dict[tuple[AuthProtocol, bytes], bytes] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _localized_cache: dict[tuple[bytes, bytes], bytes] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    # time.monotonic() reference taken when authoritative engine state was adopted;
+    # lets wrap_pdu() advance engineTime between messages without a new discovery probe.
+    _monotonic_ref: float | None = field(default=None, init=False, repr=False)
+    # set when a usmStatsNotInTimeWindows REPORT was received and adopted
+    _engine_recovery_needed: bool = field(default=False, init=False, repr=False)
 
     # ── SecurityModel protocol ────────────────────────────────────────────
 
@@ -184,6 +205,10 @@ class UsmModel:
         try:
             _engine_id, _ctx, pdu = decode_scoped_pdu(msg_data)
         except ProtocolError:
+            # REPORT PDUs (tag 0xA8) are not in PduType, so decode_scoped_pdu
+            # rejects them.  Surface engine-recovery reports without disturbing
+            # the SecurityModel contract (still returns None here).
+            self._handle_inbound_report(msg_data, view)
             return None
 
         return pdu
@@ -231,6 +256,20 @@ class UsmModel:
         """Whether peer engine discovery has populated authoritative peer state."""
         return bool(self._peer_engine_id)
 
+    @property
+    def engine_recovery_needed(self) -> bool:
+        """Whether a usmStatsNotInTimeWindows REPORT awaits a client-side retry.
+
+        The report is swallowed by the dispatcher as a non-matching datagram,
+        so the manager re-issues the pending request after the model adopts the
+        peer's authoritative engine state carried in the report.
+        """
+        return self._engine_recovery_needed
+
+    def clear_engine_recovery(self) -> None:
+        """Acknowledge engine recovery; subsequent wraps use the adopted state."""
+        self._engine_recovery_needed = False
+
     def _select_outbound_engine(self, pdu_type: PduType) -> UsmLocalEngine:
         if pdu_type is PduType.SNMPV2_TRAP:
             if self.local_engine is None:
@@ -242,24 +281,61 @@ class UsmModel:
         return UsmLocalEngine(
             engine_id=self._peer_engine_id,
             engine_boots=self._peer_engine_boots,
-            engine_time=self._peer_engine_time,
+            engine_time=self._current_engine_time(),
         )
+
+    def _current_engine_time(self) -> int:
+        """Peer engine time now: discovery value plus elapsed monotonic time.
+
+        RFC 3414 §3.2 requires the authoritative engine's current time in every
+        message.  Reusing the discovery value verbatim means a session idle for
+        longer than the agent's ±150 s window is rejected with
+        ``usmStatsNotInTimeWindows`` and never recovers.
+        """
+        if self._monotonic_ref is None:
+            return self._peer_engine_time
+        elapsed = int(time.monotonic() - self._monotonic_ref)
+        return self._peer_engine_time + elapsed
 
     # ── RFC 3414 key derivation ───────────────────────────────────────────
 
-    def _localize_key(self, password: bytes, engine_id: bytes) -> bytes:
-        """Derive a localised key from a passphrase per RFC 3414 §2.6."""
-        if self.user.auth_protocol is AuthProtocol.NONE:
-            raise ProtocolError("Cannot localize key without an auth protocol")
+    def _ku(self, password: bytes) -> bytes:
+        """RFC 3414 §2.6 step 1: engine-independent user key Ku, cached.
+
+        Ku depends only on the auth protocol and the passphrase, so the 1 MiB
+        cyclic-hash loop runs once per (protocol, password) instead of once
+        per message.
+        """
+        cache_key = (self.user.auth_protocol, password)
+        cached = self._ku_cache.get(cache_key)
+        if cached is not None:
+            return cached
         h = self._hash_engine()
-        # Step 1: hash 1 MB of the password repeated cyclically
         buf = bytearray(1048576)
         plen = len(password)
         for i in range(1048576):
             buf[i] = password[i % plen]
         ku = h(bytes(buf)).digest()
-        # Step 2: localise: H(Ku || engineID || Ku)
-        return h(ku + engine_id + ku).digest()
+        self._ku_cache[cache_key] = ku
+        return ku
+
+    def _localize_key(self, password: bytes, engine_id: bytes) -> bytes:
+        """Derive a localised key from a passphrase per RFC 3414 §2.6.
+
+        The localized key is cached per (engine_id, password) and dropped by
+        ``_adopt_engine_state`` whenever the authoritative engine id or boots
+        change.
+        """
+        if self.user.auth_protocol is AuthProtocol.NONE:
+            raise ProtocolError("Cannot localize key without an auth protocol")
+        cache_key = (engine_id, password)
+        cached = self._localized_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        ku = self._ku(password)
+        localized = self._hash_engine()(ku + engine_id + ku).digest()
+        self._localized_cache[cache_key] = localized
+        return localized
 
     def _msg_flags(self, pdu_type: PduType) -> int:
         # RFC 3412 §7.1.9: reportableFlag set only for confirmed-class PDUs.
@@ -445,16 +521,10 @@ class UsmModel:
         raise ProtocolError("AES-128 privacy requires a priv_key")
 
     def _localize_priv_key(self, password: bytes, engine_id: bytes) -> bytes:
-        """Localize a priv passphrase using the same RFC 3414 KDF as the auth key."""
+        """Localize a priv passphrase using the same cached RFC 3414 KDF as the auth key."""
         if self.user.auth_protocol is AuthProtocol.NONE:
             raise ProtocolError("Cannot derive priv key without an auth protocol")
-        h = self._hash_engine()
-        buf = bytearray(1048576)
-        plen = len(password)
-        for i in range(1048576):
-            buf[i] = password[i % plen]
-        ku = h(bytes(buf)).digest()
-        return h(ku + engine_id + ku).digest()
+        return self._localize_key(password, engine_id)
 
     def _encrypt_des(self, plaintext: bytes) -> tuple[bytes, bytes]:
         raise ProtocolError("DES-CBC is not supported; use AES-128 or upgrade to cryptography>=42")
@@ -522,9 +592,43 @@ class UsmModel:
         p = view.usm_params
         if not p.engine_id:
             raise ProtocolError("Engine discovery: REPORT contained empty engineID")
-        self._peer_engine_id = p.engine_id
-        self._peer_engine_boots = p.engine_boots
-        self._peer_engine_time = p.engine_time
+        self._adopt_engine_state(p.engine_id, p.engine_boots, p.engine_time)
+
+    # ── engine-state adoption and report handling ──────────────────────────
+
+    def _adopt_engine_state(self, engine_id: bytes, boots: int, engine_time: int) -> None:
+        """Record authoritative peer engine state and reset the time base.
+
+        Localized keys depend only on engine_id; a change to the engine id or a
+        reported reboot (boots change) invalidates them so the next wrap
+        re-derives against the fresh engine parameters.
+        """
+        if engine_id != self._peer_engine_id or boots != self._peer_engine_boots:
+            self._localized_cache.clear()
+        self._peer_engine_id = engine_id
+        self._peer_engine_boots = boots
+        self._peer_engine_time = engine_time
+        self._monotonic_ref = time.monotonic()
+
+    def _handle_inbound_report(self, msg_data: bytes, view: V3MessageView) -> None:
+        """Adopt peer engine state from a usmStatsNotInTimeWindows REPORT.
+
+        A report carries the peer's authoritative engineBoots/engineTime.
+        Adopting them and resetting the monotonic reference re-synchronises a
+        session that went idle past the agent's ±150 s window, so the retried
+        request succeeds without a full discovery probe.
+        """
+        decoded = _decode_report_scoped(msg_data)
+        if decoded is None:
+            return
+        varbinds, _request_id = decoded
+        if any(varbind.oid == _USM_STATS_NOT_IN_TIME_WINDOWS_OID for varbind in varbinds):
+            self._adopt_engine_state(
+                view.usm_params.engine_id,
+                view.usm_params.engine_boots,
+                view.usm_params.engine_time,
+            )
+            self._engine_recovery_needed = True
 
 
 def _peek_scoped_pdu(msg_data_bytes: bytes) -> tuple[bytes, bytes, int, int]:
@@ -577,6 +681,46 @@ def _validate_report_body(pdu_body: bytes) -> None:
     _, offset = _decode_integer_from(pdu_body, offset)  # error-index
     _, offset = _decode_varbind_list(pdu_body, offset)  # VarBindList
     expect_end(pdu_body, offset)
+
+
+def _decode_report_scoped(msg_data_bytes: bytes) -> tuple[tuple[RawVarBind, ...], int] | None:
+    """Decode a REPORT PDU (tag 0xA8) from a ScopedPDU.
+
+    Returns ``(varbinds, request_id)``, or ``None`` when *msg_data_bytes* is
+    not a structurally valid ScopedPDU wrapping a REPORT PDU.  Used to surface
+    ``usmStatsNotInTimeWindows`` reports that the regular ``decode_pdu`` path
+    rejects because REPORT is not in PduType.
+    """
+    from trishul_snmp.wire.ber import decode_tlv, expect_end
+    from trishul_snmp.wire.pdu import _decode_integer_from, _decode_varbind_list
+
+    try:
+        tag, content, end = decode_tlv(msg_data_bytes, 0)
+        if tag != _SEQUENCE_TAG:
+            return None
+        expect_end(msg_data_bytes, end)
+
+        offset = 0
+        eid_tag, _engine_id, offset = decode_tlv(content, offset)
+        if eid_tag != _OCTET_STRING_TAG:
+            return None
+        ctx_tag, _context_name, offset = decode_tlv(content, offset)
+        if ctx_tag != _OCTET_STRING_TAG:
+            return None
+        pdu_tag, pdu_body, pdu_end = decode_tlv(content, offset)
+        if pdu_tag != _REPORT_PDU_TAG:
+            return None
+        expect_end(content, pdu_end)
+
+        inner = 0
+        request_id, inner = _decode_integer_from(pdu_body, inner)  # request-id
+        _, inner = _decode_integer_from(pdu_body, inner)  # error-status
+        _, inner = _decode_integer_from(pdu_body, inner)  # error-index
+        varbinds, inner = _decode_varbind_list(pdu_body, inner)  # VarBindList
+        expect_end(pdu_body, inner)
+    except ProtocolError:
+        return None
+    return varbinds, request_id
 
 
 def _localize_key_rfc3414(password: bytes, engine_id: bytes, auth_protocol: AuthProtocol) -> bytes:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -990,3 +991,18 @@ def test_cli_run_exits_with_main_status(monkeypatch) -> None:
 def test_handle_translate_requires_bundle() -> None:
     with pytest.raises(ValueError, match="translate requires --bundle"):
         _handle_translate(argparse.Namespace(bundle=None, target="IF-MIB::ifDescr.1"))
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib requires Python 3.11+")
+def test_pyproject_declares_both_console_scripts() -> None:
+    import tomllib
+
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    with pyproject_path.open("rb") as handle:
+        pyproject = tomllib.load(handle)
+
+    scripts = pyproject["project"]["scripts"]
+    assert scripts == {
+        "tsnmp": "trishul_snmp.cli.main:run",
+        "trishul-snmp": "trishul_snmp.cli.main:run",
+    }

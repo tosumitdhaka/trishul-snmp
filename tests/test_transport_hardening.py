@@ -7,12 +7,16 @@ from typing import cast
 import pytest
 
 from trishul_snmp.errors import RequestTimeoutError, TransportError
+from trishul_snmp.security.community import CommunityModel
+from trishul_snmp.transport.dispatcher import RequestDispatcher
 from trishul_snmp.transport.udp import (
     UdpClient,
     UdpServer,
     _QueueingDatagramProtocol,
     _ServerClosed,
 )
+from trishul_snmp.types import NullValue
+from trishul_snmp.wire.pdu import PduType, RawVarBind
 
 
 class _ResolveFailLoop:
@@ -139,6 +143,28 @@ class _BindFailLoop:
     async def create_datagram_endpoint(self, factory, *, local_addr: tuple[str, int]):
         del factory, local_addr
         raise OSError("bind failed")
+
+
+class _JunkThenSilenceClient:
+    """Yields undecodable datagrams at a fixed cadence, then falls silent."""
+
+    def __init__(self, junk_count: int, *, junk_interval: float) -> None:
+        self._junk_remaining = junk_count
+        self._junk_interval = junk_interval
+        self.junk_delivered = 0
+        self.sent: list[bytes] = []
+
+    async def send(self, data: bytes) -> None:
+        self.sent.append(data)
+
+    async def receive(self, timeout: float) -> bytes:
+        if self._junk_remaining > 0:
+            self._junk_remaining -= 1
+            self.junk_delivered += 1
+            await asyncio.sleep(min(timeout, self._junk_interval))
+            return b"\x30\x03\x02\x01\xff"
+        await asyncio.sleep(timeout)
+        raise RequestTimeoutError("timed out")
 
 
 def test_udp_client_open_wraps_resolution_failure(monkeypatch) -> None:
@@ -429,5 +455,28 @@ def test_udp_server_close_sendto_and_receive_cover_error_paths() -> None:
         await server._queue.put(_ServerClosed(RuntimeError("boom")))
         with pytest.raises(TransportError, match="UDP server is closed"):
             await server.receive()
+
+    asyncio.run(scenario())
+
+
+def test_dispatcher_junk_datagrams_cannot_extend_timeout_beyond_deadline() -> None:
+    client = _JunkThenSilenceClient(junk_count=5, junk_interval=0.1)
+    dispatcher = RequestDispatcher(
+        client, security=CommunityModel("public"), timeout=0.3, retries=0
+    )
+
+    async def scenario() -> None:
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        with pytest.raises(RequestTimeoutError, match="timed out"):
+            await dispatcher.send_pdu(
+                PduType.GET,
+                (RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 3, 0), value=NullValue()),),
+            )
+        elapsed = loop.time() - start
+        # Junk datagrams were skipped without resetting the window: the request
+        # times out after ≈ one timeout, not timeout × junk datagrams.
+        assert client.junk_delivered >= 3
+        assert elapsed < 0.6
 
     asyncio.run(scenario())
