@@ -121,27 +121,27 @@ jobs:
       - name: Install snmpd
         run: sudo apt-get update && sudo apt-get install -y snmpd
 
-      - name: Start snmpd on 127.0.0.1:1161
+      - name: Start snmpd and run integration tests
         run: |
           printf 'rocommunity public 127.0.0.1\nagentaddress 127.0.0.1:1161\n' > /tmp/snmpd-test.conf
-          sudo /usr/sbin/snmpd -C -c /tmp/snmpd-test.conf -p /tmp/snmpd-test.pid -Lf /tmp/snmpd-test.log
-
-      - name: Wait for snmpd
-        run: |
+          sudo /usr/sbin/snmpd -C -f -c /tmp/snmpd-test.conf -p /tmp/snmpd-test.pid -Lf /tmp/snmpd-test.log &
           for i in $(seq 1 50); do
             if .venv/bin/tsnmp get --host 127.0.0.1 --port 1161 --community public \
-                --timeout 0.3 --retries 0 1.3.6.1.2.1.1.3.0 >/dev/null 2>&1; then
-              exit 0
+                --timeout 0.5 --retries 1 1.3.6.1.2.1.1.3.0 >/dev/null 2>&1; then
+              echo "snmpd reachable (attempt $i)"
+              break
+            fi
+            if [ "$i" -eq 50 ]; then
+              echo "=== snmpd never became reachable on 127.0.0.1:1161 ==="
+              ss -lunp 2>/dev/null | grep 1161 || echo "nothing listening on 1161"
+              ps aux | grep -v grep | grep snmpd || echo "no snmpd process"
+              tail -n 30 /tmp/snmpd-test.log 2>/dev/null || true
+              exit 1
             fi
             sleep 0.2
           done
-          tail -n 20 /tmp/snmpd-test.log 2>/dev/null || true
-          echo "snmpd never became reachable on 127.0.0.1:1161"
-          exit 1
-
-      - name: pytest (snmpd)
-        run: pytest -m snmpd -q
+          pytest -m snmpd -q
 
       - name: Stop snmpd
         if: always()
-        run: kill "$(cat /tmp/snmpd-test.pid)" 2>/dev/null || true
+        run: sudo kill "$(cat /tmp/snmpd-test.pid)" 2>/dev/null || true
