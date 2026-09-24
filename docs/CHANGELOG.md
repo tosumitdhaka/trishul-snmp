@@ -6,6 +6,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.1] — 2026-09-24
+
+### Fixed
+
+- **`UsmUser` key-material validation (#16)** — construction-time `ProtocolError` for empty/missing auth/priv key material (messages name the field, the problem, and the protocol) and for localized auth keys of the wrong length (MD5 16 … SHA-512 64). The silent empty-key HMAC misconfiguration is no longer constructible.
+- **Engine-recovery latency (#18)** — a `usmStatsNotInTimeWindows` REPORT now surfaces immediately as `EngineRecoveryReportError` (newly exported) instead of costing a full request timeout, and `V3Notifier.send_inform` now retries once after engine re-adoption, matching the manager.
+- **v3 listener decode dedup (#17)** — each inbound datagram is BER-decoded exactly once (`V3DecodedDatagram` threaded through verification); previously the v3 path decoded 2–3 times per datagram. No behavior change to drop taxonomy, replay checks, or event payloads.
+
+---
+
 ## [0.5.0] — 2026-09-24
 
 ### Added

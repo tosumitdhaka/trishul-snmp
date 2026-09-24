@@ -77,11 +77,11 @@ class SnmpSession:
     def consume_engine_recovery(self) -> bool:
         """Return True once when the USM model requests a post-REPORT retry.
 
-        A ``usmStatsNotInTimeWindows`` REPORT is swallowed by the dispatcher as
-        a non-matching datagram, so the pending request ends in a timeout.  The
-        manager consults this flag and re-issues the request once, after the
-        model has adopted the peer's authoritative engine state carried in the
-        report.
+        A ``usmStatsNotInTimeWindows`` REPORT makes the model adopt the peer's
+        authoritative engine state carried in the report and raises
+        :class:`EngineRecoveryReportError` from the dispatcher (previously the
+        report was swallowed and the pending request ended in a timeout).  The
+        manager and notifier consult this flag and re-issue the request once.
         """
         from trishul_snmp.security.usm import UsmModel
 

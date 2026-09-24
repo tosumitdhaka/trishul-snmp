@@ -5,8 +5,10 @@ import os
 
 import pytest
 
-from trishul_snmp.errors import ProtocolError, RequestTimeoutError
+from tests.test_engine_recovery import _ENGINE_ID, _build_report_bytes
+from trishul_snmp.errors import EngineRecoveryReportError, ProtocolError, RequestTimeoutError
 from trishul_snmp.security.community import CommunityModel
+from trishul_snmp.security.usm import AuthProtocol, UsmModel, UsmUser
 from trishul_snmp.transport.dispatcher import PreparedRequest, RequestDispatcher
 from trishul_snmp.types import NullValue
 from trishul_snmp.wire.message import SnmpMessage, decode_message, encode_message
@@ -152,6 +154,65 @@ def test_dispatcher_raises_after_retry_budget_exhausted() -> None:
     with pytest.raises(RequestTimeoutError, match="timed out"):
         asyncio.run(scenario())
     assert len(client.sent) == 2
+
+
+def test_dispatcher_surfaces_engine_recovery_report() -> None:
+    """A usmStatsNotInTimeWindows REPORT must raise immediately, not after timeout."""
+    model = UsmModel(user=UsmUser(username="simulator", auth_protocol=AuthProtocol.NONE))
+    model._engine_id = _ENGINE_ID
+    model._engine_boots = 2
+    model._engine_time = 100
+
+    report = _build_report_bytes(_ENGINE_ID, username=b"simulator")
+    client = FakeUdpClient([report])
+    dispatcher = RequestDispatcher(client, security=model, timeout=0.5, retries=0)
+    request = _get_request(dispatcher)
+
+    async def scenario():
+        return await dispatcher.send_prepared_request(request)
+
+    with pytest.raises(EngineRecoveryReportError) as excinfo:
+        asyncio.run(scenario())
+
+    assert excinfo.value.report == report
+    assert len(client.sent) == 1  # raised on the first datagram — no timeout wait
+    # The dispatcher must not consume the flag; the client owns that decision.
+    assert model.engine_recovery_needed is True
+    assert model._engine_boots == 9  # authoritative state was adopted from the report
+    assert model._engine_time == 1234
+
+
+def test_dispatcher_continues_past_none_datagram_without_recovery_flag() -> None:
+    """A None datagram that did not set the recovery flag must be skipped."""
+    model = UsmModel(user=UsmUser(username="simulator", auth_protocol=AuthProtocol.NONE))
+    model._engine_id = _ENGINE_ID
+    model._engine_boots = 2
+    model._engine_time = 100
+
+    # Wrong-username REPORT: unwrap_message returns None without touching the flag.
+    foreign_report = _build_report_bytes(_ENGINE_ID, username=b"someone-else")
+    client = FakeUdpClient([foreign_report])
+    dispatcher = RequestDispatcher(client, security=model, timeout=0.5, retries=0)
+    request = _get_request(dispatcher)
+    response = model.wrap_pdu(
+        Pdu(
+            pdu_type=PduType.RESPONSE,
+            request_id=request.request_id,
+            error_status=0,
+            error_index=0,
+            varbinds=_GET_VARBINDS,
+        )
+    )
+    client.set_replies([foreign_report, response])
+
+    async def scenario():
+        return await dispatcher.send_prepared_request(request)
+
+    result = asyncio.run(scenario())
+
+    assert result.request_id == request.request_id
+    assert len(client.sent) == 1
+    assert model.engine_recovery_needed is False
 
 
 def test_dispatcher_prepare_request_and_send_only_helpers() -> None:

@@ -186,30 +186,17 @@ def test_des_decrypt_raises_protocol_error() -> None:
 
 
 def test_aes128_requires_priv_key() -> None:
-    """wrap_pdu must raise ProtocolError when no priv_key is configured."""
-    engine_id = b"\x80\x00\x1f\x88\x80" + b"\x00" * 11
+    """UsmUser construction must reject a priv protocol without key material."""
     auth_key = b"\xab" * hashlib.md5(b"").digest_size
-    user = UsmUser(
-        username="noprivkey",
-        auth_protocol=AuthProtocol.MD5,
-        auth_key=auth_key,
-        auth_key_localized=True,
-        priv_protocol=PrivProtocol.AES128,
-        priv_key=b"",
-    )
-    model = UsmModel(user=user)
-    model._engine_id = engine_id
-    model._engine_boots = 1
-    model._engine_time = 0
-    pdu = Pdu(
-        pdu_type=PduType.GET,
-        request_id=1,
-        error_status=0,
-        error_index=0,
-        varbinds=(RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 1, 0), value=NullValue()),),
-    )
-    with pytest.raises(ProtocolError):
-        model.wrap_pdu(pdu)
+    with pytest.raises(ProtocolError, match="priv_key"):
+        UsmUser(
+            username="noprivkey",
+            auth_protocol=AuthProtocol.MD5,
+            auth_key=auth_key,
+            auth_key_localized=True,
+            priv_protocol=PrivProtocol.AES128,
+            priv_key=b"",
+        )
 
 
 # ── IV uses inbound header boots/time, not cached receiver state ──────────────

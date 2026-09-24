@@ -13,7 +13,7 @@ from trishul_snmp import (
     V3Notifier,
 )
 from trishul_snmp.errors import TransportError
-from trishul_snmp.notify.v3 import DropReason
+from trishul_snmp.notify.v3 import DropReason, classify_v3_unmatched, is_discovery_probe
 from trishul_snmp.security.usm import (
     AuthProtocol,
     PrivProtocol,
@@ -21,12 +21,14 @@ from trishul_snmp.security.usm import (
     UsmModel,
     UsmUser,
 )
-from trishul_snmp.types import SocketAddress
+from trishul_snmp.types import NullValue, SocketAddress
 from trishul_snmp.wire.pdu import Pdu, PduType, RawVarBind
 from trishul_snmp.wire.v3message import (
     MSG_FLAG_REPORTABLE,
     UsmParams,
+    V3MessageView,
     decode_v3_message,
+    encode_scoped_pdu,
     encode_v3_message,
 )
 
@@ -618,3 +620,199 @@ def test_v3_notification_listener_counts_decode_and_auth_drops() -> None:
         assert sum(listener.drop_counts.values()) == listener.dropped
 
     asyncio.run(scenario())
+
+
+def test_v3_notification_listener_decodes_header_once_per_datagram(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = _make_user(level="noAuthNoPriv")
+    peer_engine = _make_local_engine(0x41)
+    probe = UsmModel(user=user)._build_discovery_probe()
+    wrong_user = _make_raw_notification(
+        user=_make_user(level="noAuthNoPriv", username="other"),
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=1,
+        local_engine=peer_engine,
+    )
+    valid = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=2,
+        local_engine=peer_engine,
+    )
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=probe, source_address=("127.0.0.1", 40010)),
+            _FakeDatagram(data=wrong_user, source_address=("127.0.0.1", 40011)),
+            _FakeDatagram(data=b"not-snmp", source_address=("127.0.0.1", 40012)),
+            _FakeDatagram(data=valid, source_address=("127.0.0.1", 40013)),
+        ]
+    )
+
+    calls = 0
+    real_decode = decode_v3_message
+
+    def counting(data: bytes) -> V3MessageView:
+        nonlocal calls
+        calls += 1
+        return real_decode(data)
+
+    monkeypatch.setattr("trishul_snmp.notify.v3.decode_v3_message", counting)
+
+    async def scenario() -> None:
+        listener = V3NotificationListener(user=user, local_engine=_make_local_engine(0x42))
+        listener._server = server  # type: ignore[attr-defined]
+        event = await listener.receive()
+
+        assert event.request_id == 2
+        assert event.source_address == ("127.0.0.1", 40013)
+        assert len(server.sent) == 1  # exactly one report for the discovery probe
+        assert calls == 4
+
+    asyncio.run(scenario())
+
+
+def test_v3_notification_listener_decode_count_scales_with_datagrams(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = _make_user(level="noAuthNoPriv")
+    peer_engine = _make_local_engine(0x44)
+    first = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=21,
+        local_engine=peer_engine,
+    )
+    second = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=22,
+        local_engine=peer_engine,
+    )
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=first, source_address=("127.0.0.1", 40020)),
+            _FakeDatagram(data=second, source_address=("127.0.0.1", 40021)),
+        ]
+    )
+
+    calls = 0
+    real_decode = decode_v3_message
+
+    def counting(data: bytes) -> V3MessageView:
+        nonlocal calls
+        calls += 1
+        return real_decode(data)
+
+    monkeypatch.setattr("trishul_snmp.notify.v3.decode_v3_message", counting)
+
+    async def scenario() -> None:
+        listener = V3NotificationListener(user=user, local_engine=_make_local_engine(0x45))
+        listener._server = server  # type: ignore[attr-defined]
+        first_event = await listener.receive()
+        second_event = await listener.receive()
+
+        assert first_event.request_id == 21
+        assert second_event.request_id == 22
+        assert calls == 2
+
+    asyncio.run(scenario())
+
+
+def test_classify_v3_unmatched_accepts_raw_bytes() -> None:
+    user = _make_user(level="noAuthNoPriv")
+    peer_engine = _make_local_engine(0x46)
+    raw = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=7,
+        local_engine=peer_engine,
+    )
+
+    assert (
+        classify_v3_unmatched(raw, user=_make_user(level="noAuthNoPriv", username="other"))
+        is DropReason.WRONG_USER
+    )
+    assert classify_v3_unmatched(b"not-snmp", user=user) is DropReason.UNDECODABLE_BER
+
+
+def test_v3_notification_listener_drops_matching_user_non_notification() -> None:
+    user = _make_user(level="noAuthNoPriv")
+    peer_engine = _make_local_engine(0x47)
+    get_message = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.GET,
+        request_id=5,
+        local_engine=peer_engine,
+    )
+    valid = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=6,
+        local_engine=peer_engine,
+    )
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=get_message, source_address=("127.0.0.1", 40030)),
+            _FakeDatagram(data=valid, source_address=("127.0.0.1", 40031)),
+        ]
+    )
+
+    async def scenario() -> None:
+        listener = V3NotificationListener(user=user, local_engine=_make_local_engine(0x48))
+        listener._server = server  # type: ignore[attr-defined]
+        event = await listener.receive()
+
+        assert event.request_id == 6
+        assert listener.dropped == 1
+        assert listener.drop_counts == {DropReason.NOT_NOTIFICATION: 1}
+
+    asyncio.run(scenario())
+
+
+def test_is_discovery_probe_rejects_probe_shaped_variants() -> None:
+    user = _make_user(level="noAuthNoPriv")
+    probe = UsmModel(user=user)._build_discovery_probe()
+    view = decode_v3_message(probe)
+
+    with_context = encode_v3_message(
+        view.msg_id,
+        view.msg_max_size,
+        view.msg_flags[0],
+        view.usm_params,
+        encode_scoped_pdu(
+            b"\x80\x00\x01\x02\x03",
+            b"",
+            Pdu(
+                pdu_type=PduType.GET,
+                request_id=1,
+                error_status=0,
+                error_index=0,
+                varbinds=(RawVarBind(oid=(1, 3, 6, 1, 6, 3, 15, 1, 1, 4, 0), value=NullValue()),),
+            ),
+        ),
+    )
+    too_many_varbinds = encode_v3_message(
+        view.msg_id,
+        view.msg_max_size,
+        view.msg_flags[0],
+        view.usm_params,
+        encode_scoped_pdu(
+            b"",
+            b"",
+            Pdu(
+                pdu_type=PduType.GET,
+                request_id=1,
+                error_status=0,
+                error_index=0,
+                varbinds=(
+                    RawVarBind(oid=(1, 3, 6, 1, 6, 3, 15, 1, 1, 4, 0), value=NullValue()),
+                    RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 1, 0), value=NullValue()),
+                ),
+            ),
+        ),
+    )
+
+    assert is_discovery_probe(with_context) is False
+    assert is_discovery_probe(too_many_varbinds) is False
+    assert is_discovery_probe(probe) is True

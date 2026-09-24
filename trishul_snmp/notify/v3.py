@@ -51,6 +51,24 @@ class V3NotificationEnvelope:
     security_level: str
 
 
+@dataclass(frozen=True, slots=True)
+class V3DecodedDatagram:
+    """Decoded SNMPv3 message header plus its raw datagram bytes.
+
+    The notification consume path decodes the message header exactly once at
+    the listener boundary and threads this structure through the verification
+    helpers so no helper re-decodes the header of the same datagram.
+    """
+
+    data: bytes
+    view: V3MessageView
+
+    @classmethod
+    def decode(cls, data: bytes) -> V3DecodedDatagram:
+        """Decode the header of *data* into a shared decoded structure."""
+        return cls(data=data, view=decode_v3_message(data))
+
+
 _TIME_WINDOW_SECONDS = 150.0
 _SALT_CACHE_SIZE = 64
 
@@ -101,7 +119,7 @@ def drop_reason_from_verdict(verdict: V3ReceiveVerdict) -> DropReason:
     raise ValueError(f"{verdict!r} is not a drop reason")
 
 
-def classify_v3_unmatched(data: bytes, *, user: UsmUser) -> DropReason:
+def classify_v3_unmatched(decoded: V3DecodedDatagram | bytes, *, user: UsmUser) -> DropReason:
     """Classify a v3 datagram that decoded to no notification for *user*.
 
     ``decode_v3_notification_message`` returns ``None`` both when the
@@ -110,12 +128,19 @@ def classify_v3_unmatched(data: bytes, *, user: UsmUser) -> DropReason:
     between the two.
     """
     try:
-        view = decode_v3_message(data)
+        datagram = _as_decoded(decoded)
     except ProtocolError:
         return DropReason.UNDECODABLE_BER
-    if view.usm_params.username != user.username.encode():
+    if datagram.view.usm_params.username != user.username.encode():
         return DropReason.WRONG_USER
     return DropReason.NOT_NOTIFICATION
+
+
+def _as_decoded(decoded: V3DecodedDatagram | bytes) -> V3DecodedDatagram:
+    """Normalize raw datagram bytes into a decoded datagram structure."""
+    if isinstance(decoded, bytes):
+        return V3DecodedDatagram.decode(decoded)
+    return decoded
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,14 +286,21 @@ class V3ReplayGuard:
                 cache.clear()
 
 
-def decode_v3_notification_message(data: bytes, *, user: UsmUser) -> V3NotificationEnvelope | None:
+def decode_v3_notification_message(
+    decoded: V3DecodedDatagram | bytes,
+    *,
+    user: UsmUser,
+) -> V3NotificationEnvelope | None:
     """Decode an inbound SNMPv3 trap or inform for a single configured user.
 
-    Returns ``None`` for wrong-user or non-notification messages. Raises
-    :class:`ProtocolError` or :class:`AuthenticationError` for malformed or
-    auth-failed messages that otherwise target the configured user.
+    Accepts either the raw datagram bytes or a :class:`V3DecodedDatagram`
+    that was already decoded at the listener boundary. Returns ``None`` for
+    wrong-user or non-notification messages. Raises :class:`ProtocolError` or
+    :class:`AuthenticationError` for malformed or auth-failed messages that
+    otherwise target the configured user.
     """
-    view = decode_v3_message(data)
+    datagram = _as_decoded(decoded)
+    view = datagram.view
     if view.usm_params.username != user.username.encode():
         return None
 
@@ -283,7 +315,7 @@ def decode_v3_notification_message(data: bytes, *, user: UsmUser) -> V3Notificat
                 f"got {len(view.usm_params.auth_params)}"
             )
         codec._verify_auth(
-            data,
+            datagram.data,
             view.auth_params_offset,
             view.usm_params.auth_params,
             view.usm_params.engine_id,
@@ -313,51 +345,61 @@ def decode_v3_notification_message(data: bytes, *, user: UsmUser) -> V3Notificat
     )
 
 
-def is_discovery_probe(data: bytes) -> bool:
-    """Whether *data* is the empty-engineID discovery probe used by V3Notifier."""
+def is_discovery_probe(decoded: V3DecodedDatagram | bytes) -> bool:
+    """Whether *decoded* is the empty-engineID discovery probe used by V3Notifier."""
     try:
-        view = decode_v3_message(data)
+        datagram = _as_decoded(decoded)
     except ProtocolError:
         return False
-
-    if view.msg_flags[0] != MSG_FLAG_REPORTABLE:
-        return False
-
-    params = view.usm_params
-    if (
-        params.engine_id
-        or params.engine_boots != 0
-        or params.engine_time != 0
-        or params.username
-        or params.auth_params
-        or params.priv_params
-    ):
+    view = datagram.view
+    if not _has_probe_header(view):
         return False
 
     try:
         context_engine_id, context_name, pdu_tag, pdu_content = _decode_scoped_fields(
             view.msg_data_bytes
         )
-    except ProtocolError:
-        return False
-
-    if context_engine_id or context_name or pdu_tag != int(PduType.GET):
-        return False
-
-    try:
         probe = _decode_pdu_bytes(pdu_tag, pdu_content)
     except ProtocolError:
         return False
+    return _has_probe_payload(context_engine_id, context_name, pdu_tag, probe)
+
+
+def _has_probe_header(view: V3MessageView) -> bool:
+    if view.msg_flags[0] != MSG_FLAG_REPORTABLE:
+        return False
+    params = view.usm_params
+    return not (
+        params.engine_id
+        or params.engine_boots != 0
+        or params.engine_time != 0
+        or params.username
+        or params.auth_params
+        or params.priv_params
+    )
+
+
+def _has_probe_payload(
+    context_engine_id: bytes,
+    context_name: bytes,
+    pdu_tag: int,
+    probe: Pdu,
+) -> bool:
+    if context_engine_id or context_name or pdu_tag != int(PduType.GET):
+        return False
     if len(probe.varbinds) != 1:
         return False
-
     varbind = probe.varbinds[0]
     return varbind.oid == _DISCOVERY_PROBE_OID and isinstance(varbind.value, NullValue)
 
 
-def encode_discovery_report(data: bytes, *, local_engine: UsmLocalEngine) -> bytes:
+def encode_discovery_report(
+    decoded: V3DecodedDatagram | bytes,
+    *,
+    local_engine: UsmLocalEngine,
+) -> bytes:
     """Encode a minimal discovery REPORT for an empty-engineID probe."""
-    view, context_engine_id, context_name, probe = _decode_discovery_probe(data)
+    view, context_engine_id, context_name, probe = _decode_discovery_probe(decoded)
     report_pdu = _encode_report_pdu(
         request_id=probe.request_id,
         error_status=0,
@@ -479,23 +521,31 @@ def _usm_codec(*, user: UsmUser, local_engine: UsmLocalEngine | None = None) -> 
     return UsmModel(user=user, local_engine=local_engine)
 
 
-def _decode_discovery_probe(data: bytes) -> tuple[V3MessageView, bytes, bytes, Pdu]:
+def _decode_discovery_probe(
+    decoded: V3DecodedDatagram | bytes,
+) -> tuple[V3MessageView, bytes, bytes, Pdu]:
     try:
-        view = decode_v3_message(data)
+        datagram = _as_decoded(decoded)
+    except ProtocolError as exc:
+        raise ProtocolError(f"Invalid discovery probe: {exc}") from exc
+    view = datagram.view
+    if not _has_probe_header(view):
+        raise ProtocolError("Invalid discovery probe")
+    try:
         context_engine_id, context_name, pdu_tag, pdu_content = _decode_scoped_fields(
             view.msg_data_bytes
         )
+        probe = _decode_pdu_bytes(pdu_tag, pdu_content)
     except ProtocolError as exc:
         raise ProtocolError(f"Invalid discovery probe: {exc}") from exc
-
-    if not is_discovery_probe(data):
+    if not _has_probe_payload(context_engine_id, context_name, pdu_tag, probe):
         raise ProtocolError("Invalid discovery probe")
 
     return (
         view,
         context_engine_id,
         context_name,
-        _decode_pdu_bytes(pdu_tag, pdu_content),
+        probe,
     )
 
 

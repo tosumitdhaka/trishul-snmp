@@ -16,6 +16,7 @@ from trishul_snmp.notify.events import (
 )
 from trishul_snmp.notify.v3 import (
     DropReason,
+    V3DecodedDatagram,
     V3NotificationEnvelope,
     V3ReceiveVerdict,
     V3ReplayGuard,
@@ -272,10 +273,19 @@ class V3NotificationListener(_BaseNotificationListener):
         """Wait for the next matching SNMPv3 trap or inform event."""
         while True:
             datagram = await self._server.receive()
-            if is_discovery_probe(datagram.data):
+            try:
+                decoded = V3DecodedDatagram.decode(datagram.data)
+            except ProtocolError:
+                self._handle_drop(
+                    reason=DropReason.UNDECODABLE_BER,
+                    source_address=datagram.source_address,
+                    data=datagram.data,
+                )
+                continue
+            if is_discovery_probe(decoded):
                 try:
                     report = encode_discovery_report(
-                        datagram.data,
+                        decoded,
                         local_engine=self._local_engine,
                     )
                 except ProtocolError:
@@ -289,7 +299,7 @@ class V3NotificationListener(_BaseNotificationListener):
                 continue
 
             try:
-                envelope = decode_v3_notification_message(datagram.data, user=self._user)
+                envelope = decode_v3_notification_message(decoded, user=self._user)
             except AuthenticationError:
                 self._handle_drop(
                     reason=DropReason.AUTHENTICATION_FAILED,
@@ -306,7 +316,7 @@ class V3NotificationListener(_BaseNotificationListener):
                 continue
             if envelope is None:
                 self._handle_drop(
-                    reason=classify_v3_unmatched(datagram.data, user=self._user),
+                    reason=classify_v3_unmatched(decoded, user=self._user),
                     source_address=datagram.source_address,
                     data=datagram.data,
                 )

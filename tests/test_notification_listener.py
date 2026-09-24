@@ -23,7 +23,7 @@ from trishul_snmp.notify.events import notification_event_from_message
 from trishul_snmp.notify.listener import _community_allowed
 from trishul_snmp.notify.v3 import DropReason
 from trishul_snmp.types import SocketAddress
-from trishul_snmp.wire.message import SnmpMessage, encode_message
+from trishul_snmp.wire.message import SnmpMessage, decode_message, encode_message
 from trishul_snmp.wire.pdu import Pdu, PduType, RawVarBind
 
 
@@ -616,5 +616,69 @@ def test_notification_listener_on_error_exceptions_are_contained() -> None:
         assert event.request_id == 9
         assert listener.dropped == 1
         assert listener.drop_counts == {DropReason.UNDECODABLE_BER: 1}
+
+    asyncio.run(scenario())
+
+
+def test_notification_listener_decodes_message_once_per_datagram(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    v1_trap = encode_message(
+        SnmpMessage(
+            version=0,
+            community="private",
+            pdu=Pdu(
+                pdu_type=PduType.TRAP,
+                request_id=0,
+                error_status=0,
+                error_index=0,
+                varbinds=(RawVarBind(oid=(1, 3, 6), value=IntegerValue(1)),),
+                enterprise=(1, 3, 6, 1, 4, 1, 999),
+                agent_addr="192.0.2.1",
+                generic_trap=6,
+                specific_trap=1,
+                timestamp=10,
+            ),
+        )
+    )
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=b"not-snmp", source_address=("127.0.0.1", 40060)),
+            _FakeDatagram(
+                data=_v2c_message(community="public", request_id=1, version=2),
+                source_address=("127.0.0.1", 40061),
+            ),
+            _FakeDatagram(
+                data=_v2c_message(community="private", request_id=2),
+                source_address=("127.0.0.1", 40062),
+            ),
+            # a v1 trap with a community outside the allow-list still decodes once
+            _FakeDatagram(data=v1_trap, source_address=("127.0.0.1", 40063)),
+            _FakeDatagram(
+                data=_v2c_message(community="public", request_id=3),
+                source_address=("127.0.0.1", 40064),
+            ),
+        ]
+    )
+
+    calls = 0
+    real_decode = decode_message
+
+    def counting(data: bytes) -> SnmpMessage:
+        nonlocal calls
+        calls += 1
+        return real_decode(data)
+
+    monkeypatch.setattr("trishul_snmp.notify.listener.decode_message", counting)
+
+    async def scenario() -> None:
+        listener = V2cNotificationListener(communities=["public"])
+        listener._server = server  # type: ignore[attr-defined]
+        event = await listener.receive()
+
+        assert event.request_id == 3
+        assert event.community == "public"
+        assert listener.dropped == 4
+        assert calls == 5
 
     asyncio.run(scenario())

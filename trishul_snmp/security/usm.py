@@ -95,6 +95,18 @@ class PrivProtocol(Enum):
     THREEDES_EDE = "3des-ede"
 
 
+# Required length of an already-localized auth key per protocol (RFC 3414 / 7860):
+# the localized key is exactly the hash digest length.
+_AUTH_LOCALIZED_KEY_LENGTHS: dict[AuthProtocol, int] = {
+    AuthProtocol.MD5: 16,
+    AuthProtocol.SHA1: 20,
+    AuthProtocol.SHA224: 28,
+    AuthProtocol.SHA256: 32,
+    AuthProtocol.SHA384: 48,
+    AuthProtocol.SHA512: 64,
+}
+
+
 @dataclass(frozen=True, slots=True)
 class UsmLocalEngine:
     """Explicit sender-authoritative engine state for outbound SNMPv3 traps."""
@@ -112,6 +124,10 @@ class UsmUser:
     derivation runs at message time.  Set *auth_key_localized=True* to
     skip derivation and use the key bytes directly (e.g. when supplying
     an already-localized key from an external credential store).
+
+    Raises :class:`ProtocolError` at construction when a non-NONE auth or
+    priv protocol is configured without key material, or when a localized
+    auth key is not the protocol's digest length.
     """
 
     username: str
@@ -120,6 +136,26 @@ class UsmUser:
     auth_key_localized: bool = False
     priv_protocol: PrivProtocol = PrivProtocol.NONE
     priv_key: bytes = b""
+
+    def __post_init__(self) -> None:
+        if self.auth_protocol is not AuthProtocol.NONE and not self.auth_key:
+            raise ProtocolError(
+                f"auth_key: empty/missing key with auth_protocol={self.auth_protocol.name}; "
+                f"supply a passphrase or a {_AUTH_LOCALIZED_KEY_LENGTHS[self.auth_protocol]}-octet "
+                "localized key"
+            )
+        if self.auth_protocol is not AuthProtocol.NONE and self.auth_key_localized:
+            required = _AUTH_LOCALIZED_KEY_LENGTHS[self.auth_protocol]
+            if len(self.auth_key) != required:
+                raise ProtocolError(
+                    f"auth_key: localized key must be {required} octets for "
+                    f"auth_protocol={self.auth_protocol.name}, got {len(self.auth_key)}"
+                )
+        if self.priv_protocol is not PrivProtocol.NONE and not self.priv_key:
+            raise ProtocolError(
+                f"priv_key: empty/missing key with priv_protocol={self.priv_protocol.name}; "
+                "supply a passphrase"
+            )
 
 
 @dataclass
@@ -992,7 +1028,11 @@ def _decode_report_scoped(msg_data_bytes: bytes) -> tuple[tuple[RawVarBind, ...]
 def _localize_key_rfc3414(password: bytes, engine_id: bytes, auth_protocol: AuthProtocol) -> bytes:
     """Module-level RFC 3414 key localisation for use in tests with known vectors."""
     dummy = UsmModel(
-        user=UsmUser(username="", auth_protocol=auth_protocol),
+        user=UsmUser(
+            username="",
+            auth_protocol=auth_protocol,
+            auth_key=b"unused-passphrase",  # validation only; _localize_key() uses *password*
+        ),
     )
     dummy._engine_id = engine_id
     return dummy._localize_key(password, engine_id)

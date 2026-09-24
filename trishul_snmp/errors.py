@@ -51,5 +51,18 @@ class RequestTimeoutError(TransportError):
     """Raised when a request does not receive a matching response in time."""
 
 
+class EngineRecoveryReportError(TsnmpError):
+    """Raised when a usmStatsNotInTimeWindows REPORT arrives for an in-flight request.
+
+    The USM model has already adopted the peer's authoritative engine state
+    and set the engine-recovery flag; the caller should consume the flag and
+    retry the request once instead of waiting out the full timeout.
+    """
+
+    def __init__(self, message: str, *, report: bytes) -> None:
+        self.report = report
+        super().__init__(message)
+
+
 class AuthenticationError(ProtocolError):
     """Raised when SNMPv3 USM message authentication verification fails."""

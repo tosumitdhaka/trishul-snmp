@@ -6,7 +6,12 @@ import asyncio
 import os
 from dataclasses import dataclass
 
-from trishul_snmp.errors import AuthenticationError, ProtocolError, RequestTimeoutError
+from trishul_snmp.errors import (
+    AuthenticationError,
+    EngineRecoveryReportError,
+    ProtocolError,
+    RequestTimeoutError,
+)
 from trishul_snmp.security.model import SecurityModel
 from trishul_snmp.transport.udp import UdpClient
 from trishul_snmp.wire.pdu import Pdu, PduType, RawVarBind
@@ -141,6 +146,16 @@ class RequestDispatcher:
             except ProtocolError:
                 continue
             if pdu is None:
+                # A usmStatsNotInTimeWindows REPORT is consumed by the USM model,
+                # which adopts the peer's authoritative engine state and returns
+                # None. Surface it so the caller can retry immediately instead of
+                # waiting out the full timeout.
+                if getattr(self._security, "engine_recovery_needed", False):
+                    raise EngineRecoveryReportError(
+                        "SNMPv3 engine-recovery REPORT received; retry the request "
+                        "after adopting the peer's engine state",
+                        report=data,
+                    )
                 continue
             if pdu.pdu_type != PduType.RESPONSE:
                 raise ProtocolError(f"Expected RESPONSE PDU, received {pdu.pdu_type.name}")

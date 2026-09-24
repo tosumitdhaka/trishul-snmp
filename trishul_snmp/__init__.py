@@ -4,6 +4,7 @@ from trishul_snmp.errors import (
     AuthenticationError,
     BundleError,
     BundleValidationError,
+    EngineRecoveryReportError,
     InvalidOidError,
     ProtocolError,
     RequestTimeoutError,
@@ -80,6 +81,7 @@ __all__ = [
     "CounterRule",
     "DropReason",
     "EndOfMibViewValue",
+    "EngineRecoveryReportError",
     "ErrorStatus",
     "Gauge32Value",
     "InvalidOidError",
@@ -137,4 +139,4 @@ __all__ = [
     "load_bundle",
 ]
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"

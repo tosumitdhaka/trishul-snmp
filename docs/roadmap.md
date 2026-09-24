@@ -103,6 +103,14 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 
 ---
 
+## v0.5.1 — shipped 2026-09-24
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | `UsmUser` key-material validation | done | `#16`. Construction-time `ProtocolError` for empty/missing auth/priv key material and wrong localized auth-key lengths; noAuthNoPriv unaffected. |
+| 2 | v3 listener decode dedup | done | `#17`. Exactly one BER decode per inbound datagram (`V3DecodedDatagram`); drop taxonomy, replay guard, and event payloads unchanged. |
+| 3 | Engine recovery | done | `#18`. `EngineRecoveryReportError` surfaced at dispatch (no timeout cost); `send_inform` retry after re-adoption. |
+
 ## v0.5.0 — shipped 2026-09-24
 
 | # | Item | Status | Notes |

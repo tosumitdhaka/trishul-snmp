@@ -7,7 +7,7 @@ from types import TracebackType
 from typing import TypeVar
 
 from trishul_snmp._runtime import normalize_targets, response_from_pdu
-from trishul_snmp.errors import ProtocolError
+from trishul_snmp.errors import EngineRecoveryReportError, ProtocolError
 from trishul_snmp.mib.bundle import MibBundle
 from trishul_snmp.security.community import CommunityModel
 from trishul_snmp.security.model import SecurityModel
@@ -289,7 +289,24 @@ class V3Notifier(SnmpNotifier):
             if not model.peer_engine_discovered:
                 await model.prepare(self._session.dispatcher)
             request = self._session.dispatcher.prepare_request(PduType.INFORM_REQUEST, raw_varbinds)
-            response_pdu = await self._session.dispatcher.send_prepared_request(request)
+            try:
+                response_pdu = await self._session.dispatcher.send_prepared_request(request)
+            except EngineRecoveryReportError:
+                # A usmStatsNotInTimeWindows REPORT means the peer's engine clock
+                # moved past our cached state; the model adopted the authoritative
+                # state from the report, so re-issue the inform once immediately.
+                if not self._session.consume_engine_recovery():
+                    raise
+                try:
+                    request = self._session.dispatcher.prepare_request(
+                        PduType.INFORM_REQUEST, raw_varbinds
+                    )
+                    response_pdu = await self._session.dispatcher.send_prepared_request(request)
+                except EngineRecoveryReportError:
+                    # The retry also drew a REPORT; clear the flag so a later
+                    # stray datagram cannot trigger a spurious recovery.
+                    self._session.consume_engine_recovery()
+                    raise
         return response_from_pdu(response_pdu, bundle=self._session.bundle)
 
     async def send_trap(
