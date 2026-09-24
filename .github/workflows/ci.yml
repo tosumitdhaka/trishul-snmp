@@ -126,7 +126,7 @@ jobs:
           printf 'rocommunity public 127.0.0.1\nagentaddress 127.0.0.1:1161\n' > /tmp/snmpd-test.conf
           sudo /usr/sbin/snmpd -C -f -c /tmp/snmpd-test.conf -p /tmp/snmpd-test.pid -Lf /tmp/snmpd-test.log &
           for i in $(seq 1 50); do
-            if .venv/bin/tsnmp get --host 127.0.0.1 --port 1161 --community public \
+            if tsnmp get --host 127.0.0.1 --port 1161 --community public \
                 --timeout 0.5 --retries 1 1.3.6.1.2.1.1.3.0 >/dev/null 2>&1; then
               echo "snmpd reachable (attempt $i)"
               break
