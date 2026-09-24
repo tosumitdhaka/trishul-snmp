@@ -99,8 +99,9 @@ jobs:
 
   # ------------------------------------------------------------------ #
   # snmpd integration — runs tests/test_snmpd_integration.py against a
-  # live net-snmp agent on 127.0.0.1:1161 (no systemd on runners, so the
-  # agent is started detached with snmpd -f and a temp config).
+  # live net-snmp agent on 127.0.0.1:1161 (no systemd on runners; snmpd
+  # daemonizes itself so it survives the runner killing each step's
+  # process tree — do NOT use -f/& here).
   # ------------------------------------------------------------------ #
   snmpd:
     name: Test (snmpd)
@@ -123,7 +124,7 @@ jobs:
       - name: Start snmpd on 127.0.0.1:1161
         run: |
           printf 'rocommunity public 127.0.0.1\nagentaddress 127.0.0.1:1161\n' > /tmp/snmpd-test.conf
-          sudo /usr/sbin/snmpd -C -f -c /tmp/snmpd-test.conf -p /tmp/snmpd-test.pid >/tmp/snmpd-test.log 2>&1 &
+          sudo /usr/sbin/snmpd -C -c /tmp/snmpd-test.conf -p /tmp/snmpd-test.pid -Lf /tmp/snmpd-test.log
 
       - name: Wait for snmpd
         run: |
