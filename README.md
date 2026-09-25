@@ -25,7 +25,8 @@ The split with `trishul-smi` (`tsmi`) is intentional:
   Parser/compiler that produces compiled JSON artifacts
 
 The primary product is the importable Python package. The CLI is intentionally
-thin and secondary.
+thin and secondary. It installs as both `tsnmp` and `trishul-snmp` console
+scripts (same command surface); usage output reflects whichever name was invoked.
 
 ## Features
 
@@ -53,7 +54,7 @@ thin and secondary.
 - UDP transport and request dispatcher
 - optional symbolic translation and display enrichment from compiled JSON MIB artifacts
 - works with numeric OIDs and no MIB bundle loaded
-- live CLI commands cover SNMPv2c plus SNMPv3 manager, notification send, notification listen, and offline decode
+- live CLI commands cover SNMPv1, SNMPv2c, plus SNMPv3 manager, notification send, notification listen, and offline decode
 
 ## Scope
 
@@ -85,14 +86,14 @@ Deliberately deferred:
 pip install trishul-snmp
 ```
 
-For SNMPv3 privacy/authPriv support (AES-128-CFB encryption):
+For SNMPv3 privacy/authPriv support (AES-128/192/256-CFB and 3DES-EDE encryption):
 
 ```bash
 pip install "trishul-snmp[v3]"
 ```
 
-The base package covers SNMPv2c plus SNMPv3 `noAuthNoPriv` and `authNoPriv`.
-Install `[v3]` only for privacy/authPriv flows.
+The base package covers SNMPv1, SNMPv2c, plus SNMPv3 `noAuthNoPriv` and
+`authNoPriv`. Install `[v3]` only for privacy/authPriv flows.
 
 For local development:
 
@@ -170,11 +171,12 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Current CLI coverage includes SNMPv2c plus SNMPv3 `get`, `getnext`, `getbulk`,
-`walk`, `bulkwalk`, `trap`, `inform`, `listen`, and `decode-notification` via
-explicit `--snmp-version {2c,3}` selection. SNMPv3 `listen` requires explicit
-`--local-engine-id`, `--local-engine-boots`, and `--local-engine-time`. SNMPv3
-`decode-notification` requires explicit user/auth/priv inputs.
+Current CLI coverage includes SNMPv1, SNMPv2c, plus SNMPv3 `get`, `getnext`,
+`getbulk`, `walk`, `bulkwalk`, `trap`, `inform`, `listen`, and
+`decode-notification` via explicit `--snmp-version {1,2c,3}` selection. SNMPv3
+`listen` requires explicit `--local-engine-id`, `--local-engine-boots`, and
+`--local-engine-time`. SNMPv3 `decode-notification` requires explicit
+user/auth/priv inputs.
 
 ## Documentation
 

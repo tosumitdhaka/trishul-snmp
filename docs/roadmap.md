@@ -5,6 +5,81 @@ Status: `planned` | `in progress` | `done` | `deferred`
 
 ---
 
+## v0.5.1 — shipped 2026-09-24
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | `UsmUser` key-material validation | done | `#16`. Construction-time `ProtocolError` for empty/missing auth/priv key material and wrong localized auth-key lengths; noAuthNoPriv unaffected. |
+| 2 | v3 listener decode dedup | done | `#17`. Exactly one BER decode per inbound datagram (`V3DecodedDatagram`); drop taxonomy, replay guard, and event payloads unchanged. |
+| 3 | Engine recovery | done | `#18`. `EngineRecoveryReportError` surfaced at dispatch (no timeout cost); `send_inform` retry after re-adoption. |
+
+---
+
+## v0.5.0 — shipped 2026-09-24
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | SNMPv1 support | done | `#8`. v1 message/PDU codec (0xa0–0xa4 incl. Trap-PDU), `V1Manager` GET/GETNEXT (GETBULK downgrades to GETNEXT loops), `V1Notifier` trap send, v1 trap receive on the community listener, and `decode_notification` v1 support with enterprise/agent-addr/generic/specific/timestamp metadata on `NotificationEvent`. CLI `--snmp-version 1` across manager/trap/listen/decode. |
+| 2 | USM crypto parity (Reeder) | done | `#10`. SHA-224/384/512 auth (RFC 7860), AES-192/256 with Reeder key derivation, and 3DES-EDE. Blumenthal (RFC 8963) variants stay deferred until a concrete deployment requires them. |
+| 3 | DES-CBC privacy | deferred | `#11`. Attempted, empirically blocked: `cryptography` 48.0.0 exposes no single-DES primitive (TripleDES only) and vendoring crypto is out of the question. `PrivProtocol.DES` and the CLI selection fail fast with accurate errors instead of wire-time surprises. |
+| 4 | Listener observability | done | `#9`. Shared `DropReason` taxonomy (including the v0.4.3 replay verdicts), drop counters, rate-limited warnings, and `on_error` callbacks on both community and v3 listeners. |
+| 5 | Decoder fuzz/property tests and real-agent CI | done | `hypothesis` property/fuzz coverage for the untrusted-input BER decode path (no decoder bugs found: 700+ arbitrary inputs, only `ProtocolError` or clean decodes) plus snmpd-backed integration tests (`-m snmpd`) with a CI job on 127.0.0.1:1161. |
+
+---
+
+## v0.4.3 — shipped 2026-09-24
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | USM session-state fixes | done | `#12`. RFC 3414 key-derivation caching (Ku plus localized keys per user/engine), monotonic engine-time advance after discovery, and `usmStatsNotInTimeWindows` REPORT recovery with engine re-adoption and a single automatic manager retry. authPriv throughput is no longer KDF-bound (previously ~0.073s per message). |
+| 2 | v3 listener replay protection | done | `#13`. RFC 3414 §3.2.7 receive-side checks: engine boots/time window tracking and a bounded per-user salt cache. Replayed traps are dropped and replayed informs are no longer re-ACKed. Drop reasons are plumbed (verdict enum) for the observability work in `#9`. |
+| 3 | Wire codec hardening | done | `#14`. Encode/decode range validation for Counter32/Gauge32/TimeTicks (≤ 2^32-1) and Counter64 (≤ 2^64-1), rejection of non-minimal unsigned BER, `ProtocolError` for OID first/second-arc overflow, and latin-1 fallback for non-UTF-8 community strings. |
+| 4 | Dispatcher robustness | done | `#15`. Malformed datagrams no longer abort in-flight requests (behavior now uniform across v2c and v3 security models), request IDs are urandom-derived per RFC 3412, and per-request deadlines cannot be extended by junk datagrams. |
+| 5 | Bundle schema-version gate | done | `schema_version` above the supported maximum (`1.1`) is rejected at load time (module payloads and `manifest.json`) with an actionable error — the consumer-side half of the documented `tsmi` bundle-compatibility policy. |
+| 6 | `trishul-snmp` CLI entry point | done | Both `tsnmp` and `trishul-snmp` console scripts now install and invoke the same CLI; usage strings reflect the invoked name. |
+| 7 | `trishul-smi 0.5.0` compatibility | done | Full ecosystem validation via `scripts/validate_ecosystem.py` (compile, bundle contract, runtime load, CLI translate, live agent, notification, responder) passes against `trishul-smi 0.5.0`. |
+
+---
+
+---
+
+## v0.4.2 — shipped 2026-06-05
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | SNMPv3 notification listener | done | `V3NotificationListener` now supports one configured USM user, inbound auth/decrypt, discovery REPORT handling for `V3Notifier.send_inform()`, and automatic v3 inform acknowledgement. The existing `SnmpNotificationListener` / `V2cNotificationListener` surface remains v2c-compatible. |
+| 2 | Offline SNMPv3 notification decode | done | `decode_notification(..., user=...)` now performs strict v3 decode, and `tsnmp decode-notification --snmp-version 3` accepts explicit user/auth/priv inputs for offline USM notification analysis. |
+| 3 | Notification event model expansion for v3 | done | `NotificationEvent` now carries additive v3 metadata (`username`, `security_level`, context engine/name, authoritative engine state) while keeping current v2c text/JSON output stable. |
+
+---
+
+---
+
+## v0.4.1 — shipped 2026-06-01
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | Sender-authoritative SNMPv3 trap support | done | `UsmLocalEngine` is public and `V3Notifier.send_trap()` now works when explicit local authoritative engine state is provided. Trap-capable notifiers no longer depend on a peer discovery roundtrip during `open()`. |
+| 2 | Shared CLI v2c/v3 security option model | done | `tsnmp` now accepts explicit `--snmp-version {2c,3}` selection, validates mixed v2c/v3 flag sets early, supports env-backed secrets, and surfaces missing `[v3]` extras for privacy/authPriv flows as ordinary CLI errors. |
+| 3 | CLI SNMPv3 manager commands | done | `get`, `getnext`, `getbulk`, `walk`, and `bulkwalk` route through `V3Manager` when `--snmp-version 3` is selected. |
+| 4 | CLI SNMPv3 notification send | done | `inform` and `trap` route through `V3Notifier` for `--snmp-version 3`; traps require explicit `--local-engine-id`, `--local-engine-boots`, and `--local-engine-time`. `listen` and `decode-notification` remain SNMPv2c-only. |
+| 5 | CLI/docs/test/release parity | done | Docs, tests, and release smoke guidance now reflect the shipped Python and CLI SNMPv3 surface consistently. |
+
+---
+
+---
+
+## v0.4.0 — shipped 2026-05-28
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | Session architecture refactor | done | Extracted shared `UdpClient + Dispatcher + Lock + MibBundle` into `session.py`. Added `security/model.py` (`SecurityModel` protocol) + `security/community.py` (`CommunityModel` for v2c). `dispatcher.py` takes `security=` instead of `community=`. `V2cManager` / `V2cNotifier` are subclasses of new `SnmpManager` / `SnmpNotifier` bases; `V2cNotificationListener` is an alias — no public API breakage. |
+| 2 | SNMPv3 USM client stack | done | Shipped noAuthNoPriv + authNoPriv (HMAC-MD5/SHA-1/SHA-256) + authPriv (AES-128-CFB) for manager operations and SNMPv3 informs. DES-CBC intentionally deferred — broken cipher, not present in `cryptography>=41`. Engine discovery via optional async `prepare(dispatcher)` hook on `UsmModel`; `session.py` awaits it on open. Discovery uses a dedicated `dispatcher.send_raw_and_receive(data) -> bytes` path that never surfaces to the normal request flow — REPORT never reaches `send_pdu()` or `response_from_pdu()`. `wrap_pdu`/`unwrap_message` stay synchronous. `security/usm.py` never imports `cryptography` at module level; privacy methods call `_require_cryptography()` which raises `ImportError` with install instructions if the package is absent. `UsmModel` is imported unconditionally in `__init__.py` — it always works; base install covers `noAuthNoPriv` plus `authNoPriv`, while privacy/authPriv flows require `[v3]`. CI installs `.[dev,v3]`. A dedicated test blocks `cryptography` via `patch.dict(sys.modules, {'cryptography': None})` and reimports `usm` to catch top-level import regressions even with `[v3]` installed. `V3Manager` mirrors `V2cManager`. `V3Notifier` supports `send_inform()` only — `send_trap()` raises `ProtocolError` because SNMPv3 traps require the sender's own authoritative engine state (RFC 3412 §7.1.9), which is not available after discovery against the receiver. v3 listener out of scope for this release. Requires `cryptography>=40` (optional extra `[v3]`). |
+
+---
+
+---
+
 ## v0.3.0 — shipped 2026-05-15
 
 | # | Item | Status | Notes |
@@ -13,6 +88,8 @@ Status: `planned` | `in progress` | `done` | `deferred`
 | 2 | `InMemoryObjectSource.from_bundle()` | done | Auto-populates a source from a `MibBundle` with syntax-appropriate defaults, instance suffix generation, and deprecated-object filtering. |
 | 3 | `MibBundle` iteration helpers | done | `iter_objects()`, `iter_notifications()`, and `search()` allow in-memory bundle queries without a separate database layer. |
 | 4 | `NotificationEvent.to_dict()` | done | JSON-safe dict serialization for WebSocket broadcast and storage use cases. |
+
+---
 
 ---
 
@@ -33,6 +110,8 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 
 ---
 
+---
+
 ## v0.1.1 — shipped 2026-05-07
 
 | # | Item | Status | Notes |
@@ -40,6 +119,8 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 | 1 | Canonical display rendering for scalar instance aliases | done | Numeric translation and enrichment prefer `MODULE::symbol.0` for scalar `.0` display without changing exact lookup semantics. |
 | 2 | Live benchmark harness | done | `scripts/benchmark_snmpd.py` compares raw vs enriched API and CLI paths against a live SNMP agent. |
 | 3 | Alias-policy regression fixtures | done | Synthetic bundle fixtures isolate `tsmi` sidecar contract validation from `tsnmp` display-policy behavior. |
+
+---
 
 ---
 
@@ -58,68 +139,7 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 
 ---
 
-## v0.4.0 — shipped 2026-05-28
-
-| # | Item | Status | Notes |
-|---|---|---|---|
-| 1 | Session architecture refactor | done | Extracted shared `UdpClient + Dispatcher + Lock + MibBundle` into `session.py`. Added `security/model.py` (`SecurityModel` protocol) + `security/community.py` (`CommunityModel` for v2c). `dispatcher.py` takes `security=` instead of `community=`. `V2cManager` / `V2cNotifier` are subclasses of new `SnmpManager` / `SnmpNotifier` bases; `V2cNotificationListener` is an alias — no public API breakage. |
-| 2 | SNMPv3 USM client stack | done | Shipped noAuthNoPriv + authNoPriv (HMAC-MD5/SHA-1/SHA-256) + authPriv (AES-128-CFB) for manager operations and SNMPv3 informs. DES-CBC intentionally deferred — broken cipher, not present in `cryptography>=41`. Engine discovery via optional async `prepare(dispatcher)` hook on `UsmModel`; `session.py` awaits it on open. Discovery uses a dedicated `dispatcher.send_raw_and_receive(data) -> bytes` path that never surfaces to the normal request flow — REPORT never reaches `send_pdu()` or `response_from_pdu()`. `wrap_pdu`/`unwrap_message` stay synchronous. `security/usm.py` never imports `cryptography` at module level; privacy methods call `_require_cryptography()` which raises `ImportError` with install instructions if the package is absent. `UsmModel` is imported unconditionally in `__init__.py` — it always works; base install covers `noAuthNoPriv` plus `authNoPriv`, while privacy/authPriv flows require `[v3]`. CI installs `.[dev,v3]`. A dedicated test blocks `cryptography` via `patch.dict(sys.modules, {'cryptography': None})` and reimports `usm` to catch top-level import regressions even with `[v3]` installed. `V3Manager` mirrors `V2cManager`. `V3Notifier` supports `send_inform()` only — `send_trap()` raises `ProtocolError` because SNMPv3 traps require the sender's own authoritative engine state (RFC 3412 §7.1.9), which is not available after discovery against the receiver. v3 listener out of scope for this release. Requires `cryptography>=40` (optional extra `[v3]`). |
-
 ---
-
-## v0.4.1 — shipped 2026-06-01
-
-| # | Item | Status | Notes |
-|---|---|---|---|
-| 1 | Sender-authoritative SNMPv3 trap support | done | `UsmLocalEngine` is public and `V3Notifier.send_trap()` now works when explicit local authoritative engine state is provided. Trap-capable notifiers no longer depend on a peer discovery roundtrip during `open()`. |
-| 2 | Shared CLI v2c/v3 security option model | done | `tsnmp` now accepts explicit `--snmp-version {2c,3}` selection, validates mixed v2c/v3 flag sets early, supports env-backed secrets, and surfaces missing `[v3]` extras for privacy/authPriv flows as ordinary CLI errors. |
-| 3 | CLI SNMPv3 manager commands | done | `get`, `getnext`, `getbulk`, `walk`, and `bulkwalk` route through `V3Manager` when `--snmp-version 3` is selected. |
-| 4 | CLI SNMPv3 notification send | done | `inform` and `trap` route through `V3Notifier` for `--snmp-version 3`; traps require explicit `--local-engine-id`, `--local-engine-boots`, and `--local-engine-time`. `listen` and `decode-notification` remain SNMPv2c-only. |
-| 5 | CLI/docs/test/release parity | done | Docs, tests, and release smoke guidance now reflect the shipped Python and CLI SNMPv3 surface consistently. |
-
----
-
-## v0.4.2 — shipped 2026-06-05
-
-| # | Item | Status | Notes |
-|---|---|---|---|
-| 1 | SNMPv3 notification listener | done | `V3NotificationListener` now supports one configured USM user, inbound auth/decrypt, discovery REPORT handling for `V3Notifier.send_inform()`, and automatic v3 inform acknowledgement. The existing `SnmpNotificationListener` / `V2cNotificationListener` surface remains v2c-compatible. |
-| 2 | Offline SNMPv3 notification decode | done | `decode_notification(..., user=...)` now performs strict v3 decode, and `tsnmp decode-notification --snmp-version 3` accepts explicit user/auth/priv inputs for offline USM notification analysis. |
-| 3 | Notification event model expansion for v3 | done | `NotificationEvent` now carries additive v3 metadata (`username`, `security_level`, context engine/name, authoritative engine state) while keeping current v2c text/JSON output stable. |
-
----
-
-## v0.4.3 — shipped 2026-09-24
-
-| # | Item | Status | Notes |
-|---|---|---|---|
-| 1 | USM session-state fixes | done | `#12`. RFC 3414 key-derivation caching (Ku plus localized keys per user/engine), monotonic engine-time advance after discovery, and `usmStatsNotInTimeWindows` REPORT recovery with engine re-adoption and a single automatic manager retry. authPriv throughput is no longer KDF-bound (previously ~0.073s per message). |
-| 2 | v3 listener replay protection | done | `#13`. RFC 3414 §3.2.7 receive-side checks: engine boots/time window tracking and a bounded per-user salt cache. Replayed traps are dropped and replayed informs are no longer re-ACKed. Drop reasons are plumbed (verdict enum) for the observability work in `#9`. |
-| 3 | Wire codec hardening | done | `#14`. Encode/decode range validation for Counter32/Gauge32/TimeTicks (≤ 2^32-1) and Counter64 (≤ 2^64-1), rejection of non-minimal unsigned BER, `ProtocolError` for OID first/second-arc overflow, and latin-1 fallback for non-UTF-8 community strings. |
-| 4 | Dispatcher robustness | done | `#15`. Malformed datagrams no longer abort in-flight requests (behavior now uniform across v2c and v3 security models), request IDs are urandom-derived per RFC 3412, and per-request deadlines cannot be extended by junk datagrams. |
-| 5 | Bundle schema-version gate | done | `schema_version` above the supported maximum (`1.1`) is rejected at load time (module payloads and `manifest.json`) with an actionable error — the consumer-side half of the documented `tsmi` bundle-compatibility policy. |
-| 6 | `trishul-snmp` CLI entry point | done | Both `tsnmp` and `trishul-snmp` console scripts now install and invoke the same CLI; usage strings reflect the invoked name. |
-| 7 | `trishul-smi 0.5.0` compatibility | done | Full ecosystem validation via `scripts/validate_ecosystem.py` (compile, bundle contract, runtime load, CLI translate, live agent, notification, responder) passes against `trishul-smi 0.5.0`. |
-
----
-
-## v0.5.1 — shipped 2026-09-24
-
-| # | Item | Status | Notes |
-|---|---|---|---|
-| 1 | `UsmUser` key-material validation | done | `#16`. Construction-time `ProtocolError` for empty/missing auth/priv key material and wrong localized auth-key lengths; noAuthNoPriv unaffected. |
-| 2 | v3 listener decode dedup | done | `#17`. Exactly one BER decode per inbound datagram (`V3DecodedDatagram`); drop taxonomy, replay guard, and event payloads unchanged. |
-| 3 | Engine recovery | done | `#18`. `EngineRecoveryReportError` surfaced at dispatch (no timeout cost); `send_inform` retry after re-adoption. |
-
-## v0.5.0 — shipped 2026-09-24
-
-| # | Item | Status | Notes |
-|---|---|---|---|
-| 1 | SNMPv1 support | done | `#8`. v1 message/PDU codec (0xa0–0xa4 incl. Trap-PDU), `V1Manager` GET/GETNEXT (GETBULK downgrades to GETNEXT loops), `V1Notifier` trap send, v1 trap receive on the community listener, and `decode_notification` v1 support with enterprise/agent-addr/generic/specific/timestamp metadata on `NotificationEvent`. CLI `--snmp-version 1` across manager/trap/listen/decode. |
-| 2 | USM crypto parity (Reeder) | done | `#10`. SHA-224/384/512 auth (RFC 7860), AES-192/256 with Reeder key derivation, and 3DES-EDE. Blumenthal (RFC 8963) variants stay deferred until a concrete deployment requires them. |
-| 3 | DES-CBC privacy | deferred | `#11`. Attempted, empirically blocked: `cryptography` 48.0.0 exposes no single-DES primitive (TripleDES only) and vendoring crypto is out of the question. `PrivProtocol.DES` and the CLI selection fail fast with accurate errors instead of wire-time surprises. |
-| 4 | Listener observability | done | `#9`. Shared `DropReason` taxonomy (including the v0.4.3 replay verdicts), drop counters, rate-limited warnings, and `on_error` callbacks on both community and v3 listeners. |
-| 5 | Decoder fuzz/property tests and real-agent CI | done | `hypothesis` property/fuzz coverage for the untrusted-input BER decode path (no decoder bugs found: 700+ arbitrary inputs, only `ProtocolError` or clean decodes) plus snmpd-backed integration tests (`-m snmpd`) with a CI job on 127.0.0.1:1161. |
 
 ## Near-term hardening
 
@@ -127,10 +147,9 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 |---|---|---|---|
 | 1 | Forward-compatibility with future `tsmi` IR version fields | done | Landed in `v0.4.3`: explicit `schema_version` metadata is read and enforced at load time (accept ≤ `1.1`, reject newer with an actionable error) without making sidecars mandatory. |
 | 2 | Better optional rendering fidelity from bundle metadata | planned | Improve display names and values when metadata is available without moving compiler logic into `tsnmp`. |
-| 3 | Broader live-agent compatibility coverage | planned | Expand UDP integration coverage around walk behavior and device quirks. |
+| 3 | Broader live-agent compatibility coverage | planned | Tracked as `#25` (walk/bulkwalk termination edge cases), `#26` (device/agent-stack quirks), `#27` (protocol coverage against the real agent). |
 
 ---
-
 ## Explicitly deferred
 
 | # | Item | Status | Notes |

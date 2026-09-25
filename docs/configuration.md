@@ -39,6 +39,28 @@ Validation notes:
 
 ---
 
+## `V1Manager` fields
+
+`V1Manager` uses the same fields as `V2cManager`:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `host` | `str` | required | Target hostname or IP address |
+| `community` | `str` | required | SNMPv1 community string |
+| `port` | `int` | `161` | Target UDP port |
+| `timeout` | `float` | `2.0` | Per-request timeout in seconds |
+| `retries` | `int` | `1` | Retry count after the first attempt |
+| `bundle` | `MibBundle \| None` | `None` | Optional bundle used for symbolic translation and enrichment |
+| `max_datagram_size` | `int` | `65535` | Maximum UDP datagram size for receive operations |
+
+Behavior notes:
+
+- SNMPv1 has no GETBULK PDU: `get_bulk()` and `bulkwalk()` downgrade to GETNEXT loops
+- `walk()` always uses GETNEXT; the `bulk` argument is accepted for interface
+  compatibility but ignored
+
+---
+
 ## `V3Manager` fields
 
 Base install covers `noAuthNoPriv` and `authNoPriv`; add
@@ -58,8 +80,16 @@ Base install covers `noAuthNoPriv` and `authNoPriv`; add
 `UsmUser` fields: `username` (str), `auth_protocol` (AuthProtocol), `auth_key` (bytes),
 `auth_key_localized` (bool), `priv_protocol` (PrivProtocol), `priv_key` (bytes).
 
-`AuthProtocol`: `NONE`, `MD5`, `SHA1`, `SHA256`
-`PrivProtocol`: `NONE`, `AES128` (DES raises `ProtocolError`)
+`UsmUser` validation:
+
+- a non-`NONE` `auth_protocol` or `priv_protocol` with empty/missing key material
+  raises `ProtocolError` at construction
+- a localized auth key (`auth_key_localized=True`) must be exactly the protocol
+  digest length: MD5 16, SHA-1 20, SHA-224 28, SHA-256 32, SHA-384 48,
+  SHA-512 64 octets
+
+`AuthProtocol`: `NONE`, `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`
+`PrivProtocol`: `NONE`, `DES`, `AES128`, `AES192`, `AES256`, `THREEDES_EDE` (DES raises `ProtocolError`)
 
 ---
 
@@ -102,20 +132,38 @@ Validation notes:
 
 ---
 
+## `V1Notifier` fields
+
+`V1Notifier` uses the same fields as `V2cNotifier` (`host`, `community`, `port`
+defaulting to `162`, `timeout`, `retries`, `bundle`, `max_datagram_size`).
+
+Behavior notes:
+
+- `send_trap()` targets the SNMPv1 Trap-PDU fields — `enterprise` (required),
+  `agent_addr`, `generic_trap`, `specific_trap`, `timestamp` — and returns the
+  trap timestamp rather than a request id
+- `send_inform()` always raises `ProtocolError`: SNMPv1 has no inform concept
+
+---
+
 ## `V2cNotificationListener` fields
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `host` | `str` | `0.0.0.0` | Listener bind hostname or IP address |
 | `port` | `int` | `162` | Listener UDP port |
-| `communities` | `Sequence[str] \| None` | `None` | Optional SNMPv2c community allowlist |
+| `communities` | `Sequence[str] \| None` | `None` | Optional community allowlist (v2c traps/informs and SNMPv1 traps) |
 | `bundle` | `MibBundle \| None` | `None` | Optional bundle used for inbound enrichment |
+| `on_error` | `Callable[[DropReason, SocketAddress, bytes], None] \| None` | `None` | Optional callback invoked with `(reason, source_address, data_prefix)` for each dropped datagram |
+| `clock` | `Callable[[], float]` | `time.monotonic` | Time source used for drop-log throttling |
 
 Behavior notes:
 
-- `communities=None` accepts any SNMPv2c community
+- `communities=None` accepts any community string
 - empty strings in `communities` are ignored
 - informs are acknowledged automatically
+- the same listener also receives SNMPv1 Trap-PDUs, and the `communities`
+  allowlist gates both versions
 
 ---
 
@@ -131,10 +179,12 @@ Base install covers `noAuthNoPriv` and `authNoPriv` listeners; add
 | `user` | `UsmUser` | required | USM credentials for one configured inbound user |
 | `local_engine` | `UsmLocalEngine` | required | Local authoritative engine state used for discovery REPORTs and inform acknowledgements |
 | `bundle` | `MibBundle \| None` | `None` | Optional bundle used for inbound enrichment |
+| `on_error` | `Callable[[DropReason, SocketAddress, bytes], None] \| None` | `None` | Optional callback invoked with `(reason, source_address, data_prefix)` for each dropped datagram |
+| `clock` | `Callable[[], float]` | `time.monotonic` | Time source used for drop-log throttling |
 
 Behavior notes:
 
-- one listener instance handles one configured USM user in `v0.4.2`
+- one listener instance handles one configured USM user
 - v3 informs are acknowledged automatically
 - discovery probes are answered automatically so `V3Notifier.send_inform()` works against the listener
 

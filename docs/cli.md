@@ -4,7 +4,7 @@ The CLI is a thin wrapper over the Python API. It is useful for smoke testing,
 offline translation, notification debugging, and simple operator workflows, but
 it is not the primary product surface.
 
-Current CLI coverage includes SNMPv2c plus SNMPv3 `get`, `getnext`, `getbulk`,
+Current CLI coverage includes SNMPv1/v2c plus SNMPv3 `get`, `getnext`, `getbulk`,
 `walk`, `bulkwalk`, `trap`, `inform`, `listen`, and `decode-notification`.
 
 ---
@@ -56,7 +56,7 @@ The outbound notification commands (`trap`, `inform`) share these options:
 | `--timeout` | `2.0` | Request timeout in seconds |
 | `--retries` | `1` | Retry count per request |
 | `--bundle` | — | Compiled module JSON file or bundle directory |
-| `--uptime` | `0` | `sysUpTime.0` value in centiseconds (v2c/v3 traps only) |
+| `--uptime` | `0` | `sysUpTime.0` value in centiseconds (v2c/v3 traps and informs) |
 | `--enterprise` | — | SNMPv1 trap: enterprise OID; required for `trap --snmp-version 1` |
 | `--agent-addr` | `0.0.0.0` | SNMPv1 trap: originating agent address |
 | `--generic-trap` | `6` | SNMPv1 trap: generic trap number (0-6) |
@@ -94,7 +94,7 @@ Validation rules:
 - `--community` is invalid with `--snmp-version 3` (valid with `1` and `2c`)
 - `--username` is required with `--snmp-version 3`
 - `--snmp-version 1` accepts `--community` only; mixing v1 with v3 flags fails early
-- `trap --snmp-version 1` requires `--enterprise` and rejects `--uptime`
+- `trap --snmp-version 1` requires `--enterprise` and rejects a non-zero `--uptime`
 - `inform --snmp-version 1` fails fast: SNMPv1 has no inform operations — use `trap`
 - auth requires exactly one of `--auth-key` or `--auth-key-env`
 - privacy requires auth plus exactly one of `--priv-key` or `--priv-key-env`
@@ -230,10 +230,13 @@ tsnmp bulkwalk --host 10.0.0.10 --bundle ./mibs-json IF-MIB::ifTable
 ## `tsnmp trap`
 
 ```
-tsnmp trap [OPTIONS] NOTIFICATION
+tsnmp trap [OPTIONS] [NOTIFICATION]
 ```
 
-Sends an SNMP trap and prints the assigned request id.
+Sends an SNMP trap and prints the assigned request id. `NOTIFICATION` is
+optional: with `--snmp-version 1` no positional is used — the trap is targeted
+via `--enterprise` — and the printed value is the trap timestamp rather than a
+request id (v1 Trap-PDUs carry no request id).
 
 Examples:
 

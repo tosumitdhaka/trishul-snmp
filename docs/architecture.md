@@ -1,6 +1,6 @@
 # trishul-snmp — Architecture
 
-> **Last updated:** 2026-06-04
+> **Last updated:** 2026-09-25
 
 ---
 
@@ -15,7 +15,7 @@ symbolic translation and richer display.
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                             Python API / CLI                                 │
-│  V2cManager / V3Manager  ·  V2cNotifier / V3Notifier                        │
+│  V1Manager / V2cManager / V3Manager · V1Notifier / V2cNotifier / V3Notifier  │
 │  V2cNotificationListener / V3NotificationListener  ·  V2cResponder          │
 │  decode_notification()                                                       │
 ├──────────────────────────────────────────────────────────────────────────────┤
@@ -40,7 +40,7 @@ The CLI is intentionally thin. It does not define a second architecture.
 trishul_snmp/
 ├── __init__.py          ← public package surface + version
 ├── __main__.py          ← `python -m trishul_snmp`
-├── errors.py            ← exception hierarchy (incl. AuthenticationError)
+├── errors.py            ← exception hierarchy (incl. AuthenticationError, EngineRecoveryReportError)
 ├── types.py             ← public response and SNMP value models
 ├── session.py           ← shared UdpClient + Dispatcher + Lock + MibBundle
 │
@@ -61,12 +61,12 @@ trishul_snmp/
 │   └── dispatcher.py    ← request ids, timeout/retry, response matching
 │
 ├── manager/
-│   ├── client.py        ← SnmpManager base · V2cManager · V3Manager
+│   ├── client.py        ← SnmpManager base · V1Manager · V2cManager · V3Manager
 │   ├── operations.py    ← target normalization and response shaping
 │   └── walk.py          ← subtree walk stop rules and iteration
 │
 ├── notify/
-│   ├── client.py        ← SnmpNotifier base · V2cNotifier · V3Notifier
+│   ├── client.py        ← SnmpNotifier base · V1Notifier · V2cNotifier · V3Notifier
 │   ├── listener.py      ← V2c/V3 notification listener public receive APIs
 │   ├── v3.py            ← listener-side v3 decode/report/response helpers
 │   ├── events.py        ← notification event model + live/offline decode
@@ -116,8 +116,8 @@ Non-responsibilities:
 Security model abstraction. Responsibilities:
 
 - `SecurityModel` structural protocol: `wrap_pdu(pdu) -> bytes`, `unwrap_message(data) -> Pdu | None`
-- `CommunityModel`: SNMPv2c community string wrapping/matching
-- `UsmModel`: SNMPv3 USM — RFC 3414 key derivation, HMAC auth, AES-128-CFB privacy, engine discovery, and sender-authoritative trap handling
+- `CommunityModel`: SNMPv1/v2c community string wrapping/matching
+- `UsmModel`: SNMPv3 USM — RFC 3414 key derivation, HMAC auth, AES-128/192/256-CFB and 3DES-EDE privacy, engine discovery, and sender-authoritative trap handling
 - `UsmUser`: immutable credential dataclass (username, auth protocol/key, priv protocol/key)
 - `UsmLocalEngine`: explicit sender-authoritative engine state for SNMPv3 traps
 
@@ -192,7 +192,7 @@ Owns command-line UX only:
 - load the optional bundle
 - call the same Python API as library users
 - render text or JSON output
-- current live-command protocol coverage includes SNMPv2c plus SNMPv3 manager, outbound notification send, inbound notification listen, and offline decode
+- current live-command protocol coverage includes SNMPv1, SNMPv2c, plus SNMPv3 manager, outbound notification send, inbound notification listen, and offline decode
 
 ---
 
@@ -246,7 +246,7 @@ This flow is shown with `V2cManager`. `V3Manager` follows the same request path 
 2. `UdpServer` binds the requested host and port.
 3. The listener receives inbound datagrams and decodes SNMP messages.
 4. For v2c, non-notification PDUs and filtered communities are ignored.
-5. For v3, discovery probes are answered with REPORTs and malformed/wrong-user/auth-failed datagrams are dropped quietly.
+5. For v3, discovery probes are answered with REPORTs and malformed/wrong-user/auth-failed datagrams are dropped, counted (`dropped`/`drop_counts`), rate-limit-logged, and surfaced through the listener's `on_error` callback.
 6. Informs are acknowledged automatically with a matching `RESPONSE` PDU.
 7. The listener returns a `NotificationEvent` carrying source address, PDU kind, decoded varbinds, notification metadata, and additive v3 security metadata when present.
 
@@ -289,11 +289,11 @@ actually need.
 The current main-branch scope is still intentionally narrower than a full SNMP
 stack:
 
-- SNMPv2c and SNMPv3 USM (noAuthNoPriv, authNoPriv, authPriv AES-128)
+- SNMPv1 (community), SNMPv2c, and SNMPv3 USM (noAuthNoPriv, authNoPriv, authPriv AES-128/192/256 and 3DES-EDE)
 - async-first package API first, CLI second
 - manager operations plus notification send/receive and narrow read-only response
-- live CLI coverage for SNMPv2c plus SNMPv3 manager, notifier, listener, and offline decode paths
+- live CLI coverage for SNMPv1, SNMPv2c, plus SNMPv3 manager, notifier, listener, and offline decode paths
 - not attempting a full `pysnmp` replacement
 
-Raw MIB ingestion, compiler workflows, writable `set`, SNMPv1, and full
+Raw MIB ingestion, compiler workflows, writable `set`, and full
 agent framework support remain outside the current implemented architecture.

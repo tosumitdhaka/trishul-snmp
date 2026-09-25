@@ -74,6 +74,11 @@ On load, `tsnmp` validates:
 - object/type collections
 - OID shape
 - optional sidecar structure when present
+- `schema_version` on module payloads and `manifest.json`
+
+`schema_version` is validated against the supported maximum (`1.1`): artifacts
+at or below it load normally, while anything newer is rejected with an
+actionable error identifying it as coming from a newer, incompatible producer.
 
 Malformed artifacts raise `BundleValidationError`.
 
@@ -110,7 +115,9 @@ at runtime.
 
 ## Current compatibility window
 
-Current `v0.1` behavior targets the tested `tsmi` JSON shape.
+`tsnmp` accepts bundle artifacts at or below `schema_version` `1.1`; module
+payloads and `manifest.json` declaring a newer version are rejected at load
+with an actionable error.
 
 Still intentionally limited:
 

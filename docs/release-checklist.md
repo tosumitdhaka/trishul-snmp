@@ -78,6 +78,7 @@ Follow this checklist for every release. Steps should be completed in order.
   python -m venv /tmp/tsnmp-release-test
   /tmp/tsnmp-release-test/bin/pip install "dist/trishul_snmp-x.y.z-py3-none-any.whl[v3]"
   /tmp/tsnmp-release-test/bin/tsnmp version
+  /tmp/tsnmp-release-test/bin/trishul-snmp version
   /tmp/tsnmp-release-test/bin/python -c "from trishul_snmp import UsmLocalEngine, V2cManager, V3Manager, V3Notifier, load_bundle; print('import ok')"
   /tmp/tsnmp-release-test/bin/tsnmp get --help >/dev/null
   /tmp/tsnmp-release-test/bin/tsnmp get --snmp-version 3 --help >/dev/null
@@ -97,7 +98,7 @@ Follow this checklist for every release. Steps should be completed in order.
 - [ ] Run ecosystem validation against the intended `tsmi` pairing:
   ```bash
   python3 scripts/validate_ecosystem.py \
-    --tsmi-version 0.4.5 \
+    --tsmi-version 0.5.0 \
     --mib-dir /var/lib/mibs/ietf \
     --mib-dir /var/lib/mibs/iana \
     --host 127.0.0.1 \

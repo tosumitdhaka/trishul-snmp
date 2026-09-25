@@ -2,6 +2,8 @@
 
 `tsnmp` is a package-first SNMP runtime. Start with numeric OIDs and no bundle;
 add compiled JSON only when you need symbolic resolution or better display metadata.
+The CLI installs as both `tsnmp` and `trishul-snmp` console scripts (same command
+surface); usage output reflects whichever name was invoked.
 
 ---
 
@@ -11,14 +13,15 @@ add compiled JSON only when you need symbolic resolution or better display metad
 pip install trishul-snmp
 ```
 
-For SNMPv3 privacy/authPriv support (AES-128-CFB encryption), install the `[v3]` extra:
+For SNMPv3 privacy/authPriv support (AES-128/192/256-CFB and 3DES-EDE encryption), install the `[v3]` extra:
 
 ```bash
 pip install "trishul-snmp[v3]"
 ```
 
-The base package always imports correctly without `[v3]` and covers SNMPv3
-`noAuthNoPriv` plus `authNoPriv`. Install `[v3]` only for privacy/authPriv flows.
+The base package always imports correctly without `[v3]` and covers SNMPv1,
+SNMPv2c, plus SNMPv3 `noAuthNoPriv` and `authNoPriv`. Install `[v3]` only for
+privacy/authPriv flows.
 
 For local development:
 
@@ -36,7 +39,7 @@ Current main-branch baseline:
 
 - manager operations plus notification send/listen/decode
 - narrow read-only responder/simulator support
-- SNMPv2c and SNMPv3 USM (noAuthNoPriv, authNoPriv, authPriv AES-128)
+- SNMPv1 (community), SNMPv2c, and SNMPv3 USM (noAuthNoPriv, authNoPriv HMAC-MD5/SHA-1/SHA-224/SHA-256/SHA-384/SHA-512, authPriv AES-128/192/256 and 3DES-EDE)
 - read-only operations: `get`, `get_next`, `get_bulk`, `walk`, `bulkwalk`
 - package-first Python API
 - optional compiled-JSON bundle loading from a single module file or a bundle directory
@@ -46,7 +49,6 @@ Deliberately out of scope:
 - raw MIB file or raw MIB directory ingestion
 - runtime dependency on `trishul-smi`
 - `set`
-- SNMPv1
 - full agent or writable responder behavior
 
 Current CLI coverage includes SNMPv1, SNMPv2c, plus SNMPv3 `get`, `getnext`,
@@ -71,6 +73,30 @@ from trishul_snmp import V2cManager
 
 async def main() -> None:
     async with V2cManager(host="10.0.0.10", community="public") as manager:
+        response = await manager.get("1.3.6.1.2.1.1.3.0")
+        for varbind in response.varbinds:
+            print(varbind.oid_str, varbind.value_type, varbind.display_value)
+
+
+asyncio.run(main())
+```
+
+---
+
+## First SNMPv1 request
+
+SNMPv1 is community-based like SNMPv2c. `V1Manager` wraps requests as SNMPv1
+messages; SNMPv1 has no GETBULK, so `get_bulk`/`bulkwalk` downgrade to GETNEXT
+loops.
+
+```python
+import asyncio
+
+from trishul_snmp import V1Manager
+
+
+async def main() -> None:
+    async with V1Manager(host="10.0.0.10", community="public") as manager:
         response = await manager.get("1.3.6.1.2.1.1.3.0")
         for varbind in response.varbinds:
             print(varbind.oid_str, varbind.value_type, varbind.display_value)

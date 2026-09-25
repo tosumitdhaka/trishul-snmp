@@ -9,14 +9,16 @@ same package surface.
 
 | Symbol | Kind | Purpose |
 |---|---|---|
+| `V1Manager` | class | Async SNMPv1 manager client |
 | `V2cManager` | class | Async SNMPv2c manager client |
 | `V3Manager` | class | Async SNMPv3 USM manager client |
+| `V1Notifier` | class | Async SNMPv1 trap sender |
 | `V2cNotifier` | class | Async SNMPv2c trap and inform sender |
 | `V3Notifier` | class | Async SNMPv3 USM notifier; informs use peer discovery, traps require `UsmLocalEngine` |
 | `V2cNotificationListener` | class | Async SNMPv2c trap and inform listener |
 | `V3NotificationListener` | class | Async SNMPv3 USM notification listener for one configured user |
 | `V2cResponder` | class | Async SNMPv2c read-only responder for simulator-style use |
-| `decode_notification(data, *, bundle=None, source_address=None, user=None)` | function | Offline decode for BER-encoded v2c traps/informs or strict SNMPv3 USM notifications |
+| `decode_notification(data, *, bundle=None, source_address=None, user=None)` | function | Offline decode for BER-encoded v1 traps, v2c traps/informs, or strict SNMPv3 USM notifications |
 | `load_bundle(path)` | function | Load a compiled module JSON file or bundle directory |
 | `MibBundle` | class | Bundle translation and enrichment handle |
 | `InMemoryObjectSource` | class | Mutable in-memory responder object source; accepts static values and simulation rules |
@@ -43,6 +45,7 @@ SNMPv3 USM types (base install covers `noAuthNoPriv` and `authNoPriv`; add
 Important public enums and value models:
 
 - `ErrorStatus`
+- `DropReason`
 - `IntegerValue`
 - `OctetStringValue`
 - `ObjectIdentifierValue`
@@ -107,6 +110,39 @@ finally:
 
 ---
 
+## `V1Manager`
+
+```python
+from trishul_snmp import V1Manager
+
+manager = V1Manager(
+    host="10.0.0.10",
+    community="public",
+    port=161,
+    timeout=2.0,
+    retries=1,
+    bundle=None,
+    max_datagram_size=65535,
+)
+```
+
+Constructor fields and lifecycle are identical to `V2cManager` (`host`,
+`community`, `port`, `timeout`, `retries`, `bundle`, `max_datagram_size`).
+
+SNMPv1 has no GETBULK PDU (RFC 1157), so the bulk operations downgrade
+transparently to GETNEXT loops:
+
+- `get_bulk()` chains GETNEXT requests mirroring GETBULK semantics: each of the
+  first `non_repeaters` targets yields a single successor and every remaining
+  target yields up to `max_repetitions` successors
+- `bulkwalk()` and `walk()` always use the GETNEXT machinery; the `bulk` and
+  `max_repetitions` arguments are accepted for interface compatibility with
+  `V2cManager` but ignored
+
+`get()` and `get_next()` behave exactly like `V2cManager`.
+
+---
+
 ## `V3Manager`
 
 Base install covers `noAuthNoPriv` and `authNoPriv`. Add
@@ -155,9 +191,14 @@ to `V2cManager`.
 | `priv_protocol` | `PrivProtocol` | `PrivProtocol.NONE` | Privacy algorithm |
 | `priv_key` | `bytes` | `b""` | Priv passphrase |
 
-`AuthProtocol` values: `NONE`, `MD5`, `SHA1`, `SHA256`
+Validation notes:
 
-`PrivProtocol` values: `NONE`, `AES128` (`DES` enum value exists for wire identification but raises `ProtocolError` at runtime)
+- a non-`NONE` `auth_protocol` or `priv_protocol` with empty/missing key material raises `ProtocolError` at `UsmUser` construction
+- a localized auth key (`auth_key_localized=True`) must be exactly the protocol's digest length: MD5 16, SHA-1 20, SHA-224 28, SHA-256 32, SHA-384 48, SHA-512 64 octets
+
+`AuthProtocol` values: `NONE`, `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512` (RFC 7860 SHA-2 family)
+
+`PrivProtocol` values: `NONE`, `DES`, `AES128`, `AES192`, `AES256`, `THREEDES_EDE` (`DES` raises `ProtocolError` at runtime; the enum value is retained for wire identification)
 
 ---
 
@@ -267,6 +308,7 @@ Runtime and protocol errors:
 
 - `TransportError`
 - `RequestTimeoutError`
+- `EngineRecoveryReportError` (raised when a `usmStatsNotInTimeWindows` REPORT arrives for an in-flight SNMPv3 request; the manager and `send_inform()` retry the request once automatically after adopting the peer's authoritative engine state)
 - `ProtocolError`
 - `AuthenticationError` (subclass of `ProtocolError`; raised on USM HMAC verification failure)
 
@@ -326,6 +368,45 @@ async with V2cNotifier(host="10.0.0.20", community="public", bundle=bundle) as n
         uptime=123,
     )
 ```
+
+---
+
+## `V1Notifier`
+
+```python
+from trishul_snmp import V1Notifier
+
+notifier = V1Notifier(
+    host="10.0.0.20",
+    community="public",
+    port=162,
+    timeout=2.0,
+    retries=1,
+    bundle=None,
+    max_datagram_size=65535,
+)
+```
+
+Constructor fields are identical to `V2cNotifier`.
+
+SNMPv1 traps identify themselves through the Trap-PDU's enterprise, agent
+address, generic-trap, specific-trap, and timestamp fields rather than a
+`snmpTrapOID` varbind, so `send_trap()` has a distinct signature:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `enterprise` | `str \| Sequence[int]` | required | Enterprise OID of the Trap-PDU |
+| `agent_addr` | `str` | `"0.0.0.0"` | Originating agent address |
+| `generic_trap` | `int` | `6` | Generic trap code (0-6); `6` is `enterpriseSpecific` |
+| `specific_trap` | `int` | `0` | Specific trap code, used with generic trap 6 |
+| `timestamp` | `int` | `0` | Trap timestamp in centiseconds |
+| `varbinds` | sequence | `()` | Payload varbinds in `(target, value)` form |
+
+`send_trap()` returns the trap timestamp (`int`), not a request id — SNMPv1
+Trap-PDUs carry no request-id. An explicit `sysUpTime.0` varbind overrides both
+the auto-added varbind and the Trap-PDU timestamp field.
+
+`send_inform()` always raises `ProtocolError`: SNMPv1 has no inform concept.
 
 ---
 
@@ -393,14 +474,29 @@ Available methods and properties:
 |---|---|---|
 | `receive()` | `NotificationEvent` | Waits for the next matching trap or inform |
 | `local_address` | `SocketAddress \| None` | Bound local address once the listener is open |
+| `dropped` | `int` | Total datagrams dropped since the listener was created |
+| `drop_counts` | `Mapping[DropReason, int]` | Per-reason drop counts |
 | `__aiter__()` | async iterator | Async iterator-first consumption model |
 
 Behavior:
 
 - trap PDUs are surfaced as events
 - inform PDUs are acknowledged automatically before the event is returned
-- `communities=None` accepts any SNMPv2c community
-- `communities=[...]` acts as an allowlist
+- `communities=None` accepts any community string
+- `communities=[...]` acts as an allowlist; the same allowlist gates SNMPv1
+  traps and SNMPv2c traps/informs
+
+Observability:
+
+- `dropped` and `drop_counts` report datagrams that were dropped instead of
+  surfaced as events
+- `DropReason` values: `UNDECODABLE_BER`, `WRONG_COMMUNITY`, `UNSUPPORTED_VERSION`,
+  `WRONG_USER`, `NOT_NOTIFICATION`, `AUTHENTICATION_FAILED`, `ENGINE_BOOTS_REPLAY`,
+  `OUTSIDE_TIME_WINDOW`, `DUPLICATE_SALT`
+- the optional `on_error` constructor callback is invoked as
+  `on_error(reason, source_address, data_prefix)` for each dropped datagram
+- the optional `clock` constructor param injects the time source used for
+  drop-log throttling (defaults to `time.monotonic`)
 
 Example:
 
@@ -419,7 +515,7 @@ async with V2cNotificationListener(host="127.0.0.1", port=9162, communities=["pu
 | `request_id` | SNMP request identifier carried by the trap or inform |
 | `community` | Source SNMPv2c community string, or `None` for v3 events |
 | `source_address` | Remote UDP source address tuple, or `None` for offline decode |
-| `pdu_type` | `"snmpv2-trap"` or `"inform-request"` |
+| `pdu_type` | `"trap"` (SNMPv1 Trap-PDU), `"snmpv2-trap"`, or `"inform-request"` |
 | `varbinds` | Tuple of decoded `VarBind` objects |
 | `notification_oid` | Numeric notification OID extracted from `snmpTrapOID.0` when present |
 | `notification_name` | Bundle-backed symbolic notification name when available |
@@ -439,6 +535,18 @@ Additional v3 event fields:
 | `authoritative_engine_id` | USM authoritative engine-id bytes |
 | `authoritative_engine_boots` | USM authoritative `engineBoots` |
 | `authoritative_engine_time` | USM authoritative `engineTime` |
+
+Additional v1 event fields (populated only when the source is an SNMPv1 Trap-PDU):
+
+| Field | Description |
+|---|---|
+| `enterprise` | Numeric enterprise OID of the Trap-PDU |
+| `agent_addr` | Trap-PDU agent address |
+| `generic_trap` | Trap-PDU generic trap code (0-6) |
+| `specific_trap` | Trap-PDU specific trap code |
+| `timestamp` | Trap-PDU timestamp in centiseconds |
+
+These v1 fields are also included in `to_dict()` output.
 
 Convenience properties:
 
@@ -485,8 +593,9 @@ listener = V3NotificationListener(
 )
 ```
 
-`V3NotificationListener` shares the same async context-manager and iterator model
-as `V2cNotificationListener`, but handles one configured USM user, replies to
+`V3NotificationListener` shares the same async context-manager, iterator, and
+observability model as `V2cNotificationListener` (`dropped`, `drop_counts`,
+`on_error`, and `clock`), but handles one configured USM user, replies to
 discovery probes for `V3Notifier.send_inform()`, and automatically acknowledges
 inbound informs with matching v3 RESPONSE messages.
 
@@ -519,7 +628,9 @@ the same `NotificationEvent` model used by the live listener API.
 
 Notes:
 
-- omit `user` for SNMPv2c offline decode
+- omit `user` for SNMPv1 or SNMPv2c offline decode; v1 Trap-PDUs populate their
+  `enterprise`, `agent_addr`, `generic_trap`, `specific_trap`, and `timestamp`
+  metadata on the returned event
 - supply `user=UsmUser(...)` for strict SNMPv3 USM offline decode
 - SNMPv3 auth failure raises `AuthenticationError`
 - `source_address` is optional because offline payloads may not have transport metadata
