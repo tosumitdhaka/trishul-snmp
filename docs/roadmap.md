@@ -5,7 +5,7 @@ Status: `planned` | `in progress` | `done` | `deferred`
 
 ---
 
-## v0.6.0 — shipped 2026-09-28
+## v0.6.1 — shipped 2026-09-28
 
 | # | Item | Status | Notes |
 |---|---|---|---|
@@ -42,7 +42,7 @@ Status: `planned` | `in progress` | `done` | `deferred`
 | # | Item | Status | Notes |
 |---|---|---|---|
 | 1 | SNMPv1 support | done | `#8`. v1 message/PDU codec (0xa0–0xa4 incl. Trap-PDU), `V1Manager` GET/GETNEXT (GETBULK downgrades to GETNEXT loops), `V1Notifier` trap send, v1 trap receive on the community listener, and `decode_notification` v1 support with enterprise/agent-addr/generic/specific/timestamp metadata on `NotificationEvent`. CLI `--snmp-version 1` across manager/trap/listen/decode. |
-| 2 | USM crypto parity (Reeder) | done | `#10`. SHA-224/384/512 auth (RFC 7860), AES-192/256, and 3DES-EDE. The v0.5.0 "Reeder" AES naming was a misattribution — `#30` (v0.6.0) corrected the AES-192/256 derivation to Blumenthal (draft-blumenthal-aes-usm-04 3.1.2), which is what net-snmp's default `AES-192/256` actually implements. |
+| 2 | USM crypto parity (Reeder) | done | `#10`. SHA-224/384/512 auth (RFC 7860), AES-192/256, and 3DES-EDE. The v0.5.0 "Reeder" AES naming was a misattribution — `#30` (v0.6.1) corrected the AES-192/256 derivation to Blumenthal (draft-blumenthal-aes-usm-04 3.1.2), which is what net-snmp's default `AES-192/256` actually implements. |
 | 3 | DES-CBC privacy | dropped | `#11`/`#29`. Formally dropped (2026-09-25): `cryptography` exposes no single-DES primitive and pure-Python crypto is not justified for a broken cipher. `PrivProtocol.DES` stays for wire identification, fails fast with an accurate error; consumers should reject `priv: DES` at config validation with a migration note to 3DES-EDE/AES. Revisit only if a concrete legacy device requires it. |
 | 4 | Listener observability | done | `#9`. Shared `DropReason` taxonomy (including the v0.4.3 replay verdicts), drop counters, rate-limited warnings, and `on_error` callbacks on both community and v3 listeners. |
 | 5 | Decoder fuzz/property tests and real-agent CI | done | `hypothesis` property/fuzz coverage for the untrusted-input BER decode path (no decoder bugs found: 700+ arbitrary inputs, only `ProtocolError` or clean decodes) plus snmpd-backed integration tests (`-m snmpd`) with a CI job on 127.0.0.1:1161. |
@@ -168,8 +168,8 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 | # | Item | Status | Notes |
 |---|---|---|---|
 | 1 | Forward-compatibility with future `tsmi` IR version fields | done | Landed in `v0.4.3`: explicit `schema_version` metadata is read and enforced at load time (accept ≤ `1.1`, reject newer with an actionable error) without making sidecars mandatory. |
-| 2 | Better optional rendering fidelity from bundle metadata | done | `v0.6.0` (tsmi `#35`): consumes the tsmi 0.5.2 object-level `enums`/`units`/`constraints` IR — `up(1)` enum labels in text output, BITS rendering, `enum_label`/`units` as additive JSON keys; older bundles render byte-identically. Verified end-to-end against a real tsmi 0.5.2-compiled bundle. |
-| 3 | Broader live-agent compatibility coverage | done | `v0.6.0` via `#25` (walk/bulkwalk termination edge cases — quirk-agent suite + `walk.py` hardening), `#26` (VACM restricted-view and v3-only agents), `#27` (v1 ops, v3 crypto matrix, real-agent notifications, responder-under-real-clients). The snmpd CI suite grew 5 → 31 tests. |
+| 2 | Better optional rendering fidelity from bundle metadata | done | `v0.6.1` (tsmi `#35`): consumes the tsmi 0.5.2 object-level `enums`/`units`/`constraints` IR — `up(1)` enum labels in text output, BITS rendering, `enum_label`/`units` as additive JSON keys; older bundles render byte-identically. Verified end-to-end against a real tsmi 0.5.2-compiled bundle. |
+| 3 | Broader live-agent compatibility coverage | done | `v0.6.1` via `#25` (walk/bulkwalk termination edge cases — quirk-agent suite + `walk.py` hardening), `#26` (VACM restricted-view and v3-only agents), `#27` (v1 ops, v3 crypto matrix, real-agent notifications, responder-under-real-clients). The snmpd CI suite grew 5 → 31 tests. |
 
 ---
 ## Explicitly deferred
@@ -186,5 +186,5 @@ coding sequence, package evolution, and pre-implementation lock decisions.
 | 8 | Daemon/service packaging for long-running listeners | deferred | Library-level listener and responder APIs exist on main branch; daemonization is still out of scope. |
 | 9 | Full agent framework or writable responder support | deferred | `v0.2.0` only targets a narrow read-only simulator/responder. |
 | 10 | Native codec experiment | deferred | Pure codec microbenchmarks improved, but end-to-end manager and responder paths did not justify the extra Rust build, packaging, and dual-implementation maintenance cost. Revisit only if a broader native hot-path effort is planned. The v0.4.3 USM key-caching work removed the main end-to-end performance motivation. |
-| 11 | Blumenthal AES-192/256 key derivation (RFC 8963) | done | Via `#30` (v0.6.0): net-snmp's default AES-192/256 already implements Blumenthal (RFC 8963 / draft-blumenthal-aes-usm-04 3.1.2 — localize, then truncate or extend the localized key); verified byte-exact against net-snmp 5.9.4 ground-truth keys and live-agent GETs for all digest/keylen combinations. The v0.5.0 "Reeder-first" plan was based on a misattribution; no separate Reeder AES variant exists in the IETF archive. |
+| 11 | Blumenthal AES-192/256 key derivation (RFC 8963) | done | Via `#30` (v0.6.1): net-snmp's default AES-192/256 already implements Blumenthal (RFC 8963 / draft-blumenthal-aes-usm-04 3.1.2 — localize, then truncate or extend the localized key); verified byte-exact against net-snmp 5.9.4 ground-truth keys and live-agent GETs for all digest/keylen combinations. The v0.5.0 "Reeder-first" plan was based on a misattribution; no separate Reeder AES variant exists in the IETF archive. |
 | 12 | DES-CBC privacy (single DES) | dropped | `#11`/`#29`. Formally dropped (2026-09-25): the `cryptography` backend exposes no single-DES primitive (TripleDES only, in `decrepit`); `PrivProtocol.DES` fails fast with an accurate error. Revisit only if a legacy device absolutely requires single-DES and a supported backend appears. |

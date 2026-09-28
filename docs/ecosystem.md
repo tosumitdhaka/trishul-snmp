@@ -30,7 +30,7 @@ Latest released pairing validated for the current documented contract:
 
 | Package | Version |
 |---|---|
-| `trishul-snmp` | `0.6.0` |
+| `trishul-snmp` | `0.6.1` |
 | `trishul-smi` | `0.5.2` |
 
 Compatibility status for this released pairing:
@@ -178,7 +178,7 @@ At the current released pairing, the ecosystem is in a usable state:
 - single-file JSON and directory bundle flows both work
 - sidecars improve ergonomics/performance but do not gate correctness
 - published `tsmi` CLI now matches the optional-sidecar bundle contract expected by `tsnmp`
-- the compiler/runtime boundary stays stable at the validated `0.6.0` / `0.5.2` released pairing
+- the compiler/runtime boundary stays stable at the validated `0.6.1` / `0.5.2` released pairing
 
 For deeper details, see:
 
