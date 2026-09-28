@@ -6,6 +6,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.2] — 2026-09-28
+
+### Fixed
+
+- **USM auth tag truncation (#28)** — RFC 7860 per-protocol truncated MAC lengths on every path: SHA-224 → 16, SHA-256 → 24, SHA-384 → 32, SHA-512 → 48 bytes (MD5/SHA-1 correctly remain 12 per RFC 3414). Previously all protocols used 12 bytes, so v3 SHA-2 requests were rejected by standard agents with `usmStatsWrongDigests` (0/17 combinations accepted against pysnmp 7.1.29 and net-snmp in cross-stack testing) and the listener dropped standard-compliant SHA-2-authed notifications. Fixed end-to-end: `UsmModel` compute/stamp/verify, `notify/v3.py` inbound field-length validation and inform-response placeholder. Wire-verified against a live net-snmp 5.9.4 agent with a positive test (SHA-256/AES-256 GET accepted) and a negative control (forced 12-byte tag → `AuthenticationError`, `usmStatsWrongDigests` counter incrementing).
+- **Cross-agent v3 CI case** — the snmpd CI job now runs a live authPriv SHA-256/AES-256 GET against a configured `createUser`/`rouser` (previously v2c-only, the coverage gap that let #28 ship silently).
+- **Ecosystem pairing** — validated against `trishul-smi 0.5.2`: 13/13 steps PASS (IR additions are additive; `schema_version` stays `1.1`).
+
+---
+
 ## [0.5.1] — 2026-09-24
 
 ### Fixed

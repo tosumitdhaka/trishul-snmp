@@ -25,7 +25,6 @@ from trishul_snmp.wire.v3message import (
 if TYPE_CHECKING:
     from trishul_snmp.transport.dispatcher import RequestDispatcher
 
-_AUTH_TAG_LEN = 12  # RFC 3414: HMAC truncated to 12 bytes
 _REPORT_PDU_TAG = 0xA8  # SNMPv3 REPORT PDU tag — not in PduType enum
 _SEQUENCE_TAG = 0x30  # BER SEQUENCE tag
 _OCTET_STRING_TAG = 0x04  # BER OCTET STRING tag
@@ -66,7 +65,8 @@ class AuthProtocol(Enum):
     """Supported USM authentication protocols.
 
     HMAC-MD5-96 and HMAC-SHA-1-96 (RFC 3414) plus the RFC 7860 HMAC-SHA-2
-    variants (SHA-224/256/384/512). All truncate the digest to 12 octets.
+    variants (SHA-224/256/384/512). The truncated MAC length is per protocol:
+    12 octets for MD5/SHA-1, 16/24/32/48 for the SHA-2 family (RFC 7860 §3.1).
     """
 
     NONE = "none"
@@ -104,6 +104,17 @@ _AUTH_LOCALIZED_KEY_LENGTHS: dict[AuthProtocol, int] = {
     AuthProtocol.SHA256: 32,
     AuthProtocol.SHA384: 48,
     AuthProtocol.SHA512: 64,
+}
+
+# Truncated HMAC tag length per protocol (RFC 3414 §3.3.2 / RFC 7860 §3.1):
+# MD5 and SHA-1 truncate the HMAC to 12 octets; the SHA-2 variants keep more.
+_AUTH_TAG_LENGTHS: dict[AuthProtocol, int] = {
+    AuthProtocol.MD5: 12,
+    AuthProtocol.SHA1: 12,
+    AuthProtocol.SHA224: 16,
+    AuthProtocol.SHA256: 24,
+    AuthProtocol.SHA384: 32,
+    AuthProtocol.SHA512: 48,
 }
 
 
@@ -222,7 +233,7 @@ class UsmModel:
         else:
             priv_params = b""
 
-        auth_params = b"\x00" * _AUTH_TAG_LEN if self._auth_enabled() else b""
+        auth_params = b"\x00" * self._auth_tag_len() if self._auth_enabled() else b""
 
         usm = UsmParams(
             engine_id=engine.engine_id,
@@ -437,6 +448,14 @@ class UsmModel:
     def _auth_enabled(self) -> bool:
         return self.user.auth_protocol is not AuthProtocol.NONE
 
+    def _auth_tag_len(self) -> int:
+        """Truncated HMAC tag length for the configured auth protocol (RFC 7860 §3.1)."""
+        proto = self.user.auth_protocol
+        try:
+            return _AUTH_TAG_LENGTHS[proto]
+        except KeyError:
+            raise ProtocolError(f"Unsupported auth protocol: {proto}") from None
+
     def _hash_engine(self) -> Callable[[bytes], hashlib._Hash]:
         """Return the hashlib constructor for the configured auth protocol."""
         proto = self.user.auth_protocol
@@ -464,7 +483,7 @@ class UsmModel:
         return self._localize_key(self.user.auth_key, selected_engine_id)
 
     def _compute_auth_tag(self, msg: bytes, engine_id: bytes | None = None) -> bytes:
-        """Compute 12-byte HMAC over *msg* using the localised auth key."""
+        """Compute the per-protocol truncated HMAC over *msg* using the localised auth key."""
         import hmac as _hmac
 
         proto = self.user.auth_protocol
@@ -484,15 +503,16 @@ class UsmModel:
             raise ProtocolError(f"Unsupported auth protocol: {proto}")
 
         mac = _hmac.new(self._hmac_key(engine_id), msg, alg).digest()
-        return mac[:_AUTH_TAG_LEN]
+        return mac[: self._auth_tag_len()]
 
     def _stamp_auth(self, raw: bytes, engine_id: bytes | None = None) -> bytes:
-        """Replace the 12-byte zero auth_params placeholder with the real HMAC."""
+        """Replace the zero auth_params placeholder with the real HMAC tag."""
         tag = self._compute_auth_tag(raw, engine_id)
         # decode to find the auth_params_offset in the just-encoded message
         view = decode_v3_message(raw)
         offset = view.auth_params_offset
-        return raw[:offset] + tag + raw[offset + _AUTH_TAG_LEN :]
+        tag_len = self._auth_tag_len()
+        return raw[:offset] + tag + raw[offset + tag_len :]
 
     def _verify_auth(
         self,
@@ -501,16 +521,13 @@ class UsmModel:
         received_tag: bytes,
         engine_id: bytes,
     ) -> None:
-        """Verify the 12-byte auth tag; raise AuthenticationError on mismatch."""
-        zeroed = (
-            raw[:auth_params_offset]
-            + b"\x00" * _AUTH_TAG_LEN
-            + raw[auth_params_offset + _AUTH_TAG_LEN :]
-        )
+        """Verify the per-protocol auth tag; raise AuthenticationError on mismatch."""
+        tag_len = self._auth_tag_len()
+        zeroed = raw[:auth_params_offset] + b"\x00" * tag_len + raw[auth_params_offset + tag_len :]
         expected = self._compute_auth_tag(zeroed, engine_id)
         import hmac as _hmac
 
-        if not _hmac.compare_digest(expected, received_tag[:_AUTH_TAG_LEN]):
+        if not _hmac.compare_digest(expected, received_tag[:tag_len]):
             raise AuthenticationError("USM authentication verification failed")
 
     # ── priv helpers ─────────────────────────────────────────────────────

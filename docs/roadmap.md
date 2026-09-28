@@ -5,6 +5,16 @@ Status: `planned` | `in progress` | `done` | `deferred`
 
 ---
 
+## v0.5.2 — shipped 2026-09-28
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | USM auth tag truncation | done | `#28`. RFC 7860 per-protocol truncated MAC lengths (SHA-224/256/384/512 → 16/24/32/48; MD5/SHA-1 → 12) across manager, notifier, and listener paths; wire-verified against net-snmp with positive and negative controls. |
+| 2 | Cross-agent v3 CI case | done | The snmpd CI job now exercises a live authPriv SHA-256/AES-256 GET against a configured `rouser` (closes the v2c-only coverage gap that let `#28` ship). |
+| 3 | tsmi 0.5.2 pairing | done | Full ecosystem validation against `trishul-smi 0.5.2`: 13/13 PASS (`schema_version` stays `1.1`; the IR additions are additive). |
+
+---
+
 ## v0.5.1 — shipped 2026-09-24
 
 | # | Item | Status | Notes |

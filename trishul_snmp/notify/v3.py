@@ -31,7 +31,6 @@ from trishul_snmp.wire.v3message import (
     encode_v3_message,
 )
 
-_AUTH_TAG_LEN = 12
 _MAX_MSG_SIZE = 65507
 _REPORT_PDU_TAG = 0xA8
 _SEQUENCE_TAG = 0x30
@@ -309,9 +308,11 @@ def decode_v3_notification_message(
 
     codec = _usm_codec(user=user)
     if flags & MSG_FLAG_AUTH:
-        if len(view.usm_params.auth_params) != _AUTH_TAG_LEN:
+        expected_auth_len = codec._auth_tag_len()
+        if len(view.usm_params.auth_params) != expected_auth_len:
             raise ProtocolError(
-                f"USM auth parameters must be exactly {_AUTH_TAG_LEN} octets, "
+                f"USM auth parameters must be exactly {expected_auth_len} octets "
+                f"for {user.auth_protocol.name}, "
                 f"got {len(view.usm_params.auth_params)}"
             )
         codec._verify_auth(
@@ -456,7 +457,7 @@ def encode_inform_response(
     if flags & MSG_FLAG_PRIV:
         priv_params, msg_data = codec._encrypt_scoped_pdu(msg_data, local_engine)
 
-    auth_params = b"\x00" * _AUTH_TAG_LEN if flags & MSG_FLAG_AUTH else b""
+    auth_params = b"\x00" * codec._auth_tag_len() if flags & MSG_FLAG_AUTH else b""
     raw = encode_v3_message(
         msg_id=envelope.view.msg_id,
         msg_max_size=_MAX_MSG_SIZE,

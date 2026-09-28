@@ -178,6 +178,59 @@ def test_decode_v3_inform_authnopriv() -> None:
     assert not (envelope.view.msg_flags[0] & MSG_FLAG_PRIV)
 
 
+def _make_sha256_user(username: str = "sha256user") -> UsmUser:
+    return UsmUser(
+        username=username,
+        auth_protocol=AuthProtocol.SHA256,
+        auth_key=b"\xaa" * hashlib.sha256(b"").digest_size,
+        auth_key_localized=True,
+    )
+
+
+def test_decode_v3_notification_accepts_sha256_protocol_correct_tag() -> None:
+    user = _make_sha256_user()
+    sender_engine = _make_local_engine(0x2A, boots=4, time=33)
+    pdu = _make_notification_pdu(PduType.SNMPV2_TRAP, request_id=108)
+    raw = _make_message(user=user, pdu=pdu, local_engine=sender_engine)
+
+    view = decode_v3_message(raw)
+    assert len(view.usm_params.auth_params) == 24  # RFC 7860 SHA-256 truncation
+
+    envelope = decode_v3_notification_message(raw, user=user)
+
+    assert envelope is not None
+    assert envelope.pdu == pdu
+    assert envelope.security_level == "authNoPriv"
+
+
+def test_decode_v3_notification_rejects_legacy_12_byte_tag_for_sha256() -> None:
+    user = _make_sha256_user()
+    sender_engine = _make_local_engine(0x2B, boots=4, time=33)
+    raw = _make_message(
+        user=user,
+        pdu=_make_notification_pdu(PduType.SNMPV2_TRAP, request_id=109),
+        local_engine=sender_engine,
+    )
+    view = decode_v3_message(raw)
+    legacy = encode_v3_message(
+        msg_id=view.msg_id,
+        msg_max_size=view.msg_max_size,
+        flags=view.msg_flags[0],
+        usm_params=UsmParams(
+            engine_id=view.usm_params.engine_id,
+            engine_boots=view.usm_params.engine_boots,
+            engine_time=view.usm_params.engine_time,
+            username=view.usm_params.username,
+            auth_params=b"\x00" * 12,  # pre-RFC 7860 legacy length
+            priv_params=view.usm_params.priv_params,
+        ),
+        msg_data_bytes=view.msg_data_bytes,
+    )
+
+    with pytest.raises(ProtocolError, match="24 octets for SHA256"):
+        decode_v3_notification_message(legacy, user=user)
+
+
 def test_decode_v3_trap_authpriv() -> None:
     user = _make_user(level="authPriv")
     sender_engine = _make_local_engine(0x33, boots=5, time=44)

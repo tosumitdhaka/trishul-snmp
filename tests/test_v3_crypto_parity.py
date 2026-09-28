@@ -23,6 +23,18 @@ _AUTH_KEY_SIZES = {
     AuthProtocol.SHA512: hashlib.sha512(b"").digest_size,
 }
 
+# RFC 3414 §3.3.2 / RFC 7860 §3.1: truncated MAC tag length per protocol.
+_AUTH_TAG_LENGTHS = {
+    AuthProtocol.MD5: 12,
+    AuthProtocol.SHA1: 12,
+    AuthProtocol.SHA224: 16,
+    AuthProtocol.SHA256: 24,
+    AuthProtocol.SHA384: 32,
+    AuthProtocol.SHA512: 48,
+}
+
+_ALL_AUTH_PROTOCOLS = list(_AUTH_TAG_LENGTHS)
+
 _SHA2_PROTOCOLS = [AuthProtocol.SHA224, AuthProtocol.SHA384, AuthProtocol.SHA512]
 _REEDER_PRIVS = [PrivProtocol.AES192, PrivProtocol.AES256, PrivProtocol.THREEDES_EDE]
 
@@ -84,11 +96,53 @@ def test_sha2_auth_roundtrip(auth: AuthProtocol) -> None:
     assert result.request_id == 11
 
 
-@pytest.mark.parametrize("auth", _SHA2_PROTOCOLS)
-def test_sha2_auth_tag_is_12_bytes(auth: AuthProtocol) -> None:
+@pytest.mark.parametrize("auth", _ALL_AUTH_PROTOCOLS)
+def test_auth_tag_has_protocol_correct_length(auth: AuthProtocol) -> None:
+    """RFC 7860 §3.1: the truncated HMAC tag length varies per protocol.
+
+    MD5/SHA-1 keep RFC 3414's 12-byte truncation; SHA-224/256/384/512 use
+    16/24/32/48 bytes. This was the wire-incompatibility of issue #28: a
+    fixed 12-byte tag made every SHA-2 request fail on standard agents.
+    """
     model = _make_model(auth=auth)
     tag = model._compute_auth_tag(b"some message", model._engine_id)
-    assert len(tag) == 12
+    assert len(tag) == _AUTH_TAG_LENGTHS[auth]
+
+
+@pytest.mark.parametrize("auth", _ALL_AUTH_PROTOCOLS)
+def test_wrap_emits_protocol_correct_auth_params_length(auth: AuthProtocol) -> None:
+    """The msgAuthenticationParameters field carries the protocol-correct length."""
+    from trishul_snmp.wire.v3message import decode_v3_message
+
+    model = _make_model(auth=auth)
+    raw = model.wrap_pdu(_get_pdu(15))
+    view = decode_v3_message(raw)
+    assert len(view.usm_params.auth_params) == _AUTH_TAG_LENGTHS[auth]
+
+
+@pytest.mark.parametrize("auth", _ALL_AUTH_PROTOCOLS)
+def test_auth_roundtrip_with_protocol_correct_tag(auth: AuthProtocol) -> None:
+    """wrap → unwrap succeeds when the tag has the protocol-correct length."""
+    model = _make_model(auth=auth)
+    raw = model.wrap_pdu(_get_pdu(16))
+    result = model.unwrap_message(raw)
+
+    assert result is not None
+    assert result.request_id == 16
+
+
+@pytest.mark.parametrize("auth", _ALL_AUTH_PROTOCOLS)
+def test_auth_fails_when_tag_tampered(auth: AuthProtocol) -> None:
+    """A tampered auth tag is rejected for every protocol, not just 12-byte ones."""
+    from trishul_snmp.wire.v3message import decode_v3_message
+
+    model = _make_model(auth=auth)
+    raw = model.wrap_pdu(_get_pdu(17))
+    offset = decode_v3_message(raw).auth_params_offset
+    tampered = raw[:offset] + bytes([raw[offset] ^ 0xFF]) + raw[offset + 1 :]
+
+    with pytest.raises(AuthenticationError):
+        model.unwrap_message(tampered)
 
 
 @pytest.mark.parametrize("auth", _SHA2_PROTOCOLS)

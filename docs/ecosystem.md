@@ -30,8 +30,8 @@ Latest released pairing validated for the current documented contract:
 
 | Package | Version |
 |---|---|
-| `trishul-snmp` | `0.5.1` |
-| `trishul-smi` | `0.5.0` |
+| `trishul-snmp` | `0.5.2` |
+| `trishul-smi` | `0.5.2` |
 
 Compatibility status for this released pairing:
 
@@ -138,7 +138,7 @@ This is the better fit when you want:
 
 The main `tsnmp`/`tsmi` producer/runtime contract is now in a healthier state.
 
-Current state with the released `trishul-snmp 0.5.1` / `trishul-smi 0.5.0`
+Current state with the released `trishul-snmp 0.5.2` / `trishul-smi 0.5.2`
 pairing:
 
 - published Python API can emit standalone module JSON, `manifest.json`, and `oid_index.json`
@@ -178,7 +178,7 @@ At the current released pairing, the ecosystem is in a usable state:
 - single-file JSON and directory bundle flows both work
 - sidecars improve ergonomics/performance but do not gate correctness
 - published `tsmi` CLI now matches the optional-sidecar bundle contract expected by `tsnmp`
-- the compiler/runtime boundary stays stable at the validated `0.5.1` / `0.5.0` released pairing
+- the compiler/runtime boundary stays stable at the validated `0.5.2` / `0.5.2` released pairing
 
 For deeper details, see:
 

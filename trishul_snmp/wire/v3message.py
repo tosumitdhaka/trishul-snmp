@@ -62,8 +62,8 @@ def encode_v3_message(
     *msg_data_bytes* must be a ScopedPDU SEQUENCE when privacy is off, or an
     encryptedPDU OCTET STRING when the PRIV flag (0x02) is set.  The caller is
     responsible for filling auth_params inside *usm_params* with the correct
-    HMAC before sending (or with 12 zero bytes as a placeholder during MAC
-    computation).
+    HMAC before sending (or with protocol-correct-length zero bytes as a
+    placeholder during MAC computation).
     """
     header_data = _encode_header_data(msg_id, msg_max_size, flags)
     usm_bytes = _encode_usm_params(usm_params)
@@ -85,8 +85,8 @@ def decode_v3_message(data: bytes) -> V3MessageView:
 
     Returns a :class:`V3MessageView` whose *auth_params_offset* gives the
     byte position (relative to *data*) where the auth_params octet-string
-    content starts.  The verifier zero-fills those 12 bytes, recomputes
-    HMAC, then restores the original.
+    content starts.  The verifier zero-fills those bytes (protocol-correct
+    length), recomputes HMAC, then restores the original.
     """
     tag, content, end = decode_tlv(data, 0)
     if tag != _SEQUENCE_TAG:
