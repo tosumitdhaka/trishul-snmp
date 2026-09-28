@@ -138,7 +138,7 @@ This is the better fit when you want:
 
 The main `tsnmp`/`tsmi` producer/runtime contract is now in a healthier state.
 
-Current state with the released `trishul-snmp 0.6.0` / `trishul-smi 0.5.2`
+Current state with the released `trishul-snmp 0.6.1` / `trishul-smi 0.5.2`
 pairing:
 
 - published Python API can emit standalone module JSON, `manifest.json`, and `oid_index.json`
