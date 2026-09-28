@@ -513,3 +513,264 @@ def test_registry_accelerator_lookup_and_prefix_resolution() -> None:
 
     assert exact.symbolic == "APP-MIB::peerTarget"
     assert prefixed.symbolic == "APP-MIB::peerTarget.7"
+
+
+def _enums_node(**overrides: object) -> dict[str, object]:
+    node = _valid_node()
+    node["enums"] = {"up": 1, "down": 2}
+    node["units"] = "bits/second"
+    node.update(overrides)
+    return node
+
+
+def test_normalize_node_enums_and_units_populated() -> None:
+    normalized = mib_registry.normalize_node_map(
+        {"status": _enums_node()},
+        module_name="APP-MIB",
+        path=Path("/virtual/APP-MIB.json"),
+    )
+
+    node = normalized["status"]
+
+    assert node.enums == {"up": 1, "down": 2}
+    assert node.units == "bits/second"
+
+
+def test_normalize_node_missing_enums_and_units_default_to_none() -> None:
+    normalized = mib_registry.normalize_node_map(
+        {"status": _valid_node()},
+        module_name="APP-MIB",
+        path=Path("/virtual/APP-MIB.json"),
+    )
+
+    node = normalized["status"]
+
+    assert node.enums is None
+    assert node.units is None
+
+
+def test_normalize_node_invalid_enums_and_units_errors(tmp_path: Path) -> None:
+    path = tmp_path / "x.json"
+
+    for bad_enums in ("bad", ["up"], {"up": "1"}, {"up": True}, {"up": 1, 2: 3}):
+        with pytest.raises(BundleValidationError):
+            mib_registry.normalize_node_map(
+                {"node": _enums_node(enums=bad_enums)},
+                module_name="APP-MIB",
+                path=path,
+            )
+    with pytest.raises(BundleValidationError):
+        mib_registry.normalize_node_map(
+            {"node": _enums_node(units=42)},
+            module_name="APP-MIB",
+            path=path,
+        )
+
+
+def test_registry_lookup_metadata_enums_units_and_missing_nodes() -> None:
+    payload = _app_payload(
+        syntax="INTEGER",
+        node_constraints={"kind": "enum", "data": [["up", 1], ["down", 2]]},
+    )
+    status_node = payload["objects"]["status"]
+    assert isinstance(status_node, dict)
+    status_node["enums"] = {"up": 1, "down": 2}
+    status_node["units"] = "volts"
+    bundle = _bundle_from_payloads(payload)
+
+    metadata = bundle.lookup_metadata((1, 3, 6, 1, 4, 1, 99999, 1, 0))
+
+    assert metadata is not None
+    assert metadata.enums == {"up": 1, "down": 2}
+    assert metadata.units == "volts"
+    assert metadata.syntax == "INTEGER"
+
+    assert bundle.lookup_metadata((1, 3, 6, 1, 4, 1, 99999, 250)) is None
+
+
+def test_registry_lookup_metadata_unknown_accelerator_symbol_returns_none() -> None:
+    bundle = _bundle_from_payloads(
+        _app_payload(),
+        oid_index={
+            (1, 3, 6, 1, 4, 1): mib_registry._OidIndexEntry(
+                module="APP-MIB",
+                symbol="missingSymbol",
+            )
+        },
+    )
+
+    assert bundle.lookup_metadata((1, 3, 6, 1, 4, 1, 7)) is None
+
+
+def test_registry_lookup_metadata_absent_on_legacy_bundle() -> None:
+    bundle = _bundle_from_payloads(_app_payload())
+
+    metadata = bundle.lookup_metadata((1, 3, 6, 1, 4, 1, 99999, 1, 0))
+
+    assert metadata is not None
+    assert metadata.enums is None
+    assert metadata.units is None
+
+
+def test_enrich_varbinds_renders_enums_units_and_bits(tmp_path: Path) -> None:
+    from tests._bundle_fixtures import write_value_metadata_bundle
+    from trishul_snmp import OctetStringValue
+
+    bundle = mib_loader.load_bundle(write_value_metadata_bundle(tmp_path))
+
+    enriched = mib_render.enrich_varbinds(
+        bundle,
+        (
+            VarBind(oid=(1, 3, 6, 1, 4, 1, 99999, 1, 0), value=IntegerValue(2)),
+            VarBind(oid=(1, 3, 6, 1, 4, 1, 99999, 2, 0), value=OctetStringValue(b"\xc0")),
+            VarBind(oid=(1, 3, 6, 1, 4, 1, 99999, 3, 0), value=IntegerValue(7)),
+        ),
+    )
+
+    assert enriched[0].display_value == "down(2)"
+    assert enriched[0].enum_label == "down"
+    assert enriched[0].units is None
+    assert enriched[1].display_value == "red(0) green(1)"
+    assert enriched[1].enum_label is None
+    assert enriched[1].units is None
+    assert enriched[2].display_value == "7"
+    assert enriched[2].enum_label is None
+    assert enriched[2].units == "bits/second"
+
+
+def test_enrich_varbinds_unmatched_enum_and_raw_octet_strings(tmp_path: Path) -> None:
+    from tests._bundle_fixtures import write_value_metadata_bundle
+    from trishul_snmp import OctetStringValue
+
+    bundle = mib_loader.load_bundle(write_value_metadata_bundle(tmp_path))
+
+    enriched = mib_render.enrich_varbinds(
+        bundle,
+        (
+            VarBind(oid=(1, 3, 6, 1, 4, 1, 99999, 1, 0), value=IntegerValue(99)),
+            VarBind(oid=(1, 3, 6, 1, 4, 1, 99999, 2, 0), value=OctetStringValue(b"\x00")),
+            VarBind(oid=(1, 3, 6, 1, 4, 1, 99999, 5, 0), value=OctetStringValue(b"hello")),
+            VarBind(oid=(1, 3, 6, 1, 4, 1, 99999, 250), value=OctetStringValue(b"\x80")),
+        ),
+    )
+
+    assert enriched[0].display_value == "99"
+    assert enriched[0].enum_label is None
+    assert enriched[1].display_value == "00"
+    assert enriched[2].display_value == "hello"
+    assert enriched[3].display_value == "80"
+
+
+def test_enrich_varbinds_bits_via_textual_convention() -> None:
+    from trishul_snmp import OctetStringValue
+
+    tc_payload = _base_module(module="BITS-TC")
+    tc_payload["types"] = {
+        "PortFlags": {
+            "class": "textualconvention",
+            "base_type": "BITS",
+            "status": "current",
+            "constraints": {"kind": "bits", "data": [["red", 0], ["green", 1]]},
+        }
+    }
+    app_payload = _base_module(
+        module="APP-MIB",
+        imports={"BITS-TC": ["PortFlags"]},
+    )
+    app_payload["objects"] = {
+        "portFlags": {
+            "oid": "1.3.6.1.4.1.99999.1",
+            "oid_path": [1, 3, 6, 1, 4, 1, 99999, 1],
+            "object_type": "OBJECT-TYPE",
+            "class": "objecttype",
+            "nodetype": "scalar",
+            "syntax": "PortFlags",
+            "max_access": "read-only",
+            "status": "current",
+        }
+    }
+    bundle = _bundle_from_payloads(tc_payload, app_payload)
+
+    enriched = mib_render.enrich_varbinds(
+        bundle,
+        (VarBind(oid=(1, 3, 6, 1, 4, 1, 99999, 1, 0), value=OctetStringValue(b"\x80")),),
+    )
+
+    assert enriched[0].display_value == "red(0)"
+
+
+def test_bits_helpers_cover_missing_nodes_and_non_bits_objects() -> None:
+    bundle = _bundle_from_payloads(_app_payload(syntax="INTEGER"))
+
+    assert mib_render._resolve_bits_labels(bundle, _match("missing"), value=b"\x80") is None
+    assert mib_render._resolve_bits_labels(bundle, _match("status"), value=b"\x80") is None
+    assert mib_render._constraint_enum_map({"kind": "range", "data": []}) is None
+    assert mib_render._constraint_enum_map({"kind": "enum", "data": "bad"}) is None
+    assert mib_render._constraint_enum_map(None) is None
+    assert mib_render._constraint_kind({"kind": 3}) is None
+    assert mib_render._enum_label_from_map(None, value=1) is None
+
+
+def test_bits_helpers_cover_inline_bits_and_tc_edges() -> None:
+    inline_bits = _app_payload(
+        syntax="BITS",
+        node_constraints={"kind": "bits", "data": [["red", 0], ["green", 1]]},
+    )
+    inline_bundle = _bundle_from_payloads(inline_bits)
+    inline_node = mib_render._resolve_node(inline_bundle, _match("status"))
+    assert inline_node is not None
+    assert mib_render._bits_enum_map(inline_bundle, _match("status"), inline_node) == {
+        "red": 0,
+        "green": 1,
+    }
+
+    bare_bits = _app_payload(syntax="BITS")
+    bare_bundle = _bundle_from_payloads(bare_bits)
+    bare_node = mib_render._resolve_node(bare_bundle, _match("status"))
+    assert bare_node is not None
+    assert mib_render._bits_enum_map(bare_bundle, _match("status"), bare_node) is None
+    assert mib_render._resolve_bits_labels(bare_bundle, _match("status"), value=b"\x80") is None
+
+    no_syntax = _bundle_from_payloads(_app_payload(syntax=None))
+    no_syntax_node = mib_render._resolve_node(no_syntax, _match("status"))
+    assert no_syntax_node is not None
+    assert mib_render._bits_enum_map(no_syntax, _match("status"), no_syntax_node) is None
+    assert mib_render._is_bits_node(no_syntax, _match("status"), no_syntax_node) is False
+
+    tc_payload = _base_module(module="BITS-TC")
+    tc_payload["types"] = {
+        "PortFlags": {
+            "class": "textualconvention",
+            "base_type": "BITS",
+            "status": "current",
+            "constraints": {"kind": "bits", "data": [["red", 0]]},
+        }
+    }
+    tc_app = _base_module(module="APP-MIB", imports={"BITS-TC": ["PortFlags"]})
+    tc_app["objects"] = {
+        "portFlags": {
+            "oid": "1.3.6.1.4.1.99999.1",
+            "oid_path": [1, 3, 6, 1, 4, 1, 99999, 1],
+            "object_type": "OBJECT-TYPE",
+            "class": "objecttype",
+            "nodetype": "scalar",
+            "syntax": "PortFlags",
+            "max_access": "read-only",
+            "status": "current",
+            "enums": {"red": 0, "green": 1},
+        }
+    }
+    tc_bundle = _bundle_from_payloads(tc_payload, tc_app)
+    tc_node = mib_render._resolve_node(tc_bundle, _match("portFlags"))
+    assert tc_node is not None
+    assert mib_render._is_bits_node(tc_bundle, _match("portFlags"), tc_node) is True
+    assert mib_render._bits_enum_map(tc_bundle, _match("portFlags"), tc_node) == {
+        "red": 0,
+        "green": 1,
+    }
+
+    assert mib_render._resolve_bits_labels(
+        tc_bundle,
+        _match("portFlags"),
+        value=b"\x80",
+    ) == [("red", 0)]

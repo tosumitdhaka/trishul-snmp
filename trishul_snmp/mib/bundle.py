@@ -6,7 +6,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 
 from trishul_snmp.mib.models import MibModuleRecord, MibNode, MibTypeRecord
-from trishul_snmp.mib.registry import MibRegistry
+from trishul_snmp.mib.registry import MibRegistry, NodeValueMetadata
 from trishul_snmp.types import OidMatch
 
 
@@ -40,6 +40,10 @@ class MibBundle:
     def lookup(self, oid: str | Sequence[int]) -> OidMatch:
         """Find the closest known object for *oid*."""
         return self._registry.lookup_oid(oid)
+
+    def lookup_metadata(self, oid: str | Sequence[int]) -> NodeValueMetadata | None:
+        """Resolve value-rendering metadata (enums/units) for the object owning *oid*."""
+        return self._registry.lookup_metadata(oid)
 
     def resolve_type(self, module: str, type_name: str) -> MibTypeRecord | None:
         """Resolve a local or imported textual convention."""

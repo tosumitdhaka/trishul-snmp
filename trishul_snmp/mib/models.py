@@ -39,6 +39,8 @@ class MibNode:
     description: str | None
     members: tuple[MibMemberRef, ...] | None
     constraints: Mapping[str, Any] | None
+    enums: Mapping[str, int] | None = None
+    units: str | None = None
 
     @property
     def symbolic(self) -> str:

@@ -6,6 +6,33 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.6.0] — 2026-09-28
+
+### Added
+
+- **Rendering fidelity from bundle metadata** — consumes the `trishul-smi` 0.5.2 object-level IR (`enums`, `units`, `constraints`): pysnmp-style enum labels in CLI text output (`IF-MIB::ifOperStatus.1 = up(1)`), BITS values render set bits as space-joined `label(bit)`, and `enum_label`/`units` join the JSON output as additive keys. Enrichment is automatic when the loaded bundle carries the metadata; bundles without it render byte-identically to previous versions (tsmi `#35` consumer follow-up).
+
+### Fixed
+
+- **AES-192/256 privacy key derivation (#30)** — the "Reeder" derivation wrongly extended Ku to the cipher key length before localization (a double extension), breaking every auth-digest ≠ cipher-key-length combination against standard agents ((SHA-256, AES-192), (SHA-224, AES-256), (SHA-384, AES-192), (SHA-512, AES-256) all failed; only 32==32 worked). Corrected to what net-snmp's default `AES-192/256` actually implements — draft-blumenthal-aes-usm-04 3.1.2: plain RFC 3414 localization, then truncate the localized key to the cipher length, or extend the localized key when the auth digest is shorter. Verified byte-exact against net-snmp 5.9.4 persistent-store ground-truth keys and by live-agent GETs for all combinations. The "Reeder" naming was a misattribution: no Reeder AES extension exists in the IETF archive; the Reeder-style chain applies to 3DES-EDE only.
+- **3DES-EDE key derivation for short-digest auth** — now the draft-reeder-snmpv3-usm-3desede-00 chained password-to-key algorithm for digests < 32 octets (Appendix B test vectors byte-exact); plain RFC 3414 localization for SHA-256/384/512.
+- **Walk termination hardening (#25)** — walks now deduplicate repeated rows and continue (a duplicate previously truncated the walk silently); a response echoing the requested OID is dropped instead of being accepted as a phantom row; zero-progress responses terminate the walk. Looping is impossible by construction.
+- **`_import_3des_algorithm` on cryptography ≥ 41** — the lazy `__getattr__` deprecation shim broke the TripleDES lookup (latent `KeyError`); resolved via `getattr`.
+- **CI snmpd crypto matrix** — the v3 matrix now runs the intended AES-192/256 combinations (the temporary AES-128 workaround from the #27 work is gone), each live-verified.
+
+### Tests
+
+- snmpd integration suite 5 → 31 tests: v1 ops (GET/GETNEXT/walk, GETBULK downgrade), v3 SHA-2 matrix, real-agent notifications (v1 trap metadata, v2c trap, inform with ACK), responder under real `snmpget`/`snmpwalk` clients, VACM restricted-view and v3-only agents (`#26`, `#27`).
+- New walk quirk suite (12 tests) driving the real manager/UDP path against a scripted misbehaving agent (`#25`).
+- Net-snmp ground-truth KDF vectors, 3DES draft vectors, per-protocol tag-length and SHA-2 notification acceptance pins.
+- Skipif-guarded end-to-end test against a real `trishul-smi` 0.5.2 compile.
+
+### Ecosystem
+
+- Validated against `trishul-smi 0.5.2` (13/13 steps; IR additions are additive, `schema_version` stays `1.1`).
+
+---
+
 ## [0.5.2] — 2026-09-28
 
 ### Fixed

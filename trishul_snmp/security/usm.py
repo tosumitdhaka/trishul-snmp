@@ -46,6 +46,9 @@ def _import_3des_algorithm() -> Any:
 
     TripleDES moved to ``hazmat.decrepit`` in cryptography 48.0.0; earlier
     releases exposed it (or the legacy DES3 name) in ``hazmat.primitives``.
+    ``getattr`` rather than a ``__dict__`` membership test is required:
+    releases >= 41 resolve these deprecated names through a module-level
+    ``__getattr__``, so they may not appear in the module namespace.
     The fallbacks only apply to non-installed versions, so they are excluded
     from coverage.
     """
@@ -55,10 +58,10 @@ def _import_3des_algorithm() -> Any:
         module = importlib.import_module("cryptography.hazmat.decrepit.ciphers.algorithms")
     except ImportError:  # pragma: no cover - only on cryptography < 48
         module = importlib.import_module("cryptography.hazmat.primitives.ciphers.algorithms")
-    namespace = module.__dict__
-    if "TripleDES" in namespace:
-        return namespace["TripleDES"]
-    return namespace["DES3"]  # pragma: no cover - only on cryptography < 42
+    algorithm = getattr(module, "TripleDES", None)
+    if algorithm is not None:
+        return algorithm
+    return getattr(module, "DES3")  # noqa: B009 - lazily resolved via module __getattr__  # pragma: no cover - only on cryptography < 42
 
 
 class AuthProtocol(Enum):
@@ -81,10 +84,14 @@ class AuthProtocol(Enum):
 class PrivProtocol(Enum):
     """Supported USM privacy protocols.
 
-    AES-192/AES-256 and 3DES-EDE use the draft-reeder-snmpv3-usm key
-    derivation (Ku extended to the cipher key length before localization);
-    Blumenthal-style variants (RFC 8963) are intentionally deferred and, if
-    added later, must become distinct enum members.
+    AES-192/AES-256 follow net-snmp's default derivation from
+    draft-blumenthal-aes-usm-04 §3.1.2: the engine-independent Ku stays at
+    the auth digest length, plain RFC 3414 localization runs over it, and
+    the localized key is truncated — or, only if shorter than the cipher
+    key, extended — to the cipher key length.  3DES-EDE uses the chained
+    password-to-key algorithm from draft-reeder-snmpv3-usm-3desede-00 when
+    the auth digest is shorter than 32 octets, and plain RFC 3414
+    localization otherwise.
     """
 
     NONE = "none"
@@ -192,19 +199,17 @@ class UsmModel:
     # RFC 3414 §2.6 KDF caches — see _ku() / _localize_key().
     # Ku (engine-independent user key) is derived once per (auth protocol, password);
     # localized keys once per (engine_id, password), invalidated by _adopt_engine_state().
-    # Reeder privacy protocols (AES-192/AES-256/3DES-EDE) derive an *extended* Ku
-    # (24/32 bytes) before localization, so their Ku and localized caches are keyed
-    # by (priv protocol, ...) to stay distinct from the digest-length keys.
+    # The extended privacy keys — AES-192/AES-256 (draft-blumenthal-aes-usm-04) and
+    # 3DES-EDE (draft-reeder-snmpv3-usm-3desede-00) — are cached per
+    # (priv protocol, engine_id, password), staying distinct from the digest-length
+    # localized keys and dropped whenever the authoritative engine changes.
     _ku_cache: dict[tuple[AuthProtocol, bytes], bytes] = field(
-        default_factory=dict, init=False, repr=False
-    )
-    _reeder_ku_cache: dict[tuple[PrivProtocol, bytes], bytes] = field(
         default_factory=dict, init=False, repr=False
     )
     _localized_cache: dict[tuple[bytes, bytes], bytes] = field(
         default_factory=dict, init=False, repr=False
     )
-    _reeder_localized_cache: dict[tuple[PrivProtocol, bytes, bytes], bytes] = field(
+    _localized_priv_cache: dict[tuple[PrivProtocol, bytes, bytes], bytes] = field(
         default_factory=dict, init=False, repr=False
     )
     # time.monotonic() reference taken when authoritative engine state was adopted;
@@ -405,14 +410,24 @@ class UsmModel:
         cached = self._ku_cache.get(cache_key)
         if cached is not None:
             return cached
+        ku = self._password_to_ku(password)
+        self._ku_cache[cache_key] = ku
+        return ku
+
+    def _password_to_ku(self, password: bytes) -> bytes:
+        """RFC 3414 §2.6 step 1 without caching: hash *password* padded to 1 MiB.
+
+        Exposed separately so the 3DES-EDE chain (draft-reeder-snmpv3-usm-3desede-00
+        §2.1) can re-run the password-to-key algorithm over a *localized* key.
+        Those inputs are engine-dependent, so they must not share the
+        engine-independent ``_ku_cache``.
+        """
         h = self._hash_engine()
         buf = bytearray(1048576)
         plen = len(password)
         for i in range(1048576):
             buf[i] = password[i % plen]
-        ku = h(bytes(buf)).digest()
-        self._ku_cache[cache_key] = ku
-        return ku
+        return h(bytes(buf)).digest()
 
     def _localize_key(self, password: bytes, engine_id: bytes) -> bytes:
         """Derive a localised key from a passphrase per RFC 3414 §2.6.
@@ -747,12 +762,10 @@ class UsmModel:
         """Localized privacy key for the configured protocol, at its full key length."""
         if not self.user.priv_key:
             raise ProtocolError(f"{self.user.priv_protocol.name} privacy requires a priv_key")
-        if self.user.priv_protocol in {
-            PrivProtocol.AES192,
-            PrivProtocol.AES256,
-            PrivProtocol.THREEDES_EDE,
-        }:
-            return self._localize_priv_key_reeder(self.user.priv_key, engine_id)
+        if self.user.priv_protocol in {PrivProtocol.AES192, PrivProtocol.AES256}:
+            return self._localize_priv_key_blumenthal(self.user.priv_key, engine_id)
+        if self.user.priv_protocol is PrivProtocol.THREEDES_EDE:
+            return self._localize_priv_key_3des(self.user.priv_key, engine_id)
         return self._localize_priv_key(self.user.priv_key, engine_id)[:16]
 
     def _localize_priv_key(self, password: bytes, engine_id: bytes) -> bytes:
@@ -772,12 +785,14 @@ class UsmModel:
             return 32
         raise ProtocolError(f"Unsupported priv protocol: {proto}")
 
-    def _extend_reeder_key(self, key: bytes, length: int) -> bytes:
-        """Reeder key extension: repeatedly append H(accumulated key) up to *length*.
+    def _extend_localized_key(self, key: bytes, length: int) -> bytes:
+        """Extend a LOCALIZED key to *length* octets (draft-blumenthal-aes-usm-04 §3.1.2.2).
 
-        draft-reeder-snmpv3-usm extends the engine-independent Ku *before*
-        localization by hashing the accumulated key material and appending the
-        digest until the target length is reached, truncating at the end.
+        A key already at or above the target length is truncated; a shorter
+        key is extended by repeatedly appending ``H(accumulated buffer)`` —
+        the hash input is the whole buffer built so far (e.g. ``Kul ||
+        H(Kul) || H(Kul || H(Kul))``) — then truncated to exactly *length*.
+        The engine-independent Ku is never extended.
         """
         if len(key) >= length:
             return key[:length]
@@ -787,38 +802,54 @@ class UsmModel:
             extended.extend(h(bytes(extended)).digest())
         return bytes(extended[:length])
 
-    def _reeder_ku(self, password: bytes) -> bytes:
-        """Reeder-extended engine-independent user key (24/32 bytes), cached.
+    def _localize_priv_key_blumenthal(self, password: bytes, engine_id: bytes) -> bytes:
+        """AES-192/AES-256 privacy key per draft-blumenthal-aes-usm-04 §3.1.2.
 
-        The cache key includes the priv protocol because the extension length
-        depends on it — the extended Ku must not collide with the digest-length
-        Ku cached under (auth protocol, password).
-        """
-        cache_key = (self.user.priv_protocol, password)
-        cached = self._reeder_ku_cache.get(cache_key)
-        if cached is not None:
-            return cached
-        extended = self._extend_reeder_key(self._ku(password), self._priv_key_length())
-        self._reeder_ku_cache[cache_key] = extended
-        return extended
-
-    def _localize_priv_key_reeder(self, password: bytes, engine_id: bytes) -> bytes:
-        """Localize a Reeder privacy key: extend Ku, localize, extend to length.
-
-        RFC 3414 §2.6 localization applied to the extended Ku, with the result
-        extended again when the auth digest is shorter than the cipher key.
+        This is net-snmp's default AES-192/AES-256 derivation: the
+        engine-independent Ku is derived at the auth digest length (never
+        pre-extended), localized with the plain RFC 3414 formula, and only
+        then truncated or extended to the cipher key length.
         """
         if self.user.auth_protocol is AuthProtocol.NONE:
             raise ProtocolError("Cannot derive priv key without an auth protocol")
         cache_key = (self.user.priv_protocol, engine_id, password)
-        cached = self._reeder_localized_cache.get(cache_key)
+        cached = self._localized_priv_cache.get(cache_key)
         if cached is not None:
             return cached
-        ku = self._reeder_ku(password)
-        localized = self._hash_engine()(ku + engine_id + ku).digest()
-        extended = self._extend_reeder_key(localized, self._priv_key_length())
-        self._reeder_localized_cache[cache_key] = extended
-        return extended
+        kul = self._localize_key(password, engine_id)
+        key = self._extend_localized_key(kul, self._priv_key_length())
+        self._localized_priv_cache[cache_key] = key
+        return key
+
+    def _localize_priv_key_3des(self, password: bytes, engine_id: bytes) -> bytes:
+        """3DES-EDE key material per draft-reeder-snmpv3-usm-3desede-00 §2.1.
+
+        With an auth digest of at least 32 octets (SHA-256/384/512) the
+        plain RFC 3414 localized key already supplies the 32-octet key
+        material (truncated if longer).  With a shorter digest the draft
+        chains the password-to-key algorithm: the first block is the
+        localized key itself, and a second invocation treats that localized
+        key as a new passphrase.
+
+            K1 = P2K(password, engineID)          (the localized key)
+            K2 = P2K(K1, engineID)                (hash K1 as a passphrase, then localize)
+            key = K1 | K2, truncated to 32 octets
+        """
+        if self.user.auth_protocol is AuthProtocol.NONE:
+            raise ProtocolError("Cannot derive priv key without an auth protocol")
+        cache_key = (self.user.priv_protocol, engine_id, password)
+        cached = self._localized_priv_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        kul = self._localize_key(password, engine_id)
+        if len(kul) >= self._priv_key_length():
+            key = kul[: self._priv_key_length()]
+        else:
+            ku_prime = self._password_to_ku(kul)
+            kul_prime = self._hash_engine()(ku_prime + engine_id + ku_prime).digest()
+            key = (kul + kul_prime)[: self._priv_key_length()]
+        self._localized_priv_cache[cache_key] = key
+        return key
 
     def _fresh_cbc_salt(self) -> bytes:
         """8-octet random salt whose first octet differs from the previous message's.
@@ -923,7 +954,7 @@ class UsmModel:
         """
         if engine_id != self._peer_engine_id or boots != self._peer_engine_boots:
             self._localized_cache.clear()
-            self._reeder_localized_cache.clear()
+            self._localized_priv_cache.clear()
         self._peer_engine_id = engine_id
         self._peer_engine_boots = boots
         self._peer_engine_time = engine_time

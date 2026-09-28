@@ -57,6 +57,7 @@ Important public enums and value models:
 - `NoSuchObjectValue`
 - `NoSuchInstanceValue`
 - `EndOfMibViewValue`
+- `NodeValueMetadata` — dataclass returned by `MibBundle.lookup_metadata()`: ordered `enums` (label→number), `units`, and `syntax`
 
 ---
 
@@ -260,9 +261,16 @@ Each `VarBind` exposes:
 | `match` | Optional bundle lookup match |
 | `display_name` | Optional symbolic name derived from the bundle |
 | `display_value` | Rendered value string with optional bundle-aware formatting |
+| `enum_label` | Optional enum label when an INTEGER/BITS value matched the object's enum map |
+| `units` | Optional UNITS clause declared by the owning object |
 
 The raw typed value is always preserved. Enrichment only affects the additional
-display fields.
+display fields, and is automatic when the loaded bundle carries the metadata:
+INTEGER values whose enum matches render `up(1)`-style display values with
+`enum_label` set, BITS octet strings render their set bits as space-joined
+`label(bit)` entries, and `units` carries the object's UNITS clause. Output
+stays byte-identical when the bundle has no metadata, and older bundles whose
+`constraints` still carry enum data render the same way.
 
 ---
 
@@ -277,6 +285,10 @@ print(bundle.translate("IF-MIB::ifDescr.7"))
 print(bundle.translate("1.3.6.1.2.1.2.2.1.2.7"))
 print(bundle.resolve("IF-MIB::ifDescr.7"))
 print(bundle.lookup("1.3.6.1.2.1.2.2.1.2.7"))
+
+metadata = bundle.lookup_metadata("1.3.6.1.2.1.2.2.1.8.1")
+print(metadata.enums)  # {"up": 1, "down": 2, "testing": 3}
+print(metadata.units)  # None — ifOperStatus declares no UNITS clause
 ```
 
 Main bundle methods:
@@ -284,6 +296,7 @@ Main bundle methods:
 - `translate()`
 - `resolve()`
 - `lookup()`
+- `lookup_metadata(oid)` — `NodeValueMetadata | None`: value-rendering metadata (`enums`, `units`, `syntax`) for the object owning `oid`, or `None` when nothing matches
 - `resolve_node()`
 - `resolve_type()`
 - `modules`

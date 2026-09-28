@@ -42,7 +42,32 @@ def test_walk_stops_when_response_leaves_subtree() -> None:
     ]
 
 
-def test_walk_stops_on_non_increasing_oids() -> None:
+def test_walk_stops_on_backward_oid() -> None:
+    async def request_fn(current: tuple[int, ...], *, max_repetitions: int) -> Response:
+        del current, max_repetitions
+        return _response(
+            _varbind((1, 3, 6, 1, 2, 1, 2, 2, 1, 1)),
+            _varbind((1, 3, 6, 1, 2, 1, 2, 2, 1, 2)),
+            _varbind((1, 3, 6, 1, 2, 1, 2, 2, 1, 1)),
+        )
+
+    async def scenario():
+        return await walk_subtree(
+            request_fn,
+            (1, 3, 6, 1, 2, 1, 2, 2),
+            bulk=True,
+            max_repetitions=10,
+        )
+
+    walked = asyncio.run(scenario())
+
+    assert [varbind.oid for varbind in walked] == [
+        (1, 3, 6, 1, 2, 1, 2, 2, 1, 1),
+        (1, 3, 6, 1, 2, 1, 2, 2, 1, 2),
+    ]
+
+
+def test_walk_dedupes_repeated_oids() -> None:
     async def request_fn(current: tuple[int, ...], *, max_repetitions: int) -> Response:
         del current, max_repetitions
         return _response(
@@ -63,7 +88,58 @@ def test_walk_stops_on_non_increasing_oids() -> None:
 
     assert [varbind.oid for varbind in walked] == [
         (1, 3, 6, 1, 2, 1, 2, 2, 1, 1),
+        (1, 3, 6, 1, 2, 1, 2, 2, 1, 2),
     ]
+
+
+def test_walk_dedupes_duplicate_across_responses() -> None:
+    async def request_fn(current: tuple[int, ...], *, max_repetitions: int) -> Response:
+        del max_repetitions
+        if current == (1, 3, 6, 1, 2, 1, 2, 2):
+            return _response(_varbind((1, 3, 6, 1, 2, 1, 2, 2, 1, 1)))
+        if current == (1, 3, 6, 1, 2, 1, 2, 2, 1, 1):
+            return _response(
+                _varbind((1, 3, 6, 1, 2, 1, 2, 2, 1, 1)),
+                _varbind((1, 3, 6, 1, 2, 1, 2, 2, 1, 2)),
+            )
+        return _response()
+
+    async def scenario():
+        return await walk_subtree(
+            request_fn,
+            (1, 3, 6, 1, 2, 1, 2, 2),
+            bulk=True,
+            max_repetitions=10,
+        )
+
+    walked = asyncio.run(scenario())
+
+    assert [varbind.oid for varbind in walked] == [
+        (1, 3, 6, 1, 2, 1, 2, 2, 1, 1),
+        (1, 3, 6, 1, 2, 1, 2, 2, 1, 2),
+    ]
+
+
+def test_walk_stops_on_zero_progress() -> None:
+    requested: list[tuple[int, ...]] = []
+
+    async def request_fn(current: tuple[int, ...], *, max_repetitions: int) -> Response:
+        del max_repetitions
+        requested.append(current)
+        return _response(_varbind(current))
+
+    async def scenario():
+        return await walk_subtree(
+            request_fn,
+            (1, 3, 6, 1, 2, 1, 2, 2),
+            bulk=True,
+            max_repetitions=10,
+        )
+
+    walked = asyncio.run(scenario())
+
+    assert walked == ()
+    assert requested == [(1, 3, 6, 1, 2, 1, 2, 2)]
 
 
 def test_walk_stops_on_end_of_mib_view() -> None:

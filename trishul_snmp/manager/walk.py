@@ -22,7 +22,6 @@ async def walk_subtree(
     """Walk a subtree using request_fn returning Response objects."""
     current = root
     results: list[VarBind] = []
-    last_oid: OID | None = None
 
     while True:
         if bulk:
@@ -34,6 +33,7 @@ async def walk_subtree(
             break
 
         stop = False
+        progressed = False
         for varbind in response.varbinds:
             if isinstance(varbind.value, EndOfMibViewValue):
                 stop = True
@@ -41,13 +41,23 @@ async def walk_subtree(
             if not is_within_subtree(root, varbind.oid):
                 stop = True
                 break
-            if last_oid is not None and varbind.oid <= last_oid:
+            if varbind.oid < current:
+                # The agent backtracked below the requested OID: its response
+                # is not a well-ordered subtree, so trust nothing further.
                 stop = True
                 break
+            if varbind.oid == current:
+                # Echo of the requested OID or a re-sent last row. It carries
+                # no new information, so drop it and keep scanning rather than
+                # letting a stray duplicate truncate the walk.
+                continue
             results.append(varbind)
-            last_oid = varbind.oid
             current = varbind.oid
-        if stop:
+            progressed = True
+        if stop or not progressed:
+            # ``stop`` is a terminal condition. ``not progressed`` means the
+            # response only echoed the requested OID back — zero progress, so
+            # terminate instead of looping against an agent that never advances.
             break
 
     return tuple(results)

@@ -23,7 +23,7 @@ options:
 | `--username` | — | SNMPv3 username; required with `--snmp-version 3` |
 | `--auth-protocol {none,md5,sha1,sha224,sha256,sha384,sha512}` | `none` | SNMPv3 auth protocol (RFC 7860 SHA-2 family included) |
 | `--auth-key` / `--auth-key-env` | — | Exactly one required when auth is enabled |
-| `--priv-protocol {none,aes128,aes192,aes256,3des-ede,des}` | `none` | SNMPv3 privacy protocol; AES-192/256 use Reeder key derivation, `des` fails fast with an accurate error (no single-DES primitive in the `cryptography` backend) |
+| `--priv-protocol {none,aes128,aes192,aes256,3des-ede,des}` | `none` | SNMPv3 privacy protocol; AES-192/256 use net-snmp's default key derivation (draft-blumenthal-aes-usm-04 §3.1.2: RFC 3414 localization, truncated or extended to the cipher key length), `des` fails fast with an accurate error (no single-DES primitive in the `cryptography` backend) |
 | `--priv-key` / `--priv-key-env` | — | Exactly one required when privacy is enabled |
 | `--context-name` | empty | SNMPv3 context name (UTF-8 text) |
 | `--timeout` | `2.0` | Request timeout in seconds |
@@ -50,7 +50,7 @@ The outbound notification commands (`trap`, `inform`) share these options:
 | `--username` | — | SNMPv3 username; required with `--snmp-version 3` |
 | `--auth-protocol {none,md5,sha1,sha224,sha256,sha384,sha512}` | `none` | SNMPv3 auth protocol (RFC 7860 SHA-2 family included) |
 | `--auth-key` / `--auth-key-env` | — | Exactly one required when auth is enabled |
-| `--priv-protocol {none,aes128,aes192,aes256,3des-ede,des}` | `none` | SNMPv3 privacy protocol; AES-192/256 use Reeder key derivation, `des` fails fast with an accurate error (no single-DES primitive in the `cryptography` backend) |
+| `--priv-protocol {none,aes128,aes192,aes256,3des-ede,des}` | `none` | SNMPv3 privacy protocol; AES-192/256 use net-snmp's default key derivation (draft-blumenthal-aes-usm-04 §3.1.2: RFC 3414 localization, truncated or extended to the cipher key length), `des` fails fast with an accurate error (no single-DES primitive in the `cryptography` backend) |
 | `--priv-key` / `--priv-key-env` | — | Exactly one required when privacy is enabled |
 | `--context-name` | empty | SNMPv3 context name (UTF-8 text) |
 | `--timeout` | `2.0` | Request timeout in seconds |
@@ -191,6 +191,8 @@ tsnmp walk [OPTIONS] ROOT
 
 Uses GETBULK by default.
 
+Walks deduplicate repeated rows and continue (a duplicate no longer truncates the walk), drop a response that only echoes the requested OID, and terminate when a response makes no progress.
+
 Additional options:
 
 | Option | Default | Description |
@@ -302,7 +304,7 @@ Options:
 | `--username` | — | SNMPv3 username; required with `--snmp-version 3` |
 | `--auth-protocol {none,md5,sha1,sha224,sha256,sha384,sha512}` | `none` | SNMPv3 auth protocol (RFC 7860 SHA-2 family included) |
 | `--auth-key` / `--auth-key-env` | — | Exactly one required when auth is enabled |
-| `--priv-protocol {none,aes128,aes192,aes256,3des-ede,des}` | `none` | SNMPv3 privacy protocol; AES-192/256 use Reeder key derivation, `des` fails fast with an accurate error (no single-DES primitive in the `cryptography` backend) |
+| `--priv-protocol {none,aes128,aes192,aes256,3des-ede,des}` | `none` | SNMPv3 privacy protocol; AES-192/256 use net-snmp's default key derivation (draft-blumenthal-aes-usm-04 §3.1.2: RFC 3414 localization, truncated or extended to the cipher key length), `des` fails fast with an accurate error (no single-DES primitive in the `cryptography` backend) |
 | `--priv-key` / `--priv-key-env` | — | Exactly one required when privacy is enabled |
 | `--local-engine-id` / `--local-engine-boots` / `--local-engine-time` | — | Required for `listen --snmp-version 3` |
 | `--bundle` | — | Compiled module JSON file or bundle directory |
@@ -339,7 +341,7 @@ Options:
 | `--username` | — | SNMPv3 username; required with `--snmp-version 3` |
 | `--auth-protocol {none,md5,sha1,sha224,sha256,sha384,sha512}` | `none` | SNMPv3 auth protocol (RFC 7860 SHA-2 family included) |
 | `--auth-key` / `--auth-key-env` | — | Exactly one required when auth is enabled |
-| `--priv-protocol {none,aes128,aes192,aes256,3des-ede,des}` | `none` | SNMPv3 privacy protocol; AES-192/256 use Reeder key derivation, `des` fails fast with an accurate error (no single-DES primitive in the `cryptography` backend) |
+| `--priv-protocol {none,aes128,aes192,aes256,3des-ede,des}` | `none` | SNMPv3 privacy protocol; AES-192/256 use net-snmp's default key derivation (draft-blumenthal-aes-usm-04 §3.1.2: RFC 3414 localization, truncated or extended to the cipher key length), `des` fails fast with an accurate error (no single-DES primitive in the `cryptography` backend) |
 | `--priv-key` / `--priv-key-env` | — | Exactly one required when privacy is enabled |
 | `--hex` | mutually exclusive | Hex-encoded SNMP message bytes |
 | `--file` | mutually exclusive | Path to raw BER-encoded SNMP message bytes |
@@ -376,10 +378,51 @@ Default output is line-oriented text:
 IF-MIB::ifDescr.1 = eth0
 ```
 
+When the loaded bundle carries object metadata, INTEGER values with a matching
+enum render pysnmp-style and BITS octet strings render their set bits:
+
+```text
+IF-MIB::ifOperStatus.1 = up(1)
+APP-MIB::portFlags.1 = red(0) green(1)
+```
+
+Values without a matching enum (including zero-bit BITS) fall back to raw, so
+output is byte-identical when the bundle carries no metadata. Older bundles
+whose `constraints` still carry enum data render the same way. Enrichment is
+automatic when the loaded bundle has metadata — there are no dedicated flags.
+
 Machine-readable mode:
 
 ```bash
 tsnmp get --host 10.0.0.10 --json 1.3.6.1.2.1.1.3.0
+```
+
+Binding entries gain `enum_label` when an enum label applies and `units` when
+the object declares a UNITS clause; existing keys are unchanged:
+
+```bash
+tsnmp walk --host 10.0.0.10 --bundle ./mibs-json --json IF-MIB::ifTable
+```
+
+```json
+{
+  "varbinds": [
+    {
+      "oid": "1.3.6.1.2.1.2.2.1.8.1",
+      "value_type": "integer",
+      "display_name": "IF-MIB::ifOperStatus.1",
+      "display_value": "up(1)",
+      "enum_label": "up"
+    },
+    {
+      "oid": "1.3.6.1.2.1.2.2.1.5.1",
+      "value_type": "gauge32",
+      "display_name": "IF-MIB::ifSpeed.1",
+      "display_value": "1000",
+      "units": "bits/second"
+    }
+  ]
+}
 ```
 
 Numeric rendering even when a bundle is loaded:

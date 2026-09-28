@@ -109,3 +109,4 @@ local_settings.py
 .codex/
 .agents/
 
+mibs-output/

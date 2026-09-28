@@ -19,12 +19,16 @@ def _varbind(
     *,
     display_name: str | None = None,
     display_value: str | None = None,
+    enum_label: str | None = None,
+    units: str | None = None,
 ) -> VarBind:
     return VarBind(
         oid=oid,
         value=IntegerValue(7),
         display_name=display_name,
         display_value=display_value,
+        enum_label=enum_label,
+        units=units,
     )
 
 
@@ -62,6 +66,103 @@ def test_render_walk_json_output() -> None:
             }
         ]
     }
+
+
+def test_render_walk_json_output_includes_enum_label_and_units_when_present() -> None:
+    rendered = render_walk(
+        (
+            _varbind(
+                (1, 3, 6, 1, 2, 1, 2, 2, 1, 8, 1),
+                display_name="IF-MIB::ifOperStatus.1",
+                display_value="up(1)",
+                enum_label="up",
+            ),
+            _varbind(
+                (1, 3, 6, 1, 2, 1, 2, 2, 1, 5, 1),
+                display_name="IF-MIB::ifSpeed.1",
+                display_value="1000",
+                units="bits/second",
+            ),
+        ),
+        json_output=True,
+        numeric=False,
+    )
+
+    payload = json.loads(rendered)
+    assert payload["varbinds"] == [
+        {
+            "oid": "1.3.6.1.2.1.2.2.1.8.1",
+            "value_type": "integer",
+            "display_name": "IF-MIB::ifOperStatus.1",
+            "display_value": "up(1)",
+            "enum_label": "up",
+        },
+        {
+            "oid": "1.3.6.1.2.1.2.2.1.5.1",
+            "value_type": "integer",
+            "display_name": "IF-MIB::ifSpeed.1",
+            "display_value": "1000",
+            "units": "bits/second",
+        },
+    ]
+    assert "enum_label" not in payload["varbinds"][1]
+    assert "units" not in payload["varbinds"][0]
+
+
+def test_render_response_text_output_renders_enum_display_value() -> None:
+    response = Response(
+        request_id=3,
+        error_status=ErrorStatus.NO_ERROR,
+        error_index=0,
+        varbinds=(
+            _varbind(
+                (1, 3, 6, 1, 2, 1, 2, 2, 1, 8, 1),
+                display_name="IF-MIB::ifOperStatus.1",
+                display_value="up(1)",
+                enum_label="up",
+            ),
+        ),
+    )
+
+    rendered = render_response(response, json_output=False, numeric=False)
+
+    assert rendered.splitlines() == ["IF-MIB::ifOperStatus.1 = up(1)"]
+
+
+def test_render_notification_event_json_includes_enum_label_and_units() -> None:
+    event = NotificationEvent(
+        request_id=9,
+        community="public",
+        source_address=("127.0.0.1", 40162),
+        pdu_type="snmpv2-trap",
+        varbinds=(
+            _varbind(
+                (1, 3, 6, 1, 4, 1, 99999, 1, 0),
+                display_name="APP-MIB::status.0",
+                display_value="up(1)",
+                enum_label="up",
+            ),
+        ),
+        notification_oid=(1, 3, 6, 1, 4, 1, 99999, 10),
+        notification_name="APP-MIB::statusNotice",
+        member_bindings=(
+            NotificationMemberBinding(
+                member=MibMemberRef(module="APP-MIB", object="status"),
+                varbind=_varbind(
+                    (1, 3, 6, 1, 4, 1, 99999, 1, 0),
+                    display_name="APP-MIB::status.0",
+                    display_value="up(1)",
+                    enum_label="up",
+                ),
+            ),
+        ),
+    )
+
+    rendered_json = render_notification_event(event, json_output=True, numeric=False)
+
+    payload = json.loads(rendered_json)
+    assert payload["varbinds"][0]["enum_label"] == "up"
+    assert payload["member_bindings"][0]["varbind"]["enum_label"] == "up"
 
 
 def test_render_request_id_json_output() -> None:

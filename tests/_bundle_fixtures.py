@@ -119,3 +119,87 @@ def write_scalar_instance_alias_bundle(path: Path) -> Path:
         },
     )
     return path
+
+
+def write_value_metadata_bundle(path: Path) -> Path:
+    """Write a bundle carrying the v0.5.2 additive value metadata fields.
+
+    Covers INTEGER enums, BITS enums, a UNITS clause, and a range constraint,
+    plus a control object without any of the new fields.
+    """
+    module = _base_module(module="VALUE-META-MIB")
+    module["objects"] = {
+        "operStatus": {
+            "oid": "1.3.6.1.4.1.99999.1",
+            "oid_path": [1, 3, 6, 1, 4, 1, 99999, 1],
+            "object_type": "OBJECT-TYPE",
+            "class": "objecttype",
+            "nodetype": "scalar",
+            "syntax": "INTEGER",
+            "max_access": "read-only",
+            "status": "current",
+            "index": None,
+            "augments": None,
+            "description": None,
+            "constraints": {"kind": "enum", "data": [["up", 1], ["down", 2], ["testing", 3]]},
+            "enums": {"up": 1, "down": 2, "testing": 3},
+        },
+        "portFlags": {
+            "oid": "1.3.6.1.4.1.99999.2",
+            "oid_path": [1, 3, 6, 1, 4, 1, 99999, 2],
+            "object_type": "OBJECT-TYPE",
+            "class": "objecttype",
+            "nodetype": "scalar",
+            "syntax": "BITS",
+            "max_access": "read-only",
+            "status": "current",
+            "index": None,
+            "augments": None,
+            "description": None,
+            "constraints": {"kind": "bits", "data": [["red", 0], ["green", 1], ["blue", 2]]},
+            "enums": {"red": 0, "green": 1, "blue": 2},
+        },
+        "linkSpeed": {
+            "oid": "1.3.6.1.4.1.99999.3",
+            "oid_path": [1, 3, 6, 1, 4, 1, 99999, 3],
+            "object_type": "OBJECT-TYPE",
+            "class": "objecttype",
+            "nodetype": "scalar",
+            "syntax": "Gauge32",
+            "units": "bits/second",
+            "max_access": "read-only",
+            "status": "current",
+            "index": None,
+            "augments": None,
+            "description": None,
+        },
+        "payloadSize": {
+            "oid": "1.3.6.1.4.1.99999.4",
+            "oid_path": [1, 3, 6, 1, 4, 1, 99999, 4],
+            "object_type": "OBJECT-TYPE",
+            "class": "objecttype",
+            "nodetype": "scalar",
+            "syntax": "Integer32",
+            "max_access": "read-only",
+            "status": "current",
+            "index": None,
+            "augments": None,
+            "description": None,
+            "constraints": {"kind": "range", "data": [[0, 65507]]},
+        },
+        "plainCounter": {
+            "oid": "1.3.6.1.4.1.99999.5",
+            "oid_path": [1, 3, 6, 1, 4, 1, 99999, 5],
+            "object_type": "OBJECT-TYPE",
+            "class": "objecttype",
+            "nodetype": "scalar",
+            "syntax": "Counter32",
+            "max_access": "read-only",
+            "status": "current",
+            "index": None,
+            "augments": None,
+            "description": None,
+        },
+    }
+    _write_json(path / "VALUE-META-MIB.json", module)
+    return path

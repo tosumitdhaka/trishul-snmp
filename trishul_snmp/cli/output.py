@@ -109,6 +109,10 @@ def _varbind_payload(varbind: VarBind) -> dict[str, object]:
     }
     if varbind.display_name is not None:
         payload["display_name"] = varbind.display_name
+    if varbind.enum_label is not None:
+        payload["enum_label"] = varbind.enum_label
+    if varbind.units is not None:
+        payload["units"] = varbind.units
     return payload
 
 

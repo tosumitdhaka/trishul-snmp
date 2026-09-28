@@ -131,6 +131,21 @@ class _OidIndexEntry:
     symbol: str
 
 
+@dataclass(frozen=True, slots=True)
+class NodeValueMetadata:
+    """Value-rendering metadata for an object owning a binding OID.
+
+    ``enums`` is the ordered label→number mapping emitted by trishul-smi for
+    INTEGER/BITS inline constraints; ``units`` is the SMIv2 UNITS clause.
+    Both are None when the source module did not provide them (older bundles
+    or objects without the metadata).
+    """
+
+    enums: Mapping[str, int] | None
+    units: str | None
+    syntax: str | None
+
+
 class MibRegistry:
     """In-memory indexes over loaded MIB modules."""
 
@@ -239,6 +254,23 @@ class MibRegistry:
         """Return an object or notification node by exact module/symbol."""
         return self._symbol_index.get((module, symbol))
 
+    def lookup_metadata(self, value: str | Sequence[int]) -> NodeValueMetadata | None:
+        """Resolve value-rendering metadata for the object owning *value*.
+
+        Returns None when no object in the registry matches *value*. The
+        metadata carries the object's ``enums`` (label→number) and ``units``
+        (UNITS clause) when the bundle provided them, so consumers can render
+        ``up(1)``-style values without re-reading raw MIB files.
+        """
+        try:
+            match = self.lookup_oid(value)
+        except UnknownOidError:
+            return None
+        node = self._symbol_index.get((match.module, match.symbol))
+        if node is None:
+            return None
+        return NodeValueMetadata(enums=node.enums, units=node.units, syntax=node.syntax)
+
     def _lookup_exact_from_accelerator(self, oid: OID) -> MibNode | None:
         entry = self._oid_index.get(oid)
         if entry is None:
@@ -334,6 +366,13 @@ def normalize_node_map(
         if constraints is not None and not isinstance(constraints, dict):
             raise BundleValidationError(f"Node {name!r} constraints must be an object", path=path)
 
+        enums = raw_node.get("enums")
+        if enums is not None and not _is_enum_map(enums):
+            raise BundleValidationError(
+                f"Node {name!r} enums must be an object mapping labels to integers",
+                path=path,
+            )
+
         normalized[name] = MibNode(
             module=module_name,
             name=name,
@@ -361,6 +400,8 @@ def normalize_node_map(
             ),
             members=_normalize_member_refs(raw_node.get("members"), name=name, path=path),
             constraints=constraints,
+            enums=dict(enums) if isinstance(enums, dict) else None,
+            units=_optional_string(raw_node.get("units"), field="units", name=name, path=path),
         )
     return normalized
 
@@ -425,6 +466,14 @@ def _normalize_node_oid(
         return parse_oid(oid_value)
 
     raise BundleValidationError(f"Node {name!r} is missing both oid_path and oid", path=path)
+
+
+def _is_enum_map(value: object) -> bool:
+    """Return True when *value* is a label→integer mapping (the enums field shape)."""
+    return isinstance(value, dict) and all(
+        isinstance(label, str) and isinstance(number, int) and not isinstance(number, bool)
+        for label, number in value.items()
+    )
 
 
 def _require_string(raw_data: Mapping[str, object], field: str, *, name: str, path: Path) -> str:

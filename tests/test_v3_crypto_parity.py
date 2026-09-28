@@ -1,4 +1,4 @@
-"""SNMPv3 USM crypto-parity tests — RFC 7860 SHA-2 auth, Reeder AES-192/256 and 3DES-EDE priv."""
+"""SNMPv3 USM crypto-parity tests — RFC 7860 SHA-2 auth, AES-192/256 and 3DES-EDE priv."""
 
 from __future__ import annotations
 
@@ -36,7 +36,55 @@ _AUTH_TAG_LENGTHS = {
 _ALL_AUTH_PROTOCOLS = list(_AUTH_TAG_LENGTHS)
 
 _SHA2_PROTOCOLS = [AuthProtocol.SHA224, AuthProtocol.SHA384, AuthProtocol.SHA512]
-_REEDER_PRIVS = [PrivProtocol.AES192, PrivProtocol.AES256, PrivProtocol.THREEDES_EDE]
+# Privacy protocols whose key material is longer than the auth digest.
+_EXTENDED_PRIVS = [PrivProtocol.AES192, PrivProtocol.AES256, PrivProtocol.THREEDES_EDE]
+
+
+def _pad_to_1mib(password: bytes) -> bytes:
+    """RFC 3414 §2.6 step 1: repeat *password* into a 1 MiB buffer."""
+    buf = bytearray(1048576)
+    plen = len(password)
+    for i in range(1048576):
+        buf[i] = password[i % plen]
+    return bytes(buf)
+
+
+# net-snmp 5.9.4 ground truth (persistent-store keys) for the Blumenthal
+# AES-192/256 derivation — see issue #30.  engineID 0x80001f880472656564...
+# is format-4 ASCII "reederinvest"; the passphrases are the CI matrix pair.
+_NET_SNMP_ENGINE_ID = bytes.fromhex("80001f8804726565646572696e76657374")
+_NET_SNMP_AUTH_PASSWORD = b"authpassword12345"
+_NET_SNMP_PRIV_PASSWORD = b"privpassword12345"
+
+_NET_SNMP_AES_VECTORS = (
+    # (auth, priv, expected localized privacy key)
+    (
+        AuthProtocol.SHA256,
+        PrivProtocol.AES192,
+        "93cbabe7564aaffcf6561be284c26e9338036d8ff742783b",
+    ),
+    (
+        AuthProtocol.SHA224,
+        PrivProtocol.AES256,
+        "c4962c5bb380a5ab0e8f5a545d637ebc068615bae787302983628ae0405bcfdc",
+    ),
+    (
+        AuthProtocol.SHA384,
+        PrivProtocol.AES192,
+        "a9ac4757eeaaaae0b12d9355f42542f651f676188abdfa76",
+    ),
+    (
+        AuthProtocol.SHA512,
+        PrivProtocol.AES256,
+        "dab9c5469ab8ad695cc36a8f38a8600b6ead36d1c415cf93dff76f31643774af",
+    ),
+    # control: digest == key length, so the key is the full localized key
+    (
+        AuthProtocol.SHA256,
+        PrivProtocol.AES256,
+        "93cbabe7564aaffcf6561be284c26e9338036d8ff742783b48366937ea608a93",
+    ),
+)
 
 
 def _make_user(
@@ -181,7 +229,42 @@ def test_sha2_auth_fails_with_wrong_key(auth: AuthProtocol) -> None:
         other.unwrap_message(raw)
 
 
-# ── Reeder AES-192 / AES-256 (draft-reeder-snmpv3-usm) ───────────────────────
+# ── AES-192 / AES-256 (draft-blumenthal-aes-usm-04, net-snmp default) ────────
+
+
+def _net_snmp_model(*, auth: AuthProtocol, priv: PrivProtocol) -> UsmModel:
+    """Model matching the net-snmp ground-truth vector inputs."""
+    user = UsmUser(
+        username="net-snmp",
+        auth_protocol=auth,
+        auth_key=_NET_SNMP_AUTH_PASSWORD,
+        priv_protocol=priv,
+        priv_key=_NET_SNMP_PRIV_PASSWORD,
+    )
+    model = UsmModel(user=user)
+    model._engine_id = _NET_SNMP_ENGINE_ID
+    return model
+
+
+@pytest.mark.parametrize(
+    ("auth", "priv", "expected_hex"),
+    _NET_SNMP_AES_VECTORS,
+    ids=[f"{auth.name}-{priv.name}" for auth, priv, _expected in _NET_SNMP_AES_VECTORS],
+)
+def test_net_snmp_aes192_256_priv_key_vectors(
+    auth: AuthProtocol, priv: PrivProtocol, expected_hex: str
+) -> None:
+    """The localized AES-192/256 priv key matches net-snmp 5.9.4 byte-exactly.
+
+    Regression for issue #30: the Ku was pre-extended to the cipher key
+    length before localization (and extended again afterwards).  net-snmp
+    localizes the digest-length Ku and only then truncates or extends the
+    LOCALIZED key, so every combination with digest != key length failed.
+    """
+    model = _net_snmp_model(auth=auth, priv=priv)
+    key = model._priv_key(_NET_SNMP_ENGINE_ID)
+    assert key == bytes.fromhex(expected_hex)
+    assert len(key) == model._priv_key_length()
 
 
 @pytest.mark.parametrize(
@@ -208,29 +291,32 @@ def test_aes192_256_priv_params_is_8_octets(priv: PrivProtocol) -> None:
     assert len(view.usm_params.priv_params) == 8
 
 
-def test_reeder_ku_extended_before_localization() -> None:
-    """The engine-independent Ku is extended to the cipher key length first."""
+def test_aes_priv_key_localizes_digest_length_ku() -> None:
+    """The engine-independent Ku is NOT pre-extended (issue #30).
+
+    The AES-192/256 derivation localizes the digest-length Ku and extends
+    the LOCALIZED key afterwards: the final key therefore preserves the
+    digest-length localized key as its prefix.
+    """
     model = _make_model(priv=PrivProtocol.AES256)
     ku = model._ku(_PRIV_PASSWORD)
-    ku_ext = model._reeder_ku(_PRIV_PASSWORD)
-
     assert len(ku) == hashlib.md5(b"").digest_size  # noqa: S324
-    assert len(ku_ext) == 32
-    assert ku_ext[:16] == ku  # the extension preserves the original digest
 
-    localized = model._localize_priv_key(_PRIV_PASSWORD, _ENGINE_ID)
-    reeder_localized = model._localize_priv_key_reeder(_PRIV_PASSWORD, _ENGINE_ID)
-    assert reeder_localized != localized
-    assert len(reeder_localized) == 32
+    localized = model._localize_key(_PRIV_PASSWORD, _ENGINE_ID)
+    key = model._priv_key(_ENGINE_ID)
+
+    assert len(localized) == 16
+    assert key[:16] == localized  # the localized key is the untouched prefix
+    assert len(key) == 32
 
 
-def test_reeder_localized_key_lengths() -> None:
+def test_extended_priv_key_lengths() -> None:
     assert len(_make_model(priv=PrivProtocol.AES192)._priv_key(_ENGINE_ID)) == 24
     assert len(_make_model(priv=PrivProtocol.AES256)._priv_key(_ENGINE_ID)) == 32
     assert len(_make_model(priv=PrivProtocol.THREEDES_EDE)._priv_key(_ENGINE_ID)) == 32
 
 
-def test_reeder_key_differs_across_engine_and_password() -> None:
+def test_aes_key_differs_across_engine_and_password() -> None:
     model = _make_model(priv=PrivProtocol.AES256)
     key_a = model._priv_key(_ENGINE_ID)
 
@@ -241,7 +327,7 @@ def test_reeder_key_differs_across_engine_and_password() -> None:
     assert other_pw._priv_key(_ENGINE_ID) != key_a
 
 
-def test_reeder_key_differs_from_aes128_key() -> None:
+def test_aes256_key_differs_from_aes128_key() -> None:
     aes128_key = _make_model(priv=PrivProtocol.AES128)._priv_key(_ENGINE_ID)
     aes256_key = _make_model(priv=PrivProtocol.AES256)._priv_key(_ENGINE_ID)
 
@@ -267,7 +353,108 @@ def test_priv_key_mismatch_fails_to_decode() -> None:
     assert receiver.unwrap_message(raw) is None
 
 
+@pytest.mark.parametrize("priv", _EXTENDED_PRIVS)
+def test_extended_priv_key_requires_auth_protocol(priv: PrivProtocol) -> None:
+    """Every long-key priv derivation refuses to run without an auth protocol."""
+    user = UsmUser(
+        username="noauth",
+        auth_protocol=AuthProtocol.NONE,
+        priv_protocol=priv,
+        priv_key=_PRIV_PASSWORD,
+    )
+    model = UsmModel(user=user)
+    model._engine_id = _ENGINE_ID
+    with pytest.raises(ProtocolError, match="without an auth protocol"):
+        model._priv_key(_ENGINE_ID)
+
+
 # ── 3DES-EDE-CBC (draft-reeder usm3DESEDEPrivProtocol) ───────────────────────
+
+
+# draft-reeder-snmpv3-usm-3desede-00 Appendix B: the chained password-to-key
+# algorithm over password "maplesyrup" and engineID 000000000000000000000002.
+# The MD5 chain produces exactly 32 octets; the SHA-1 chain produces 40, of
+# which only the first 32 are used for usm3DESEDEPrivProtocol.
+_3DES_APPENDIX_B = (
+    (
+        AuthProtocol.MD5,
+        "526f5eed9fcce26f8964c2930787d82b79eff44a90650ee0a3a40abfac5acc12",
+    ),
+    (
+        AuthProtocol.SHA1,
+        # full 40-octet draft string; asserted after truncation to 32
+        "6695febc9288e36282235fc7151f128497b38f3f9b8b6d78936ba6e7d19dfd9cd2d5065547743fb5",
+    ),
+)
+_APPENDIX_B_ENGINE_ID = bytes.fromhex("000000000000000000000002")
+
+
+@pytest.mark.parametrize(
+    ("auth", "expected_hex"),
+    _3DES_APPENDIX_B,
+    ids=[auth.name for auth, _expected in _3DES_APPENDIX_B],
+)
+def test_3des_short_digest_chain_matches_draft_appendix_b(
+    auth: AuthProtocol, expected_hex: str
+) -> None:
+    """draft-reeder-snmpv3-usm-3desede-00 Appendix B sample values, byte-exact.
+
+    The 3DES key material chains the password-to-key algorithm: the first
+    block is the localized key itself, the second block treats that
+    localized key as a new passphrase (hash it to a Ku, then localize).
+    net-snmp 5.9.4 ships no 3DES privacy, so these draft vectors are the
+    ground truth.
+    """
+    user = UsmUser(
+        username="3des",
+        auth_protocol=auth,
+        auth_key=b"unused-passphrase",
+        priv_protocol=PrivProtocol.THREEDES_EDE,
+        priv_key=b"maplesyrup",
+    )
+    model = UsmModel(user=user)
+    model._engine_id = _APPENDIX_B_ENGINE_ID
+    key = model._priv_key(_APPENDIX_B_ENGINE_ID)
+    assert key == bytes.fromhex(expected_hex)[:32]
+    assert len(key) == 32
+
+
+def test_3des_short_digest_chain_structure() -> None:
+    """The chain is K1 | K2: the localized key, then P2K of the localized key.
+
+    Pinned structurally for SHA-224 (28-octet digest, so truncation to 32
+    keeps all of K1 and the first 4 octets of K2).  Net-snmp has no 3DES,
+    so the structure is derived directly from the draft's chain definition.
+    """
+    auth = AuthProtocol.SHA224
+    user = UsmUser(
+        username="3des",
+        auth_protocol=auth,
+        auth_key=b"unused-passphrase",
+        priv_protocol=PrivProtocol.THREEDES_EDE,
+        priv_key=_PRIV_PASSWORD,
+    )
+    model = UsmModel(user=user)
+    model._engine_id = _ENGINE_ID
+    kul = model._localize_key(_PRIV_PASSWORD, _ENGINE_ID)
+    assert len(kul) == 28
+
+    ku_prime = hashlib.sha224(_pad_to_1mib(kul)).digest()
+    kul_prime = hashlib.sha224(ku_prime + _ENGINE_ID + ku_prime).digest()
+    expected = (kul + kul_prime)[:32]
+
+    key = model._priv_key(_ENGINE_ID)
+    assert key == expected
+    assert key[:28] == kul  # K1 (the localized key) survives truncation
+
+
+@pytest.mark.parametrize("auth", [AuthProtocol.SHA256, AuthProtocol.SHA384, AuthProtocol.SHA512])
+def test_3des_digest_at_least_32_uses_plain_localization(auth: AuthProtocol) -> None:
+    """With a digest >= 32 octets the RFC 3414 localized key already covers 3DES."""
+    model = _make_model(auth=auth, priv=PrivProtocol.THREEDES_EDE)
+    kul = model._localize_key(_PRIV_PASSWORD, _ENGINE_ID)
+    assert len(kul) >= 32
+    assert model._priv_key(_ENGINE_ID) == kul[:32]
 
 
 def test_3des_ede_authpriv_roundtrip() -> None:
@@ -281,10 +468,10 @@ def test_3des_ede_authpriv_roundtrip() -> None:
 
 def test_3des_ede_key_material_layout_and_iv() -> None:
     """First 24 octets are the 3DES key, last 8 the pre-IV; IV = pre-IV XOR salt."""
-    from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
     from cryptography.hazmat.primitives.ciphers import Cipher, modes
     from cryptography.hazmat.primitives.padding import PKCS7
 
+    from trishul_snmp.security.usm import _import_3des_algorithm
     from trishul_snmp.wire.ber import decode_tlv
     from trishul_snmp.wire.v3message import decode_scoped_pdu, decode_v3_message
 
@@ -302,7 +489,7 @@ def test_3des_ede_key_material_layout_and_iv() -> None:
     # Independent cross-check with raw cryptography primitives.
     tag, ciphertext, _ = decode_tlv(view.msg_data_bytes, 0)
     assert tag == 0x04
-    cipher = Cipher(TripleDES(des_key), modes.CBC(iv))
+    cipher = Cipher(_import_3des_algorithm()(des_key), modes.CBC(iv))
     dec = cipher.decryptor()
     padded = dec.update(ciphertext) + dec.finalize()
     unpadder = PKCS7(64).unpadder()
@@ -364,8 +551,8 @@ def test_3des_ede_rejects_priv_params_longer_than_8() -> None:
         model.unwrap_message(restamped)
 
 
-@pytest.mark.parametrize("priv", _REEDER_PRIVS)
-def test_reeder_priv_mismatch_fails_to_decode(priv: PrivProtocol) -> None:
+@pytest.mark.parametrize("priv", _EXTENDED_PRIVS)
+def test_extended_priv_mismatch_fails_to_decode(priv: PrivProtocol) -> None:
     sender = _make_model(priv=priv)
     receiver = _make_model(priv=priv, priv_key=b"wrong-password")
     raw = sender.wrap_pdu(_get_pdu(37))
@@ -373,10 +560,10 @@ def test_reeder_priv_mismatch_fails_to_decode(priv: PrivProtocol) -> None:
     assert receiver.unwrap_message(raw) is None
 
 
-# ── Reeder KDF caching (#12) ──────────────────────────────────────────────────
+# ── extended-priv KDF caching (#12) ───────────────────────────────────────────
 
 
-def test_reeder_kdf_caches_reuse_ku_across_wraps() -> None:
+def test_extended_priv_kdf_caches_reuse_ku_across_wraps() -> None:
     user = UsmUser(
         username="parity",
         auth_protocol=AuthProtocol.MD5,
@@ -402,23 +589,22 @@ def test_reeder_kdf_caches_reuse_ku_across_wraps() -> None:
 
     # once for the auth passphrase, once for the priv passphrase
     assert len(ku_calls) == 2
-    assert len(model._reeder_ku_cache) == 1
-    assert len(model._reeder_localized_cache) == 1
+    assert len(model._localized_priv_cache) == 1
 
     model.wrap_pdu(_get_pdu())
     assert len(ku_calls) == 2
 
 
-def test_reeder_localized_cache_invalidated_on_boots_change() -> None:
+def test_localized_priv_cache_invalidated_on_boots_change() -> None:
     model = _make_model(priv=PrivProtocol.AES256)
     model.wrap_pdu(_get_pdu())
-    assert len(model._reeder_localized_cache) == 1
+    assert len(model._localized_priv_cache) == 1
 
     model._adopt_engine_state(_ENGINE_ID, boots=3, engine_time=600)
-    assert model._reeder_localized_cache == {}
+    assert model._localized_priv_cache == {}
 
     model.wrap_pdu(_get_pdu())
-    assert len(model._reeder_localized_cache) == 1
+    assert len(model._localized_priv_cache) == 1
 
 
 # ── enum surface ──────────────────────────────────────────────────────────────

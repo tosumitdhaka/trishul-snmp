@@ -216,6 +216,8 @@ class VarBind:
     match: OidMatch | None = None
     display_name: str | None = None
     display_value: str | None = None
+    enum_label: str | None = None
+    units: str | None = None
 
     @property
     def oid_str(self) -> str:
