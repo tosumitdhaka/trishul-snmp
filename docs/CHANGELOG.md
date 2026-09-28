@@ -8,7 +8,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.6.1] — 2026-09-28
 
-0.6.0 was never published — an interrupted release workflow left an unpublishable ghost upload on PyPI — so the same content ships as 0.6.1.
+0.6.0 was published to PyPI unintentionally, in fragments across an interrupted release workflow and its failed re-run; it has been yanked there — the same content ships as 0.6.1.
 
 ### Added
 
