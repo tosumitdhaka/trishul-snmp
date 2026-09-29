@@ -438,6 +438,33 @@ def test_loader_missing_path_empty_dir_and_json_reading_helpers(tmp_path: Path) 
     ]
 
 
+def test_build_registry_loads_distinct_modules(tmp_path: Path) -> None:
+    first = tmp_path / "A.json"
+    second = tmp_path / "B.json"
+    _write_json(first, _base_module(module="MIB-A"))
+    _write_json(second, _base_module(module="MIB-B"))
+
+    registry = mib_loader._build_registry((first, second), oid_index={})
+
+    assert set(registry.modules) == {"MIB-A", "MIB-B"}
+
+
+def test_build_registry_rejects_duplicate_module_names(tmp_path: Path) -> None:
+    first = tmp_path / "A-IF-MIB.json"
+    second = tmp_path / "B-IF-MIB.json"
+    _write_json(first, _base_module(module="IF-MIB"))
+    _write_json(second, _base_module(module="IF-MIB"))
+
+    with pytest.raises(BundleValidationError) as exc_info:
+        mib_loader._build_registry((first, second), oid_index={})
+
+    message = str(exc_info.value)
+    assert "IF-MIB" in message
+    assert "A-IF-MIB.json" in message
+    assert "B-IF-MIB.json" in message
+    assert exc_info.value.path == second
+
+
 def test_module_paths_from_manifest_validation_and_dedup(tmp_path: Path) -> None:
     module_path = tmp_path / "IF-MIB.json"
     _write_json(module_path, _base_module(module="IF-MIB"))

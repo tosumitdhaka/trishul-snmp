@@ -5,6 +5,22 @@ Status: `planned` | `in progress` | `done` | `deferred`
 
 ---
 
+## v0.6.2 — shipped 2026-09-29
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | 3DES-EDE draft-compliant decrypt | done | `#31`. Padding ignored per draft-reeder-3desede-00 §5.1.3: the decrypted plaintext is truncated to the ScopedPDU's own BER extent, so zero-padded RFC 3414-style peers (pysnmp 7.1.30: previously 0/6 accepted) and our PKCS#7 outbound both decrypt to identical bytes; wrong-key garbage still fails BER. Encrypt path and AES paths unchanged. |
+| 2 | BER OID 2.x arcs | done | `#34`. The combined first subidentifier is now base-128 encoded/decoded (previously one byte: 2.100.3 silently misdecoded as 2.49.52.3, and (2, 100) failed to encode). <40 rule applies only to first arcs 0/1; truncated/oversized first-subidentifier encodings fail cleanly. |
+| 3 | v3 notification state across messages | done | `#33`. Listener owns a persistent `UsmModel` codec (bounded per-engine LRU, capacity 64) so localized keys derive once instead of per datagram; local authoritative engineTime advances monotonically for traps, discovery REPORTs, and inform RESPONSEs (frozen values previously failed the receiver's replay guard after 150 s). `UsmLocalEngine` configuration shape preserved. |
+| 4 | Dispatcher request-ID lifecycle | done | `#35`. Explicit release on send-only completion, wrap/send/receive failure, and cancellation; retries keep one reserved ID for the whole operation. Previously every fire-and-forget trap leaked its ID for the notifier lifetime. |
+| 5 | Walk error surfacing + v1 GETBULK order | done | `#36`. Nonzero `error_status` during a walk raises `WalkError` (CLI exits nonzero instead of printing a partial success); v1 noSuchName at walk end is the protocol's termination case. `V1Manager` GETBULK emulation now returns repetition-major rows (x1,y1,x2,y2), non-repeaters first. |
+| 6 | Bounded responder/transport work | done | `#32`. Exhausted GETBULK repeater columns freeze (no more endOfMibView spam), effective repetitions capped (`max_bulk_repetitions`, default 1000), responses truncated per RFC 3416 §4.2.3 to `max_response_bytes` (default 65535); UDP receive queue bounded (`queue_capacity`, default 1024) with `dropped` counter, rate-limited warnings, and close() that wakes a pending receiver even with a full queue. |
+| 7 | v1 rejection + simulation wrap | done | `#37`. v1 requests dropped at the responder's receive boundary (v2c-only contract); Counter32/Counter64 and TimeTicks simulation rules wrap at their wire moduli (2³²−1 → 0 on next read); rule inputs validated at construction; unencodable values drop the response instead of terminating `serve_forever`. |
+| 8 | Duplicate module rejection | done | `#38`. `load_bundle` raises `BundleValidationError` naming the module and both conflicting file paths (previously silent last-wins by file order); same-file manifest references still dedupe. |
+| 9 | Full-CI release gate | done | `#39`. Quality gates (ruff, format, strict mypy, 3.10–3.13 matrix with ≥95% coverage, live snmpd suite) extracted into a reusable `quality.yml` used by both main CI and tags; the tag path adds wheel smoke with version-matches-tag verification before publish. Checklist pairing updated to trishul-smi 0.5.2. |
+
+---
+
 ## v0.6.1 — shipped 2026-09-28
 
 | # | Item | Status | Notes |

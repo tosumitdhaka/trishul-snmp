@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from dataclasses import dataclass
+from unittest.mock import patch
 
 import pytest
 
@@ -21,6 +22,7 @@ from trishul_snmp.security.usm import (
     UsmModel,
     UsmUser,
 )
+from trishul_snmp.transport.dispatcher import RequestDispatcher
 from trishul_snmp.types import NullValue, SocketAddress
 from trishul_snmp.wire.pdu import Pdu, PduType, RawVarBind
 from trishul_snmp.wire.v3message import (
@@ -62,6 +64,46 @@ def _make_local_engine(fill: int, *, boots: int = 7, time: int = 111) -> UsmLoca
         engine_boots=boots,
         engine_time=time,
     )
+
+
+def _make_passphrase_user() -> UsmUser:
+    """authPriv user with passphrases so the RFC 3414 KDF actually runs."""
+    return UsmUser(
+        username="listener",
+        auth_protocol=AuthProtocol.MD5,
+        auth_key=b"authpassword1",
+        priv_protocol=PrivProtocol.AES128,
+        priv_key=b"privpassword1",
+    )
+
+
+class _FakeClock:
+    def __init__(self, *, start: float = 1000.0) -> None:
+        self.now = start
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+class _FakeUdpSendOnlyClient:
+    def __init__(self, sent: list[bytes] | None = None) -> None:
+        self.sent = sent if sent is not None else []
+
+    async def open(self) -> None:
+        pass
+
+    async def close(self) -> None:
+        pass
+
+    async def send(self, data: bytes) -> None:
+        self.sent.append(data)
+
+    async def receive(self, timeout: float) -> bytes:
+        del timeout
+        raise AssertionError("no response expected")
 
 
 def _skip_if_udp_restricted(exc: Exception) -> None:
@@ -816,3 +858,216 @@ def test_is_discovery_probe_rejects_probe_shaped_variants() -> None:
     assert is_discovery_probe(with_context) is False
     assert is_discovery_probe(too_many_varbinds) is False
     assert is_discovery_probe(probe) is True
+
+
+def test_v3_notification_listener_reuses_codec_key_caches() -> None:
+    """Two packets for one user/engine must derive localized keys once each."""
+    user = _make_passphrase_user()
+    peer_engine = _make_local_engine(0x31)
+    first = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=81,
+        local_engine=peer_engine,
+    )
+    second = _make_raw_notification(
+        user=user,
+        pdu_type=PduType.SNMPV2_TRAP,
+        request_id=82,
+        local_engine=peer_engine,
+    )
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=first, source_address=("127.0.0.1", 41020)),
+            _FakeDatagram(data=second, source_address=("127.0.0.1", 41021)),
+        ]
+    )
+
+    ku_calls: list[bytes] = []
+    codec_localized_size: list[int] = []
+
+    async def scenario() -> None:
+        listener = V3NotificationListener(user=user, local_engine=_make_local_engine(0x32))
+        listener._server = server  # type: ignore[attr-defined]
+        real_ku = listener._codec._ku
+
+        def counting(password: bytes) -> bytes:
+            ku_calls.append(password)
+            return real_ku(password)
+
+        listener._codec._ku = counting  # type: ignore[method-assign]
+        first_event = await listener.receive()
+        second_event = await listener.receive()
+
+        assert first_event.request_id == 81
+        assert second_event.request_id == 82
+        codec_localized_size.append(len(listener._codec._localized_cache))
+
+    asyncio.run(scenario())
+
+    # auth + priv passphrase-to-key derivation, once each — not once per packet
+    assert len(ku_calls) == 2
+    assert set(ku_calls) == {b"authpassword1", b"privpassword1"}
+    assert codec_localized_size == [2]
+
+
+def test_v3_notification_listener_discovery_report_engine_time_advances() -> None:
+    """Discovery REPORTs carry configured engineTime advanced with the clock."""
+    user = _make_user(level="noAuthNoPriv")
+    listener_engine = _make_local_engine(0x41, time=100)
+    clock = _FakeClock(start=1000.0)
+    probe = UsmModel(user=user)._build_discovery_probe()
+
+    def trap(request_id: int) -> bytes:
+        return _make_raw_notification(
+            user=user,
+            pdu_type=PduType.SNMPV2_TRAP,
+            request_id=request_id,
+            local_engine=_make_local_engine(0x50 + request_id),
+        )
+
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=probe, source_address=("127.0.0.1", 41030)),
+            _FakeDatagram(data=trap(1), source_address=("127.0.0.1", 41031)),
+            _FakeDatagram(data=probe, source_address=("127.0.0.1", 41032)),
+            _FakeDatagram(data=trap(2), source_address=("127.0.0.1", 41033)),
+            _FakeDatagram(data=probe, source_address=("127.0.0.1", 41034)),
+            _FakeDatagram(data=trap(3), source_address=("127.0.0.1", 41035)),
+        ]
+    )
+
+    async def scenario() -> None:
+        listener = V3NotificationListener(user=user, local_engine=listener_engine, clock=clock)
+        listener._server = server  # type: ignore[attr-defined]
+        await listener.receive()
+        clock.advance(149.0)
+        await listener.receive()
+        clock.advance(2.0)
+        await listener.receive()
+
+    asyncio.run(scenario())
+
+    report_times = [decode_v3_message(data).usm_params.engine_time for data, _addr in server.sent]
+    assert report_times == [100, 249, 251]
+
+
+def test_v3_notification_listener_inform_response_engine_time_advances() -> None:
+    """Inform RESPONSEs carry configured engineTime advanced with the clock."""
+    user = _make_user(level="noAuthNoPriv")
+    listener_engine = _make_local_engine(0x61, time=100)
+    clock = _FakeClock(start=1000.0)
+
+    def inform(request_id: int) -> bytes:
+        return _make_raw_notification(
+            user=user,
+            pdu_type=PduType.INFORM_REQUEST,
+            request_id=request_id,
+            peer_engine=_make_local_engine(0x70 + request_id),
+        )
+
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=inform(1), source_address=("127.0.0.1", 41040)),
+            _FakeDatagram(data=inform(2), source_address=("127.0.0.1", 41041)),
+            _FakeDatagram(data=inform(3), source_address=("127.0.0.1", 41042)),
+        ]
+    )
+
+    async def scenario() -> None:
+        listener = V3NotificationListener(user=user, local_engine=listener_engine, clock=clock)
+        listener._server = server  # type: ignore[attr-defined]
+        await listener.receive()
+        clock.advance(149.0)
+        await listener.receive()
+        clock.advance(2.0)
+        await listener.receive()
+
+    asyncio.run(scenario())
+
+    ack_times = [decode_v3_message(data).usm_params.engine_time for data, _addr in server.sent]
+    assert ack_times == [100, 249, 251]
+
+
+def test_v3notifier_trap_engine_time_advances_with_monotonic_clock() -> None:
+    """Repeated traps carry increasing engineTime anchored to a monotonic clock."""
+    user = _make_user(level="noAuthNoPriv")
+    notifier_engine = _make_local_engine(0x01, time=100)
+    clock = _FakeClock(start=1000.0)
+    sent: list[bytes] = []
+
+    async def scenario() -> None:
+        with patch("trishul_snmp.security.usm.time.monotonic", clock):
+            notifier = V3Notifier(
+                host="127.0.0.1",
+                port=162,
+                user=user,
+                local_engine=notifier_engine,
+                timeout=0.2,
+                retries=0,
+            )
+            fake_client = _FakeUdpSendOnlyClient(sent)
+            notifier._session._client = fake_client  # type: ignore[attr-defined]
+            notifier._session._dispatcher = RequestDispatcher(  # type: ignore[attr-defined]
+                fake_client,
+                security=notifier._session._security,
+                timeout=0.2,
+                retries=0,
+            )
+            await notifier.open()
+            await notifier.send_trap("1.3.6.1.6.3.1.1.5.3", uptime=1)
+            clock.advance(149.0)
+            await notifier.send_trap("1.3.6.1.6.3.1.1.5.3", uptime=2)
+            clock.advance(2.0)
+            await notifier.send_trap("1.3.6.1.6.3.1.1.5.3", uptime=3)
+            await notifier.close()
+
+    asyncio.run(scenario())
+
+    times = [decode_v3_message(data).usm_params.engine_time for data in sent]
+    assert times == [100, 249, 251]
+
+
+def test_v3_notification_listener_accepts_advancing_trap_engine_time() -> None:
+    """A sender advancing engineTime with the same clock stays inside the window."""
+    user = _make_user(level="authPriv")
+    clock = _FakeClock(start=1000.0)
+    received: list[int] = []
+
+    async def scenario() -> None:
+        listener_engine = _make_local_engine(0x21, time=100)
+        notifier_engine = _make_local_engine(0x22, time=100)
+        try:
+            with patch("trishul_snmp.security.usm.time.monotonic", clock):
+                async with V3NotificationListener(
+                    host="127.0.0.1",
+                    port=0,
+                    user=user,
+                    local_engine=listener_engine,
+                    clock=clock,
+                ) as listener:
+                    async with V3Notifier(
+                        host="127.0.0.1",
+                        port=_listener_port(listener),
+                        user=user,
+                        local_engine=notifier_engine,
+                        timeout=0.2,
+                        retries=0,
+                    ) as notifier:
+                        for _ in range(3):
+                            send_task = asyncio.create_task(
+                                notifier.send_trap("1.3.6.1.6.3.1.1.5.3", uptime=1)
+                            )
+                            event = await asyncio.wait_for(listener.receive(), timeout=1.0)
+                            received.append(event.request_id)
+                            await send_task
+                            clock.advance(151.0)
+        except Exception as exc:
+            _skip_if_udp_restricted(exc)
+            raise
+
+    asyncio.run(scenario())
+
+    # A notifier that froze engineTime at 100 would be dropped once the clock
+    # moved more than the ±150 s window; all three advancing traps are accepted.
+    assert len(received) == 3

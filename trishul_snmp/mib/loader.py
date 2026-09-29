@@ -38,14 +38,38 @@ def load_bundle(path: str | Path) -> MibBundle:
 
     if source.is_dir():
         loaded = _discover_directory(source)
-        modules = [_load_module_json(module_path) for module_path in loaded.module_paths]
-        registry = MibRegistry(
-            {module.module: module for module in modules},
-            oid_index=loaded.oid_index,
-        )
+        registry = _build_registry(loaded.module_paths, oid_index=loaded.oid_index)
         return MibBundle(registry, source=source)
 
     raise BundleValidationError("Bundle path does not exist", path=source)
+
+
+def _build_registry(
+    module_paths: tuple[Path, ...],
+    *,
+    oid_index: dict[OID, _OidIndexEntry],
+) -> MibRegistry:
+    """Load module files into a registry, rejecting duplicate module names.
+
+    Two distinct module files that declare the same module name would silently
+    overwrite each other in a keyed registry, making resolution and enrichment
+    depend on file order. Reject that deterministically and name both
+    conflicting files so the error is actionable. A manifest that references
+    the same file twice is deduplicated earlier and never reaches this check.
+    """
+    modules: dict[str, MibModuleRecord] = {}
+    module_sources: dict[str, Path] = {}
+    for module_path in module_paths:
+        module = _load_module_json(module_path)
+        earlier_path = module_sources.get(module.module)
+        if earlier_path is not None:
+            raise BundleValidationError(
+                f"Duplicate module {module.module!r} declared by {earlier_path} and {module_path}",
+                path=module_path,
+            )
+        module_sources[module.module] = module_path
+        modules[module.module] = module
+    return MibRegistry(modules, oid_index=oid_index)
 
 
 def _load_module_json(path: Path) -> MibModuleRecord:

@@ -6,6 +6,38 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.6.2] — 2026-09-29
+
+Hardening and interoperability release: nine confirmed defects fixed (#31–#39), no new feature surface.
+
+### Fixed
+
+- **3DES-EDE decryption rejects draft-compliant peers (#31)** — `_decrypt_3des_ede` enforced strict PKCS#7 unpadding, so RFC 3414-style zero-padded senders (pysnmp 7.1.30: 0/6 3DES-EDE requests accepted) were rejected as undecodable. Per draft-reeder-snmpv3-usm-3desede-00 §5.1.3 ("when decrypting, the padding is ignored"), the decrypted plaintext is now truncated to the ScopedPDU's own BER extent: zero-padded peers, our PKCS#7 outbound, and wrong-key garbage (still fails BER identically) all behave correctly. Encrypt path unchanged; AES paths unaffected.
+- **Valid 2.x BER OBJECT IDENTIFIER arcs (#34)** — the combined first subidentifier was encoded/decoded as a single byte, silently misdecoding every OID with first arc 2 and second arc ≥ 40 (BER for 2.100.3 decoded as 2.49.52.3) and rejecting (2, 100) at encode time. Now base-128 encoded like every other subidentifier; the <40 rule applies only to first arcs 0 and 1; oversized/truncated first-subidentifier encodings fail cleanly. Wire-affecting: values that previously failed to encode now encode correctly. Error-message wording changed accordingly: negative arcs now raise "OID arcs cannot be negative" and the <40 message now reads "…when the first arc is 0 or 1".
+- **SNMPv3 notification key and engine-time state across messages (#33)** — the listener built a fresh `UsmModel` per datagram, losing the localized-key cache (each invalid-MAC packet repeated the ~1 MiB password-to-key derivation); local engine time was frozen at the configured value, so long-running senders' traps were rejected by receivers' replay guard after the 150-second window. The listener now owns a persistent codec with a bounded per-engine LRU (capacity 64, mirroring the replay guard's salt cache), and local authoritative engineTime advances with the monotonic clock for traps, discovery REPORTs, and inform RESPONSEs (clamped to the signed 32-bit wire maximum; caller persists engineBoots).
+- **Dispatcher request-ID leaks (#35)** — IDs were released only in `receive_response`, so every fire-and-forget trap retained its ID for the notifier's lifetime and wrap/send failures could strand IDs. Explicit release lifecycle: send-only sends release after the send; wrap, send, receive failures and cancellation release; retries keep the same reserved ID until the operation ends.
+- **Walk errors silently swallowed (#36)** — `walk_subtree` never checked `error_status`: a tooBig/genErr response became an empty or partial "successful" walk and the CLI exited 0. Nonzero statuses now raise `WalkError` (CLI exits nonzero); SNMPv1 noSuchName at the end of a walk is its distinct termination case. `V1Manager` GETBULK emulation now emits repeaters in RFC 3416 repetition-major order (x1,y1,x2,y2) with non-repeaters first and per-column end-of-MIB exhaustion.
+- **Unbounded responder and transport work under hostile traffic (#32)** — the responder looped the raw wire `max_repetitions` (100000 varbinds for one missing OID) and kept appending endOfMibView for exhausted repeaters; the UDP receive queue was unbounded. Now: exhausted repeater columns freeze (one endOfMibView each, early stop), effective repetitions are capped by `max_bulk_repetitions`, responses truncate per RFC 3416 §4.2.3 to `max_response_bytes`; the receive queue is bounded (`queue_capacity`, default 1024) with drop counting, a `dropped` counter, rate-limited warnings (one per 5 s), and close() wakes a pending receiver even with a full queue.
+- **Invalid v1 traffic and simulation overflow at the responder (#37)** — the v2c responder accepted SNMPv1 requests and would have answered with v2-only exception values; `CounterRule`/`UptimeRule` grew past their wire types' limits and the next response's `ProtocolError` could terminate `serve_forever`. v1 requests are now dropped at the receive boundary; Counter32/Counter64 and TimeTicks wrap at their moduli (a Counter32 at 2³²−1 wraps to 0 on the next read); rule inputs are validated at construction; an unencodable value drops its response instead of killing the service loop.
+- **Silent duplicate module declarations (#38)** — two bundle JSON files declaring the same module name silently overwrote each other (file order decided resolution). `load_bundle` now raises `BundleValidationError` naming the module and both conflicting paths; same-file manifest references still dedupe.
+
+### Changed
+
+- **Tag releases gate on the full CI quality suite (#39)** — the release workflow previously ran only pytest before publishing. Quality gates (ruff, format, strict mypy, 3.10–3.13 test matrix with ≥95% coverage, live snmpd suite) are extracted into a reusable `quality.yml` invoked by both main-branch CI and tags; the tag path adds a wheel smoke job that installs the built wheel and fails unless the installed version matches the tag. Publish provably cannot start unless every gate passed. Release checklist updated (trishul-smi pairing 0.5.0 → 0.5.2).
+
+### Added
+
+- Responder bounding options: `max_bulk_repetitions` (default 1000) and `max_response_bytes` (default 65535) on `V2cResponder`; `queue_capacity` (default 1024), `dropped`, and `clock` on `UdpServer`.
+- `WalkError` (`trishul_snmp.manager.walk`) raised for nonzero walk error-status responses; `walk_subtree` accepts a `v1` keyword (SNMPv1 noSuchName termination handling — set automatically by `V1Manager.walk`).
+- Internal-seam keywords with behavior-preserving defaults: `codec` on `decode_v3_notification_message` and `codec`/`engine_time` on `encode_discovery_report`/`encode_inform_response` (listener key-cache reuse and engine-time advancement, #33); `RequestDispatcher.release_request()` and the `issued_request_ids` property (#35).
+
+### Tests
+
+- Regression coverage for every fix: cross-padding 3DES-EDE vectors (zero-pad 1–8 bytes, PKCS#7 roundtrip, wrong-key rejection), OID 2.39/2.40/2.47/2.48/2.100 round trips and external BER vectors, dispatcher ID lifecycle (send-only/failure/cancellation/retry), walk tooBig/genErr visibility and two-column v1 bulk ordering, GETBULK exhaustion/clamp/truncation and queue overflow/shutdown, counter/timeticks rollover, v1 responder rejection, duplicate module rejection, fake-clock engineTime advancement at 0/149/151 s, and localized-key cache reuse.
+- snmpd live-agent matrix unchanged (31 tests, green); ecosystem validated against `trishul-smi 0.5.2`.
+
+---
+
 ## [0.6.1] — 2026-09-28
 
 0.6.0 was published to PyPI unintentionally, in fragments across an interrupted release workflow and its failed re-run; it has been yanked there — the same content ships as 0.6.1.

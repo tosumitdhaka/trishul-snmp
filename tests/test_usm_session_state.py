@@ -148,6 +148,22 @@ def test_localized_cache_invalidated_when_engine_boots_change() -> None:
     assert len(ku_calls) == 4  # warm again
 
 
+def test_localized_cache_bounded_per_engine() -> None:
+    """A codec reused across many engines must not grow its key cache unboundedly."""
+    model = UsmModel(
+        user=UsmUser(
+            username="authpriv",
+            auth_protocol=AuthProtocol.MD5,
+            auth_key=_AUTH_PASSWORD,
+        )
+    )
+    for i in range(80):
+        engine_id = b"\x80\x00\x00" + bytes([i]) * 13
+        model._hmac_key(engine_id=engine_id)
+
+    assert len(model._localized_cache) <= 64  # bounded LRU, not one entry per engine
+
+
 # ── monotonic engine-time advance ─────────────────────────────────────────────
 
 

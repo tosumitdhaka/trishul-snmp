@@ -98,7 +98,7 @@ Follow this checklist for every release. Steps should be completed in order.
 - [ ] Run ecosystem validation against the intended `tsmi` pairing:
   ```bash
   python3 scripts/validate_ecosystem.py \
-    --tsmi-version 0.5.0 \
+    --tsmi-version 0.5.2 \
     --mib-dir /var/lib/mibs/ietf \
     --mib-dir /var/lib/mibs/iana \
     --host 127.0.0.1 \
@@ -133,9 +133,32 @@ Follow this checklist for every release. Steps should be completed in order.
 - [ ] Commit the version bump and changelog: `git commit -m "chore: release vx.y.z"`
 - [ ] Tag the commit: `git tag vx.y.z`
 - [ ] Push the tag: `git push origin vx.y.z`
+
+Pushing the tag triggers the `release` GitHub Actions workflow, which runs the
+full automated gate path in order. Each job only starts after every job it
+`needs` has passed, so a failing gate provably prevents everything downstream:
+
+1. **Quality** — the same reusable quality workflow CI runs on `main` and PRs:
+   - `lint`: `ruff check` + `ruff format --check`
+   - `typecheck`: strict `mypy`
+   - `test`: pytest matrix on Python 3.10–3.13 with coverage enforcement (>= 95%)
+   - `snmpd`: integration tests against a live net-snmp agent
+2. **Build distribution** — `hatch build` (wheel + sdist)
+3. **Wheel smoke** — installs the built wheel in a clean venv, runs both entry
+   points (`tsnmp version`, `trishul-snmp version`), and verifies the installed
+   version **matches the git tag**. A mismatch fails the job and blocks the
+   publish — this is the automated guard for the v0.6.0
+   fragment-publication incident, where a wheel reached PyPI under a version
+   that disagreed with the tag.
+4. **Publish to PyPI** — OIDC trusted publishing. Only starts after **quality**,
+   **build**, AND **wheel smoke** have all passed.
+5. **Create GitHub Release** — auto-generated release notes with the `dist/`
+   artifacts attached. Only starts after publishing succeeded.
+
 - [ ] Confirm the `release` GitHub Actions workflow completes successfully:
-  - Test before release
+  - Quality
   - Build distribution
+  - Wheel smoke (version matches tag)
   - Publish to PyPI
   - Create GitHub Release
 - [ ] Verify the package is live:
@@ -143,6 +166,13 @@ Follow this checklist for every release. Steps should be completed in order.
   pip install trishul-snmp==x.y.z
   tsnmp version
   ```
+
+What remains **manual** on the tag path: nothing about the gates — they are
+fully automated. After the workflow finishes, the remaining manual steps are
+reviewing the auto-generated GitHub Release notes (add any known limitations or
+notable changes the changelog does not capture), closing the milestone, updating
+resolved issues, and archiving release notes under `docs/archive/` if
+warranted.
 
 ---
 

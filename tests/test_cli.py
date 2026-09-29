@@ -15,6 +15,7 @@ from trishul_snmp import (
     __version__,
 )
 from trishul_snmp.cli.main import _handle_translate, main, run
+from trishul_snmp.manager.walk import WalkError
 from trishul_snmp.mib.models import MibMemberRef
 from trishul_snmp.types import ErrorStatus, OctetStringValue, Response, VarBind
 
@@ -1124,6 +1125,73 @@ def test_cli_bulkwalk_v1_routes_to_v1manager(monkeypatch, capsys) -> None:
     capsys.readouterr()
     assert exit_code == 0
     assert FakeManager.created[0].calls[0][0] == "bulkwalk"
+
+
+def test_cli_walk_surfaces_walk_error_exit_code(monkeypatch, capsys) -> None:
+    class ErroringManager(FakeManager):
+        async def walk(
+            self,
+            root: str,
+            *,
+            bulk: bool = True,
+            max_repetitions: int = 10,
+        ) -> tuple[VarBind, ...]:
+            del root, bulk, max_repetitions
+            raise WalkError(
+                "walk aborted: agent reported too_big (error-index 0)",
+                error_status=ErrorStatus.TOO_BIG,
+                error_index=0,
+            )
+
+    FakeManager.created.clear()
+    monkeypatch.setattr("trishul_snmp.cli.main.V2cManager", ErroringManager)
+
+    exit_code = main(
+        [
+            "walk",
+            "--host",
+            "127.0.0.1",
+            "1.3.6.1.2.1.2.2",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err.strip() == "tsnmp: walk aborted: agent reported too_big (error-index 0)"
+
+
+def test_cli_bulkwalk_surfaces_walk_error_exit_code(monkeypatch, capsys) -> None:
+    class ErroringManager(FakeManager):
+        async def bulkwalk(
+            self,
+            root: str,
+            *,
+            max_repetitions: int = 10,
+        ) -> tuple[VarBind, ...]:
+            del root, max_repetitions
+            raise WalkError(
+                "walk aborted: agent reported gen_err (error-index 1)",
+                error_status=ErrorStatus.GEN_ERR,
+                error_index=1,
+            )
+
+    FakeManager.created.clear()
+    monkeypatch.setattr("trishul_snmp.cli.main.V2cManager", ErroringManager)
+
+    exit_code = main(
+        [
+            "bulkwalk",
+            "--host",
+            "127.0.0.1",
+            "1.3.6.1.2.1.2.2",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err.strip() == "tsnmp: walk aborted: agent reported gen_err (error-index 1)"
 
 
 def test_cli_trap_v1_routes_to_v1notifier(monkeypatch, capsys) -> None:

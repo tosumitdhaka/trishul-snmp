@@ -115,14 +115,60 @@ def test_decode_value_rejects_counter32_beyond_bound() -> None:
         decode_value(b"\x41\x05" + (1 << 32).to_bytes(5, "big"))
 
 
-def test_encode_oid_rejects_second_arc_over_39_under_first_arc_two() -> None:
+def test_encode_oid_rejects_second_arc_over_39_under_first_arc_zero_or_one() -> None:
     with pytest.raises(ProtocolError, match="Second OID arc must be < 40"):
-        _encode_oid((2, 40))
+        _encode_oid((0, 40))
+    with pytest.raises(ProtocolError, match="Second OID arc must be < 40"):
+        _encode_oid((1, 40))
 
 
-def test_encode_oid_accepts_second_arc_39_under_first_arc_two() -> None:
+def test_encode_oid_accepts_second_arc_39_under_first_arc_zero_or_one() -> None:
+    assert _encode_oid((0, 39)) == b"\x27"
+    assert _decode_oid(b"\x27") == (0, 39)
+    assert _encode_oid((1, 39)) == b"\x4f"
+    assert _decode_oid(b"\x4f") == (1, 39)
+
+
+def test_encode_oid_accepts_second_arc_over_39_under_first_arc_two() -> None:
     assert _encode_oid((2, 39)) == b"\x77"
-    assert _decode_oid(b"\x77") == (2, 39)
+    assert _encode_oid((2, 40)) == b"\x78"
+    assert _encode_oid((2, 100)) == b"\x81\x34"
+
+
+def test_encode_oid_round_trips_second_arc_over_39_under_first_arc_two() -> None:
+    for oid in [(2, 39), (2, 40), (2, 47), (2, 48), (2, 100)]:
+        assert _decode_oid(_encode_oid(oid)) == oid
+
+
+def test_decode_oid_matches_external_ber_vector_for_second_arc_over_39() -> None:
+    # (2, 100, 3): the combined first subidentifier is 80 + 100 = 180,
+    # which base-128 encodes to 0x81 0x34, followed by the arc 3.
+    assert _decode_oid(b"\x81\x34") == (2, 100)
+    assert _decode_oid(b"\x81\x34\x03") == (2, 100, 3)
+    assert _encode_oid((2, 100, 3)) == b"\x81\x34\x03"
+
+
+def test_encode_oid_rejects_second_arc_beyond_uint32_bound_under_first_arc_two() -> None:
+    with pytest.raises(ProtocolError, match="OID arc 4294967296 exceeds maximum 4294967295"):
+        _encode_oid((2, 1 << 32))
+
+
+def test_encode_and_decode_oid_accept_second_arc_up_to_uint32_bound_under_first_arc_two() -> None:
+    encoded = _encode_base128(80 + _UINT32_MAX)
+    assert _encode_oid((2, _UINT32_MAX)) == encoded
+    assert _decode_oid(encoded) == (2, _UINT32_MAX)
+
+
+def test_decode_oid_rejects_oversized_first_subidentifier() -> None:
+    with pytest.raises(
+        ProtocolError, match="OID subidentifier 4294967296 exceeds maximum 4294967295"
+    ):
+        _decode_oid(_encode_base128(80 + (1 << 32)))
+
+
+def test_decode_oid_rejects_truncated_first_subidentifier() -> None:
+    with pytest.raises(ProtocolError, match="Truncated base-128 value"):
+        _decode_oid(b"\x81")
 
 
 def test_encode_oid_rejects_first_arc_beyond_two() -> None:

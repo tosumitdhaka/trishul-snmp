@@ -1,4 +1,4 @@
-"""Tests for SNMPv3 USM AES-128-CFB privacy encryption."""
+"""Tests for SNMPv3 USM privacy: AES-128-CFB and 3DES-EDE-CBC decryption."""
 
 from __future__ import annotations
 
@@ -366,3 +366,182 @@ def test_authpriv_trap_roundtrip_uses_local_engine() -> None:
     assert scoped_engine_id == local_engine.engine_id
     assert result is not None
     assert result.pdu_type is PduType.SNMPV2_TRAP
+
+
+# ── 3DES-EDE-CBC padding handling (draft-reeder §5.1.3) ───────────────────────
+
+
+def _encrypt_3des_cbc(model: UsmModel, plaintext: bytes, salt: bytes) -> bytes:
+    """3DES-EDE-CBC-encrypt *plaintext* under the model's priv key (IV = pre-IV XOR salt)."""
+    from cryptography.hazmat.primitives.ciphers import Cipher, modes
+
+    from trishul_snmp.security.usm import _import_3des_algorithm
+
+    key_material = model._priv_key(model._engine_id)
+    des_key = key_material[:24]
+    pre_iv = key_material[24:32]
+    iv = bytes(a ^ b for a, b in zip(pre_iv, salt, strict=True))
+    cipher = Cipher(_import_3des_algorithm()(des_key), modes.CBC(iv))
+    enc = cipher.encryptor()
+    return enc.update(plaintext) + enc.finalize()
+
+
+def _scoped_pdu_of_length_residue(model: UsmModel, residue: int) -> bytes:
+    """Encode a real GET ScopedPDU whose BER length satisfies ``len % 8 == residue``.
+
+    Each trailing OID subidentifier shifts the encoded length by one byte, so
+    every residue class mod 8 is reachable.
+    """
+    from trishul_snmp.wire.v3message import encode_scoped_pdu
+
+    for width in range(1, 260):
+        oid = (1, 3, 6, 1, 2, 1, 1) + (0,) * width
+        pdu = Pdu(
+            pdu_type=PduType.GET,
+            request_id=71,
+            error_status=0,
+            error_index=0,
+            varbinds=(RawVarBind(oid=oid, value=NullValue()),),
+        )
+        scoped = encode_scoped_pdu(model._engine_id, b"", pdu)
+        if len(scoped) % 8 == residue:
+            return scoped
+    raise AssertionError(f"no OID width produced a ScopedPDU with length % 8 == {residue}")
+
+
+def test_3des_ede_encrypt_decrypt_roundtrip() -> None:
+    """3DES-EDE authPriv roundtrip: our PKCS#7 outbound still unwraps cleanly."""
+    model = _make_authpriv_model(priv=PrivProtocol.THREEDES_EDE)
+    pdu = Pdu(
+        pdu_type=PduType.GET,
+        request_id=9,
+        error_status=0,
+        error_index=0,
+        varbinds=(RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 1, 0), value=NullValue()),),
+    )
+    raw = model.wrap_pdu(pdu)
+    result = model.unwrap_message(raw)
+
+    assert result is not None
+    assert result.pdu_type is PduType.GET
+    assert result.request_id == 9
+
+
+@pytest.mark.parametrize("zero_pad", range(1, 9))
+def test_3des_ede_decrypts_zero_padded_peer_plaintext(zero_pad: int) -> None:
+    """RFC 3414-style zero padding (1-8 trailing zero bytes) is stripped via the BER extent.
+
+    pysnmp and other draft-reeder-compliant peers zero-pad the ScopedPDU to
+    the 8-octet block boundary and never emit PKCS#7.  draft-reeder
+    §5.1.3 says the padding is ignored on decrypt: the ScopedPDU's own BER
+    length field already declares the true extent.
+    """
+    from trishul_snmp.wire.ber import encode_tlv
+    from trishul_snmp.wire.v3message import decode_scoped_pdu
+
+    model = _make_authpriv_model(priv=PrivProtocol.THREEDES_EDE)
+    scoped = _scoped_pdu_of_length_residue(model, (-zero_pad) % 8)
+    assert len(scoped) % 8 == (-zero_pad) % 8
+
+    salt = b"\x5a" * 8
+    padded = scoped + b"\x00" * zero_pad
+    assert len(padded) % 8 == 0
+    ciphertext = _encrypt_3des_cbc(model, padded, salt)
+
+    decrypted = model._decrypt_3des_ede(encode_tlv(0x04, ciphertext), salt, model._engine_id)
+    assert decrypted == scoped
+    _eid, _ctx, decoded = decode_scoped_pdu(decrypted)
+    assert decoded.pdu_type is PduType.GET
+
+
+def test_3des_ede_unwraps_zero_padded_peer_message() -> None:
+    """A full inbound v3 message with zero-padded 3DES ciphertext decodes end-to-end."""
+    from trishul_snmp.wire.ber import encode_tlv
+    from trishul_snmp.wire.v3message import (
+        MSG_FLAG_AUTH,
+        MSG_FLAG_PRIV,
+        MSG_FLAG_REPORTABLE,
+        UsmParams,
+        encode_scoped_pdu,
+        encode_v3_message,
+    )
+
+    model = _make_authpriv_model(priv=PrivProtocol.THREEDES_EDE)
+    pdu = Pdu(
+        pdu_type=PduType.GET,
+        request_id=201,
+        error_status=0,
+        error_index=0,
+        varbinds=(RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 5, 0), value=NullValue()),),
+    )
+    scoped = encode_scoped_pdu(model._engine_id, b"", pdu)
+    salt = b"\xa5" * 8
+    padded = scoped + b"\x00" * (8 - len(scoped) % 8)
+    ciphertext = _encrypt_3des_cbc(model, padded, salt)
+
+    usm = UsmParams(
+        engine_id=model._engine_id,
+        engine_boots=2,
+        engine_time=500,
+        username=b"authpriv",
+        auth_params=b"\x00" * 12,
+        priv_params=salt,
+    )
+    raw = encode_v3_message(
+        msg_id=77,
+        msg_max_size=65507,
+        flags=MSG_FLAG_AUTH | MSG_FLAG_PRIV | MSG_FLAG_REPORTABLE,
+        usm_params=usm,
+        msg_data_bytes=encode_tlv(0x04, ciphertext),
+    )
+    result = model.unwrap_message(model._stamp_auth(raw))
+
+    assert result is not None
+    assert result.request_id == 201
+
+
+def test_3des_ede_decrypts_block_aligned_plaintext_without_padding() -> None:
+    """No-padding-needed edge: the BER extent equals the full plaintext."""
+    from trishul_snmp.wire.ber import encode_tlv
+    from trishul_snmp.wire.v3message import decode_scoped_pdu
+
+    model = _make_authpriv_model(priv=PrivProtocol.THREEDES_EDE)
+    scoped = _scoped_pdu_of_length_residue(model, 0)
+    assert len(scoped) % 8 == 0
+
+    salt = b"\x3c" * 8
+    ciphertext = _encrypt_3des_cbc(model, scoped, salt)
+
+    decrypted = model._decrypt_3des_ede(encode_tlv(0x04, ciphertext), salt, model._engine_id)
+    assert decrypted == scoped
+    _eid, _ctx, decoded = decode_scoped_pdu(decrypted)
+    assert decoded.request_id == 71
+
+
+def test_3des_ede_wrong_key_garbage_still_rejected() -> None:
+    """Wrong-key decryption yields garbage that the BER decode still rejects.
+
+    Both the truncated-extent and malformed-header fallbacks must fail the
+    downstream ScopedPDU decode, so unwrap_message() returns None.
+    """
+    from trishul_snmp.wire.v3message import decode_scoped_pdu, decode_v3_message
+
+    sender = _make_authpriv_model(priv=PrivProtocol.THREEDES_EDE)
+    receiver = _make_authpriv_model(priv=PrivProtocol.THREEDES_EDE, priv_key=b"wrong-password")
+    pdu = Pdu(
+        pdu_type=PduType.GET,
+        request_id=202,
+        error_status=0,
+        error_index=0,
+        varbinds=(RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 7, 0), value=NullValue()),),
+    )
+    raw = sender.wrap_pdu(pdu)
+    view = decode_v3_message(raw)
+    decrypted = receiver._decrypt_3des_ede(
+        view.msg_data_bytes,
+        view.usm_params.priv_params,
+        view.usm_params.engine_id,
+    )
+    with pytest.raises(ProtocolError):
+        decode_scoped_pdu(decrypted)
+    assert receiver.unwrap_message(raw) is None

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from dataclasses import replace
 from types import TracebackType
 
 from trishul_snmp.errors import ProtocolError, TransportError
@@ -21,12 +22,27 @@ from trishul_snmp.types import (
     SnmpValueType,
     SocketAddress,
 )
-from trishul_snmp.wire.message import SnmpMessage, decode_message, encode_message
+from trishul_snmp.wire.message import (
+    SNMP_V2C_VERSION,
+    SnmpMessage,
+    decode_message,
+    encode_message,
+)
 from trishul_snmp.wire.pdu import Pdu, PduType, RawVarBind
+
+_DEFAULT_MAX_BULK_REPETITIONS = 1000
+_DEFAULT_MAX_RESPONSE_BYTES = 65535
 
 
 class V2cResponder:
-    """Async SNMPv2c read-only responder for simulator-style use cases."""
+    """Async SNMPv2c read-only responder for simulator-style use cases.
+
+    The responder speaks SNMPv2c only: SNMPv1 requests are dropped at the
+    receive boundary rather than answered with v2-only exception values.
+    GETBULK work is bounded by *max_bulk_repetitions* and response
+    varbinds are truncated (RFC 3416 section 4.2.3) so the encoded
+    response stays within *max_response_bytes*.
+    """
 
     def __init__(
         self,
@@ -37,12 +53,20 @@ class V2cResponder:
         source: ResponderSource | None = None,
         objects: Iterable[ObjectInput] = (),
         bundle: MibBundle | None = None,
+        max_bulk_repetitions: int = _DEFAULT_MAX_BULK_REPETITIONS,
+        max_response_bytes: int = _DEFAULT_MAX_RESPONSE_BYTES,
     ) -> None:
         if source is not None and tuple(objects):
             raise ValueError("objects cannot be used when source is provided")
+        if max_bulk_repetitions < 0:
+            raise ValueError("max_bulk_repetitions cannot be negative")
+        if max_response_bytes < 1:
+            raise ValueError("max_response_bytes must be at least 1")
 
         self._server = UdpServer(host, port)
         self._communities = _normalize_communities(communities)
+        self._max_bulk_repetitions = max_bulk_repetitions
+        self._max_response_bytes = max_response_bytes
         self._closed = False
         self._source: ResponderSource
         if source is None:
@@ -109,14 +133,25 @@ class V2cResponder:
                 message = decode_message(datagram.data)
             except ProtocolError:
                 continue
+            if message.version != SNMP_V2C_VERSION:
+                # The responder is v2c-only: answering an SNMPv1 request with
+                # v2-only exception values would produce an invalid v1
+                # response, so v1 traffic is dropped at the boundary.
+                continue
             if not _community_allowed(communities=self._communities, community=message.community):
                 continue
 
-            response = self._build_response_message(message)
-            if response is None:
+            try:
+                response = self._build_response_message(message)
+                if response is None:
+                    continue
+                encoded = encode_message(response)
+            except ProtocolError:
+                # A simulated value that cannot be encoded must not
+                # terminate the service loop: drop the response.
                 continue
 
-            await self._server.sendto(encode_message(response), datagram.source_address)
+            await self._server.sendto(encoded, datagram.source_address)
             return None
 
     def set_object(self, target: str | Sequence[int], value: SnmpValueType) -> OID:
@@ -140,11 +175,34 @@ class V2cResponder:
         response_pdu = self._build_response_pdu(message.pdu)
         if response_pdu is None:
             return None
-        return SnmpMessage(
+        response = SnmpMessage(
             version=message.version,
             community=message.community,
             pdu=response_pdu,
         )
+        if message.pdu.pdu_type is PduType.GET_BULK:
+            return self._truncate_bulk_response(response)
+        return response
+
+    def _truncate_bulk_response(self, response: SnmpMessage) -> SnmpMessage:
+        """Truncate a GETBULK response to *max_response_bytes*.
+
+        RFC 3416 section 4.2.3: a GETBULK response that does not fit is
+        truncated (dropping trailing varbinds), never answered with a
+        tooBig error. Non-repeaters come first, so they survive truncation.
+        """
+        while len(encode_message(response)) > self._max_response_bytes:
+            varbinds = response.pdu.varbinds
+            if not varbinds:
+                # An empty PDU is the smallest valid truncation.
+                return response
+            keep = len(varbinds) // 2
+            response = SnmpMessage(
+                version=response.version,
+                community=response.community,
+                pdu=replace(response.pdu, varbinds=varbinds[:keep]),
+            )
+        return response
 
     def _build_response_pdu(self, request_pdu: Pdu) -> Pdu | None:
         if request_pdu.pdu_type is PduType.GET:
@@ -217,18 +275,32 @@ class V2cResponder:
             max_repetitions = 0
         if non_repeaters < 0:
             non_repeaters = 0
+        # Bound the response work: the wire value never drives more than
+        # the configured repetition cap regardless of what was requested.
+        max_repetitions = min(max_repetitions, self._max_bulk_repetitions)
 
         request_oids = [varbind.oid for varbind in request_varbinds]
         split = min(non_repeaters, len(request_oids))
         response_varbinds = [self._lookup_next_varbind(oid) for oid in request_oids[:split]]
 
         repeaters = request_oids[split:]
+        exhausted = [False] * len(repeaters)
         current_oids = repeaters.copy()
         for _ in range(max_repetitions):
+            if all(exhausted):
+                # Every repeater column reached endOfMibView: no further
+                # repetition can add information, so stop early.
+                break
             for index, current_oid in enumerate(current_oids):
+                if exhausted[index]:
+                    # Frozen column: endOfMibView was already emitted once
+                    # for this repeater, so it must not be repeated.
+                    continue
                 next_varbind = self._lookup_next_varbind(current_oid)
                 response_varbinds.append(next_varbind)
-                if not isinstance(next_varbind.value, EndOfMibViewValue):
+                if isinstance(next_varbind.value, EndOfMibViewValue):
+                    exhausted[index] = True
+                else:
                     current_oids[index] = next_varbind.oid
 
         return tuple(response_varbinds)

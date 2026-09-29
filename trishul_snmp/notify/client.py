@@ -94,7 +94,13 @@ class SnmpNotifier:
         )
         async with self._session.lock:
             request = self._session.dispatcher.prepare_request(PduType.SNMPV2_TRAP, raw_varbinds)
-            await self._session.dispatcher.send_only(request)
+            try:
+                await self._session.dispatcher.send_only(request)
+            finally:
+                # Fire-and-forget: the reserved request id is released as soon
+                # as the datagram is handed to the transport, on send failure,
+                # and on cancellation, so repeated traps never accumulate ids.
+                self._session.dispatcher.release_request(request.request_id)
         return request.request_id
 
     async def send_inform(
@@ -230,6 +236,13 @@ class V3Notifier(SnmpNotifier):
 
     `send_inform()` uses discovered peer engine state.
     `send_trap()` requires explicit local authoritative engine state.
+
+    The local engine's ``engine_time`` is advanced from the configured value
+    with a monotonic clock anchored when the notifier is created, so repeated
+    traps stay inside the receiver's ±150 s acceptance window. RFC 3414
+    defines engineTime as a 32-bit counter that must not wrap mid-session;
+    callers are responsible for persisting ``local_engine.engine_boots``
+    across restarts.
     """
 
     def __init__(

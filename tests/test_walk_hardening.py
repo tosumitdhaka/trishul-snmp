@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 
-from trishul_snmp.manager.walk import walk_subtree
+import pytest
+
+from trishul_snmp.manager.walk import WalkError, walk_subtree
 from trishul_snmp.types import EndOfMibViewValue, ErrorStatus, NullValue, Response, VarBind
 
 
@@ -190,3 +192,102 @@ def test_walk_stops_on_empty_response_in_get_next_mode() -> None:
 
     assert walked == ()
     assert calls == 1
+
+
+def test_walk_raises_walk_error_on_too_big_response() -> None:
+    async def request_fn(current: tuple[int, ...], *, max_repetitions: int) -> Response:
+        del current, max_repetitions
+        return Response(
+            request_id=1,
+            error_status=ErrorStatus.TOO_BIG,
+            error_index=0,
+            varbinds=(),
+        )
+
+    async def scenario():
+        return await walk_subtree(
+            request_fn,
+            (1, 3, 6, 1, 2, 1, 2, 2),
+            bulk=True,
+            max_repetitions=10,
+        )
+
+    with pytest.raises(WalkError) as exc_info:
+        asyncio.run(scenario())
+
+    assert exc_info.value.error_status is ErrorStatus.TOO_BIG
+    assert exc_info.value.error_index == 0
+
+
+def test_walk_raises_walk_error_on_gen_err_after_progress() -> None:
+    async def request_fn(current: tuple[int, ...], *, max_repetitions: int) -> Response:
+        del max_repetitions
+        if current == (1, 3, 6, 1, 2, 1, 2, 2):
+            return _response(_varbind((1, 3, 6, 1, 2, 1, 2, 2, 1, 1)))
+        return Response(
+            request_id=2,
+            error_status=ErrorStatus.GEN_ERR,
+            error_index=1,
+            varbinds=(),
+        )
+
+    async def scenario():
+        return await walk_subtree(
+            request_fn,
+            (1, 3, 6, 1, 2, 1, 2, 2),
+            bulk=True,
+            max_repetitions=10,
+        )
+
+    with pytest.raises(WalkError) as exc_info:
+        asyncio.run(scenario())
+
+    assert exc_info.value.error_status is ErrorStatus.GEN_ERR
+    assert exc_info.value.error_index == 1
+
+
+def test_walk_v1_treats_no_such_name_as_clean_termination() -> None:
+    async def request_fn(current: tuple[int, ...]) -> Response:
+        del current
+        return Response(
+            request_id=1,
+            error_status=ErrorStatus.NO_SUCH_NAME,
+            error_index=1,
+            varbinds=(),
+        )
+
+    async def scenario():
+        return await walk_subtree(
+            request_fn,
+            (1, 3, 6, 1, 2, 1, 2, 2),
+            bulk=False,
+            max_repetitions=10,
+            v1=True,
+        )
+
+    assert asyncio.run(scenario()) == ()
+
+
+def test_walk_no_such_name_raises_walk_error_outside_v1() -> None:
+    async def request_fn(current: tuple[int, ...]) -> Response:
+        del current
+        return Response(
+            request_id=1,
+            error_status=ErrorStatus.NO_SUCH_NAME,
+            error_index=1,
+            varbinds=(),
+        )
+
+    async def scenario():
+        return await walk_subtree(
+            request_fn,
+            (1, 3, 6, 1, 2, 1, 2, 2),
+            bulk=False,
+            max_repetitions=10,
+        )
+
+    with pytest.raises(WalkError) as exc_info:
+        asyncio.run(scenario())
+
+    assert exc_info.value.error_status is ErrorStatus.NO_SUCH_NAME
+    assert exc_info.value.error_index == 1

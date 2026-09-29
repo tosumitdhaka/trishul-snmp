@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -30,6 +31,15 @@ _SEQUENCE_TAG = 0x30  # BER SEQUENCE tag
 _OCTET_STRING_TAG = 0x04  # BER OCTET STRING tag
 # usmStatsNotInTimeWindows.0 (RFC 3414 §5.2.3)
 _USM_STATS_NOT_IN_TIME_WINDOWS_OID: tuple[int, ...] = (1, 3, 6, 1, 6, 3, 15, 1, 1, 2, 0)
+
+# RFC 3414: engineTime is a 32-bit counter; the BER INTEGER used on the wire is
+# signed, so the representable maximum is 2**31 - 1.
+_MAX_ENGINE_TIME = (1 << 31) - 1
+# Bounded-LRU capacity for localized-key derivations, mirroring the listener-side
+# replay guard's salt cache. A listener reuses one UsmModel codec across
+# datagrams; a flood of packets from many distinct engines must not grow the
+# cache without bound.
+_KEY_CACHE_CAPACITY = 64
 
 
 def _require_cryptography() -> None:
@@ -125,9 +135,66 @@ _AUTH_TAG_LENGTHS: dict[AuthProtocol, int] = {
 }
 
 
+class _LocalizedKeyCache:
+    """Bounded LRU of localized-key derivations keyed by (engine_id, password).
+
+    A listener-side :class:`UsmModel` codec is reused across datagrams so the
+    RFC 3414 key derivations run once per authoritative engine; a flood of
+    packets from many distinct engines must not grow the cache without bound,
+    so the least-recently-used entries are evicted at *capacity* (mirroring
+    the bounded salt cache in ``trishul_snmp.notify.v3``).
+    """
+
+    __slots__ = ("_entries", "_capacity")
+
+    def __init__(self, capacity: int = _KEY_CACHE_CAPACITY) -> None:
+        self._entries: OrderedDict[tuple[object, ...], bytes] = OrderedDict()
+        self._capacity = capacity
+
+    def get(self, key: tuple[object, ...]) -> bytes | None:
+        value = self._entries.get(key)
+        if value is not None:
+            self._entries.move_to_end(key)
+        return value
+
+    def set(self, key: tuple[object, ...], value: bytes) -> None:
+        self._entries[key] = value
+        self._entries.move_to_end(key)
+        if len(self._entries) > self._capacity:
+            self._entries.popitem(last=False)
+
+    def clear(self) -> None:
+        self._entries.clear()
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+
+def _clamp_engine_time(value: int) -> int:
+    """Clamp an advanced engineTime to the 32-bit counter range.
+
+    RFC 3414 defines engineTime as a 32-bit counter, but the BER INTEGER used
+    on the wire is signed, so the representable maximum is ``2**31 - 1``.
+    Callers are responsible for persisting engineBoots across restarts so the
+    (boots, time) pair never needs to wrap mid-session.
+    """
+    if value < 0:
+        return 0
+    if value > _MAX_ENGINE_TIME:
+        return _MAX_ENGINE_TIME
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class UsmLocalEngine:
-    """Explicit sender-authoritative engine state for outbound SNMPv3 traps."""
+    """Explicit sender-authoritative engine state for outbound SNMPv3 traps.
+
+    ``engine_time`` is the engineTime at the moment the state is supplied;
+    senders advance it with a monotonic clock so repeated messages stay inside
+    the receiver's ±150 s acceptance window. RFC 3414 defines engineTime as a
+    32-bit counter that must not wrap mid-session; callers are responsible for
+    persisting ``engine_boots`` across restarts.
+    """
 
     engine_id: bytes
     engine_boots: int
@@ -203,23 +270,33 @@ class UsmModel:
     # 3DES-EDE (draft-reeder-snmpv3-usm-3desede-00) — are cached per
     # (priv protocol, engine_id, password), staying distinct from the digest-length
     # localized keys and dropped whenever the authoritative engine changes.
+    # Localized-key caches are bounded LRU so a listener-side codec reused across
+    # datagrams cannot grow without bound when many engines are heard from.
     _ku_cache: dict[tuple[AuthProtocol, bytes], bytes] = field(
         default_factory=dict, init=False, repr=False
     )
-    _localized_cache: dict[tuple[bytes, bytes], bytes] = field(
-        default_factory=dict, init=False, repr=False
+    _localized_cache: _LocalizedKeyCache = field(
+        default_factory=_LocalizedKeyCache, init=False, repr=False
     )
-    _localized_priv_cache: dict[tuple[PrivProtocol, bytes, bytes], bytes] = field(
-        default_factory=dict, init=False, repr=False
+    _localized_priv_cache: _LocalizedKeyCache = field(
+        default_factory=_LocalizedKeyCache, init=False, repr=False
     )
     # time.monotonic() reference taken when authoritative engine state was adopted;
     # lets wrap_pdu() advance engineTime between messages without a new discovery probe.
     _monotonic_ref: float | None = field(default=None, init=False, repr=False)
+    # time.monotonic() reference for the local authoritative engine (traps): lets
+    # wrap_pdu() advance the configured local engineTime without mutating the
+    # caller's UsmLocalEngine configuration.
+    _local_engine_monotonic_ref: float | None = field(default=None, init=False, repr=False)
     # first octet of the last CBC (DES/3DES) privacy salt, to keep consecutive
     # message IVs distinct per RFC 3414 §8.1.1
     _last_cbc_salt_first_octet: int | None = field(default=None, init=False, repr=False)
     # set when a usmStatsNotInTimeWindows REPORT was received and adopted
     _engine_recovery_needed: bool = field(default=False, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.local_engine is not None:
+            self._local_engine_monotonic_ref = time.monotonic()
 
     # ── SecurityModel protocol ────────────────────────────────────────────
 
@@ -377,11 +454,33 @@ class UsmModel:
                     "SNMPv3 traps require local_engine authoritative state "
                     "(engine_id, engine_boots, engine_time)"
                 )
-            return self.local_engine
+            return self._advance_local_engine(self.local_engine)
         return UsmLocalEngine(
             engine_id=self._peer_engine_id,
             engine_boots=self._peer_engine_boots,
             engine_time=self._current_engine_time(),
+        )
+
+    def _advance_local_engine(self, engine: UsmLocalEngine) -> UsmLocalEngine:
+        """Return *engine* with engineTime advanced by the elapsed monotonic time.
+
+        RFC 3414 requires the authoritative engine's current time in every
+        message; a trap sender that reuses the configured value verbatim is
+        rejected once the receiver's ±150 s window passes (the receiver anchors
+        engineTime to its own monotonic clock). The anchor is captured when the
+        model is created so the first message carries the configured time and
+        later messages advance in lockstep with the receiver. The counter is
+        clamped to ``2**31 - 1`` (see :func:`_clamp_engine_time`).
+        """
+        anchor = self._local_engine_monotonic_ref
+        if anchor is None:
+            anchor = time.monotonic()
+            self._local_engine_monotonic_ref = anchor
+        elapsed = int(time.monotonic() - anchor)
+        return UsmLocalEngine(
+            engine_id=engine.engine_id,
+            engine_boots=engine.engine_boots,
+            engine_time=_clamp_engine_time(engine.engine_time + elapsed),
         )
 
     def _current_engine_time(self) -> int:
@@ -395,7 +494,7 @@ class UsmModel:
         if self._monotonic_ref is None:
             return self._peer_engine_time
         elapsed = int(time.monotonic() - self._monotonic_ref)
-        return self._peer_engine_time + elapsed
+        return _clamp_engine_time(self._peer_engine_time + elapsed)
 
     # ── RFC 3414 key derivation ───────────────────────────────────────────
 
@@ -444,7 +543,7 @@ class UsmModel:
             return cached
         ku = self._ku(password)
         localized = self._hash_engine()(ku + engine_id + ku).digest()
-        self._localized_cache[cache_key] = localized
+        self._localized_cache.set(cache_key, localized)
         return localized
 
     def _msg_flags(self, pdu_type: PduType) -> int:
@@ -726,7 +825,6 @@ class UsmModel:
 
     def _decrypt_3des_ede(self, msg_data: bytes, priv_params: bytes, engine_id: bytes) -> bytes:
         from cryptography.hazmat.primitives.ciphers import Cipher, modes
-        from cryptography.hazmat.primitives.padding import PKCS7
 
         from trishul_snmp.wire.ber import decode_tlv as _dec_tlv
 
@@ -745,14 +843,17 @@ class UsmModel:
         cipher = Cipher(des3(des_key), modes.CBC(iv))
         dec = cipher.decryptor()
         padded = dec.update(ciphertext) + dec.finalize()
-        unpadder = PKCS7(64).unpadder()
-        try:
-            return unpadder.update(padded) + unpadder.finalize()
-        except ValueError:
-            # A wrong privacy key (or corruption) yields undecodable plaintext;
-            # leave the padding in place so the ScopedPDU decode rejects the
-            # message and unwrap_message() returns None, matching the AES paths.
-            return padded
+        # draft-reeder-snmpv3-usm-3desede-00 §5.1.3: "When decrypting, the
+        # padding is ignored."  The plaintext is a BER ScopedPDU whose own
+        # length field already declares its extent, so truncate to that extent
+        # instead of requiring a particular padding scheme: RFC 3414 senders
+        # (e.g. pysnmp) zero-pad to the block boundary and never emit PKCS#7.
+        # Garbage from a wrong key still fails the ScopedPDU BER decode
+        # downstream, matching the AES paths.
+        extent = _ber_extent(padded)
+        if extent is not None and extent <= len(padded):
+            return padded[:extent]
+        return padded
 
     def _priv_key_aes128(self, engine_id: bytes) -> bytes:
         """Derive the 16-byte AES-128 privacy key (first 16 bytes of the localized priv key)."""
@@ -818,7 +919,7 @@ class UsmModel:
             return cached
         kul = self._localize_key(password, engine_id)
         key = self._extend_localized_key(kul, self._priv_key_length())
-        self._localized_priv_cache[cache_key] = key
+        self._localized_priv_cache.set(cache_key, key)
         return key
 
     def _localize_priv_key_3des(self, password: bytes, engine_id: bytes) -> bytes:
@@ -848,7 +949,7 @@ class UsmModel:
             ku_prime = self._password_to_ku(kul)
             kul_prime = self._hash_engine()(ku_prime + engine_id + ku_prime).digest()
             key = (kul + kul_prime)[: self._priv_key_length()]
-        self._localized_priv_cache[cache_key] = key
+        self._localized_priv_cache.set(cache_key, key)
         return key
 
     def _fresh_cbc_salt(self) -> bytes:
@@ -1071,6 +1172,27 @@ def _decode_report_scoped(msg_data_bytes: bytes) -> tuple[tuple[RawVarBind, ...]
     except ProtocolError:
         return None
     return varbinds, request_id
+
+
+def _ber_extent(data: bytes) -> int | None:
+    """Return the BER extent of *data*: tag + length header + declared content.
+
+    Parses only the leading TLV header (definite-length form, as produced by
+    this codebase's encoder).  Returns ``None`` when *data* does not begin
+    with a well-formed header, so callers can leave the bytes for downstream
+    rejection.  Used to strip 3DES-EDE-CBC encryption padding: every padding
+    convention — RFC 3414 zero-padding, PKCS#7, or no padding at all for a
+    block-aligned plaintext — leaves the padding outside the declared extent.
+    """
+    from trishul_snmp.wire.ber import decode_length
+
+    if not data:
+        return None
+    try:
+        length, content_offset = decode_length(data, 1)
+    except ProtocolError:
+        return None
+    return content_offset + length
 
 
 def _localize_key_rfc3414(password: bytes, engine_id: bytes, auth_protocol: AuthProtocol) -> bytes:

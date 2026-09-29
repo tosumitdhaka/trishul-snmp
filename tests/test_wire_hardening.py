@@ -4,6 +4,7 @@ import pytest
 
 from trishul_snmp.errors import ProtocolError
 from trishul_snmp.types import NullValue
+from trishul_snmp.wire.asn1 import decode_value
 from trishul_snmp.wire.ber import decode_length, decode_tlv, encode_tlv
 from trishul_snmp.wire.message import (
     SnmpMessage,
@@ -123,6 +124,18 @@ def test_decode_message_rejects_trailing_bytes() -> None:
     data = _valid_message_bytes() + b"\x00"
     with pytest.raises(ProtocolError, match="Unexpected trailing BER content"):
         decode_message(data)
+
+
+def test_decode_value_rejects_truncated_oid_first_subidentifier() -> None:
+    with pytest.raises(ProtocolError, match="Truncated base-128 value"):
+        decode_value(b"\x06\x01\x81")
+
+
+def test_decode_value_rejects_oversized_oid_first_subidentifier() -> None:
+    # First subidentifier 80 + 2**32 = 4294967376, whose second arc
+    # (4294967296) exceeds the uint32 SNMP arc bound.
+    with pytest.raises(ProtocolError, match="OID subidentifier .* exceeds maximum"):
+        decode_value(b"\x06\x05\x90\x80\x80\x80\x50")
 
 
 def test_encode_message_rejects_invalid_oid_first_arc() -> None:

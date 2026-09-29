@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import socket
 from typing import cast
 
@@ -478,5 +479,110 @@ def test_dispatcher_junk_datagrams_cannot_extend_timeout_beyond_deadline() -> No
         # times out after ≈ one timeout, not timeout × junk datagrams.
         assert client.junk_delivered >= 3
         assert elapsed < 0.6
+
+    asyncio.run(scenario())
+
+
+# --- Bounded receive queue (issue #32) ---
+
+
+def test_udp_server_queue_capacity_validation() -> None:
+    with pytest.raises(ValueError, match="queue_capacity"):
+        UdpServer("127.0.0.1", 162, queue_capacity=0)
+
+
+def test_udp_server_drops_and_counts_when_queue_full(monkeypatch) -> None:
+    transport = _FakeDatagramTransport()
+    loop = _BindLoop(transport)
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
+    server = UdpServer("127.0.0.1", 0, queue_capacity=1)
+
+    async def scenario() -> None:
+        await server.open()
+        assert transport.protocol is not None
+        transport.protocol.datagram_received(b"first", ("127.0.0.1", 40000))
+        transport.protocol.datagram_received(b"second", ("127.0.0.1", 40000))
+        transport.protocol.datagram_received(b"third", ("127.0.0.1", 40000))
+
+        received = await server.receive()
+        assert received.data == b"first"
+        assert server.dropped == 2
+
+        await server.close()
+
+    asyncio.run(scenario())
+
+
+def test_udp_server_overflow_warning_is_rate_limited(monkeypatch, caplog) -> None:
+    transport = _FakeDatagramTransport()
+    loop = _BindLoop(transport)
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
+    fake_now = {"t": 0.0}
+    server = UdpServer("127.0.0.1", 0, queue_capacity=1, clock=lambda: fake_now["t"])
+
+    async def scenario() -> None:
+        await server.open()
+        assert transport.protocol is not None
+        with caplog.at_level(logging.WARNING, logger="trishul_snmp.transport.udp"):
+            for step in range(12):
+                fake_now["t"] = 0.5 * step
+                transport.protocol.datagram_received(b"flood", ("127.0.0.1", 40000))
+        assert server.dropped == 11
+        # One warning at the first drop (~0.5s) and one after the 5s window
+        # elapses (~5.5s); the drops in between stay silent.
+        warnings = [
+            record
+            for record in caplog.records
+            if record.levelno == logging.WARNING and "dropping" in record.getMessage()
+        ]
+        assert len(warnings) == 2
+
+        await server.close()
+
+    asyncio.run(scenario())
+
+
+def test_queueing_datagram_protocol_drains_full_queue_on_close() -> None:
+    async def scenario() -> None:
+        queue: asyncio.Queue = asyncio.Queue(maxsize=1)
+        closed: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        protocol = _QueueingDatagramProtocol(queue, closed)
+
+        protocol.datagram_received(b"first", ("127.0.0.1", 40000))
+        protocol.datagram_received(b"second", ("127.0.0.1", 40000))  # dropped: full
+        assert queue.qsize() == 1
+
+        protocol.connection_lost(None)
+        marker = await queue.get()
+        assert isinstance(marker, _ServerClosed)
+        assert marker.cause is None
+        assert queue.empty()
+
+    asyncio.run(scenario())
+
+
+def test_udp_server_close_wakes_pending_receiver(monkeypatch) -> None:
+    transport = _FakeDatagramTransport()
+    loop = _BindLoop(transport)
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
+    server = UdpServer("127.0.0.1", 0, queue_capacity=2)
+
+    async def scenario() -> None:
+        await server.open()
+        assert transport.protocol is not None
+        # Saturate the queue, drain it through receive(), then park a
+        # receiver before closing: close() must still wake it promptly.
+        transport.protocol.datagram_received(b"one", ("127.0.0.1", 40000))
+        transport.protocol.datagram_received(b"two", ("127.0.0.1", 40000))
+        transport.protocol.datagram_received(b"three", ("127.0.0.1", 40000))  # dropped
+        assert (await server.receive()).data == b"one"
+        assert (await server.receive()).data == b"two"
+
+        receiver = asyncio.ensure_future(server.receive())
+        await asyncio.sleep(0)
+        await server.close()
+
+        with pytest.raises(TransportError, match="UDP server is closed"):
+            await asyncio.wait_for(receiver, timeout=1.0)
 
     asyncio.run(scenario())

@@ -9,6 +9,7 @@ import pytest
 
 from trishul_snmp import (
     CallbackObjectSource,
+    Counter32Value,
     ErrorStatus,
     InMemoryObjectSource,
     IntegerValue,
@@ -535,3 +536,177 @@ def test_v2c_responder_set_and_bulk_edge_cases() -> None:
     assert unsupported is None
     assert bulk == ()
     assert isinstance(end_of_mib.value, EndOfMibViewValue)
+
+
+# --- Bounded GETBULK work, v1 rejection, unencodable values (#32, #37) ---
+
+
+def _get_message(request_id: int, oid: tuple[int, ...], *, version: int = 1) -> SnmpMessage:
+    return SnmpMessage(
+        version=version,
+        community="public",
+        pdu=Pdu(
+            pdu_type=PduType.GET,
+            request_id=request_id,
+            error_status=0,
+            error_index=0,
+            varbinds=(RawVarBind(oid=oid, value=NullValue()),),
+        ),
+    )
+
+
+def test_v2c_responder_rejects_invalid_limits() -> None:
+    with pytest.raises(ValueError, match="max_bulk_repetitions"):
+        V2cResponder(max_bulk_repetitions=-1)
+    with pytest.raises(ValueError, match="max_response_bytes"):
+        V2cResponder(max_response_bytes=0)
+
+
+def test_v2c_responder_drops_v1_requests() -> None:
+    v1_get = encode_message(_get_message(7, (1, 3, 6, 1, 2, 1, 1, 3, 0), version=0))
+    v2c_get = encode_message(_get_message(8, (1, 3, 6, 1, 2, 1, 1, 3, 0)))
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=v1_get, source_address=("127.0.0.1", 40000)),
+            _FakeDatagram(data=v2c_get, source_address=("127.0.0.1", 40001)),
+        ]
+    )
+    responder = V2cResponder(objects=[("1.3.6.1.2.1.1.3.0", TimeTicksValue(9))])
+    responder._server = server  # type: ignore[attr-defined]
+
+    async def scenario() -> None:
+        await responder.handle_request()
+
+    asyncio.run(scenario())
+
+    # The v1 request is dropped without a response; the responder stays
+    # available for the following v2c request.
+    assert len(server.sent) == 1
+    response = decode_message(server.sent[0][0])
+    assert response.version == 1
+    assert response.pdu.request_id == 8
+    assert response.pdu.varbinds[0].value == TimeTicksValue(9)
+
+
+def test_getbulk_freezes_exhausted_repeater_columns() -> None:
+    responder = V2cResponder(objects=[("1.3.6.1.2.1.1.3.0", TimeTicksValue(9))])
+
+    varbinds = responder._build_bulk_varbinds(
+        (RawVarBind(oid=(9, 9, 9), value=NullValue()),),
+        non_repeaters=0,
+        max_repetitions=100000,
+    )
+
+    # A missing OID with a huge repetition count yields exactly one
+    # endOfMibView for the exhausted column instead of 100000 of them.
+    assert len(varbinds) == 1
+    assert isinstance(varbinds[0].value, EndOfMibViewValue)
+
+
+def test_getbulk_stops_exhausted_column_but_continues_others() -> None:
+    responder = V2cResponder(
+        objects=[
+            ("1.3.6.1.2.1.1.3.0", TimeTicksValue(9)),
+            ("1.3.6.1.2.1.1.4.0", TimeTicksValue(10)),
+            ("1.3.6.1.2.1.1.5.0", TimeTicksValue(11)),
+        ]
+    )
+
+    varbinds = responder._build_bulk_varbinds(
+        (
+            RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 3, 0), value=NullValue()),
+            RawVarBind(oid=(9, 9, 9), value=NullValue()),
+        ),
+        non_repeaters=0,
+        max_repetitions=5,
+    )
+
+    end_of_mib = [vb for vb in varbinds if isinstance(vb.value, EndOfMibViewValue)]
+    live = [vb for vb in varbinds if not isinstance(vb.value, EndOfMibViewValue)]
+
+    # The exhausted column emits endOfMibView exactly once and then stops;
+    # the live column keeps advancing until it exhausts as well.
+    assert len(end_of_mib) == 2
+    assert [vb.oid for vb in live] == [
+        (1, 3, 6, 1, 2, 1, 1, 4, 0),
+        (1, 3, 6, 1, 2, 1, 1, 5, 0),
+    ]
+    # Frozen columns are skipped, so total work is bounded by the
+    # non-exhausted columns, not by max_repetitions.
+    assert len(varbinds) == 4
+
+
+def test_getbulk_max_repetitions_is_clamped() -> None:
+    responder = V2cResponder(
+        objects=[
+            ("1.3.6.1.2.1.1.3.0", TimeTicksValue(9)),
+            ("1.3.6.1.2.1.1.4.0", TimeTicksValue(10)),
+            ("1.3.6.1.2.1.1.5.0", TimeTicksValue(11)),
+            ("1.3.6.1.2.1.1.6.0", TimeTicksValue(12)),
+        ],
+        max_bulk_repetitions=2,
+    )
+
+    varbinds = responder._build_bulk_varbinds(
+        (RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 3, 0), value=NullValue()),),
+        non_repeaters=0,
+        max_repetitions=100000,
+    )
+
+    # The wire-requested count never drives more than the configured cap.
+    assert len(varbinds) == 2
+
+
+def test_getbulk_response_truncated_to_max_response_bytes() -> None:
+    objects = [(f"1.3.6.1.2.1.1.{index}.0", OctetStringValue(b"x" * 200)) for index in range(1, 9)]
+    responder = V2cResponder(objects=objects, max_response_bytes=600)
+    request = SnmpMessage(
+        version=1,
+        community="public",
+        pdu=Pdu(
+            pdu_type=PduType.GET_BULK,
+            request_id=9,
+            error_status=0,
+            error_index=100,
+            varbinds=(RawVarBind(oid=(1, 3, 6, 1, 2, 1, 1, 1, 0), value=NullValue()),),
+        ),
+    )
+
+    response = responder._build_response_message(request)
+
+    assert response is not None
+    # RFC 3416 GETBULK truncation: trailing varbinds are dropped until the
+    # encoded response fits; the response is never answered with tooBig.
+    assert len(encode_message(response)) <= 600
+    assert 0 < len(response.pdu.varbinds) < 100
+
+
+def test_responder_drops_unencodable_value_and_stays_available() -> None:
+    bad_get = encode_message(_get_message(7, (1, 3, 6, 1, 2, 1, 1, 3, 0)))
+    good_get = encode_message(_get_message(8, (1, 3, 6, 1, 2, 1, 1, 4, 0)))
+    server = _FakeServer(
+        [
+            _FakeDatagram(data=bad_get, source_address=("127.0.0.1", 40000)),
+            _FakeDatagram(data=good_get, source_address=("127.0.0.1", 40001)),
+        ]
+    )
+    # Counter32Value(2**32) constructs fine but cannot be encoded on the wire.
+    responder = V2cResponder(
+        objects=[
+            ("1.3.6.1.2.1.1.3.0", Counter32Value(2**32)),
+            ("1.3.6.1.2.1.1.4.0", TimeTicksValue(9)),
+        ]
+    )
+    responder._server = server  # type: ignore[attr-defined]
+
+    async def scenario() -> None:
+        await responder.handle_request()
+
+    asyncio.run(scenario())
+
+    # The unencodable response is dropped instead of killing the loop, and
+    # the responder still answers the next valid request.
+    assert len(server.sent) == 1
+    response = decode_message(server.sent[0][0])
+    assert response.pdu.request_id == 8
+    assert response.pdu.varbinds[0].value == TimeTicksValue(9)

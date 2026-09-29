@@ -235,35 +235,71 @@ class V1Manager(SnmpManager):
         """Perform a GETBULK-equivalent request using GETNEXT loops.
 
         SNMPv1 has no GETBULK PDU, so this downgrades to a chain of GETNEXT
-        requests. Each of the first *non_repeaters* targets yields a single
-        successor and every remaining target yields up to *max_repetitions*
-        successors, mirroring GETBULK semantics. The combined varbinds are
-        returned in one :class:`Response` whose ``request_id`` is that of the
-        final GETNEXT request.
+        requests shaped to RFC 3416 GETBULK response semantics: each of the
+        first *non_repeaters* targets yields a single successor ahead of the
+        repeater rows, and the remaining targets are interleaved
+        repetition-major (x1, y1, x2, y2, ...) up to *max_repetitions* rows.
+        A noSuchName GETNEXT response is the SNMPv1 signal that a column has
+        no successor; it is reported as an endOfMibView slot and stops that
+        column's repetitions rather than failing the request, while any other
+        error-status aborts the request and is surfaced with the agent's
+        error-index. The combined varbinds are returned in one
+        :class:`Response` whose ``request_id`` is that of the final GETNEXT
+        request.
         """
         oids = normalize_targets(targets, bundle=self._session.bundle)
+        split = min(non_repeaters, len(oids))
         collected: list[VarBind] = []
         last_request_id = 0
-        for index, oid in enumerate(oids):
-            repetitions = 1 if index < non_repeaters else max_repetitions
-            current = oid
-            for _ in range(repetitions):
-                response = await self.get_next(current)
+
+        def error_response(response: Response) -> Response:
+            return Response(
+                request_id=last_request_id,
+                error_status=response.error_status,
+                error_index=response.error_index,
+                varbinds=tuple(collected),
+            )
+
+        # Non-repeaters: a single successor each, ahead of the repeater rows.
+        for oid in oids[:split]:
+            response = await self.get_next(oid)
+            last_request_id = response.request_id
+            if response.error_status is not ErrorStatus.NO_ERROR:
+                if response.error_status is ErrorStatus.NO_SUCH_NAME:
+                    collected.append(VarBind(oid=oid, value=EndOfMibViewValue()))
+                    continue
+                return error_response(response)
+            if not response.varbinds:
+                continue
+            varbind = response.varbinds[0]
+            collected.append(varbind)
+            if isinstance(varbind.value, EndOfMibViewValue):
+                continue
+
+        # Repeaters: repetition-major interleaving (x1, y1, x2, y2, ...). A
+        # ``None`` entry marks a column exhausted in an earlier iteration.
+        current: list[OID | None] = [target for target in oids[split:]]
+        for _ in range(max_repetitions):
+            for index, column in enumerate(current):
+                if column is None:
+                    continue
+                response = await self.get_next(column)
                 last_request_id = response.request_id
                 if response.error_status is not ErrorStatus.NO_ERROR:
-                    return Response(
-                        request_id=last_request_id,
-                        error_status=response.error_status,
-                        error_index=response.error_index,
-                        varbinds=tuple(collected),
-                    )
+                    if response.error_status is ErrorStatus.NO_SUCH_NAME:
+                        collected.append(VarBind(oid=column, value=EndOfMibViewValue()))
+                        current[index] = None
+                        continue
+                    return error_response(response)
                 if not response.varbinds:
-                    break
+                    current[index] = None
+                    continue
                 varbind = response.varbinds[0]
                 collected.append(varbind)
                 if isinstance(varbind.value, EndOfMibViewValue):
-                    break
-                current = varbind.oid
+                    current[index] = None
+                else:
+                    current[index] = varbind.oid
         return Response(
             request_id=last_request_id,
             error_status=ErrorStatus.NO_ERROR,
@@ -291,6 +327,7 @@ class V1Manager(SnmpManager):
             root_oid,
             bulk=False,
             max_repetitions=max_repetitions,
+            v1=True,
         )
 
     async def bulkwalk(

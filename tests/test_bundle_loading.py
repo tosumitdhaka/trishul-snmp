@@ -275,6 +275,75 @@ def test_malformed_schema_version_is_rejected(tmp_path: Path, schema_version: ob
         load_bundle(tmp_path / "IF-MIB.json")
 
 
+def test_directory_bundle_rejects_duplicate_module_names_without_manifest(
+    tmp_path: Path,
+) -> None:
+    _write_json(tmp_path / "A-IF-MIB.json", _if_mib_payload())
+    _write_json(tmp_path / "B-IF-MIB.json", _if_mib_payload())
+
+    with pytest.raises(BundleValidationError) as exc_info:
+        load_bundle(tmp_path)
+
+    message = str(exc_info.value)
+    assert "IF-MIB" in message
+    assert "A-IF-MIB.json" in message
+    assert "B-IF-MIB.json" in message
+    assert message.index("A-IF-MIB.json") < message.index("B-IF-MIB.json")
+
+
+def test_directory_bundle_rejects_duplicate_module_names_via_manifest(
+    tmp_path: Path,
+) -> None:
+    _write_json(tmp_path / "first.json", _if_mib_payload())
+    _write_json(tmp_path / "second.json", _if_mib_payload())
+    _write_json(
+        tmp_path / "manifest.json",
+        {
+            "schema_version": "1",
+            "producer_version": "0.4.0",
+            "generated_by": "trishul-smi",
+            "generated_at": "2026-05-06T12:00:00Z",
+            "modules": [
+                {"module": "IF-MIB", "file": "first.json"},
+                {"module": "IF-MIB", "file": "second.json"},
+            ],
+        },
+    )
+
+    with pytest.raises(BundleValidationError) as exc_info:
+        load_bundle(tmp_path)
+
+    message = str(exc_info.value)
+    assert "IF-MIB" in message
+    assert "first.json" in message
+    assert "second.json" in message
+    assert message.index("first.json") < message.index("second.json")
+
+
+def test_directory_bundle_manifest_duplicate_file_reference_dedupes(
+    tmp_path: Path,
+) -> None:
+    _write_json(tmp_path / "IF-MIB.json", _if_mib_payload())
+    _write_json(
+        tmp_path / "manifest.json",
+        {
+            "schema_version": "1",
+            "producer_version": "0.4.0",
+            "generated_by": "trishul-smi",
+            "generated_at": "2026-05-06T12:00:00Z",
+            "modules": [
+                {"module": "IF-MIB", "file": "IF-MIB.json"},
+                {"module": "IF-MIB", "file": "IF-MIB.json"},
+            ],
+        },
+    )
+
+    bundle = load_bundle(tmp_path)
+
+    assert set(bundle.modules) == {"IF-MIB"}
+    assert bundle.translate("IF-MIB::ifDescr") == "1.3.6.1.2.1.2.2.1.2"
+
+
 def test_directory_bundle_rejects_newer_manifest_schema_version(tmp_path: Path) -> None:
     _write_json(tmp_path / "IF-MIB.json", _if_mib_payload())
     _write_json(

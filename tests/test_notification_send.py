@@ -243,6 +243,62 @@ def test_v2c_notifier_send_inform_raises_on_timeout() -> None:
         asyncio.run(scenario())
 
 
+def test_v2c_notifier_repeated_send_trap_leaves_no_request_ids() -> None:
+    """Fire-and-forget traps must release their reserved id after every send."""
+    notifier, fake_client = _build_notifier()
+
+    async def scenario() -> int:
+        first = await notifier.send_trap("1.3.6.1.6.3.1.1.5.3", uptime=1)
+        await notifier.send_trap("1.3.6.1.6.3.1.1.5.3", uptime=2)
+        await notifier.send_trap("1.3.6.1.6.3.1.1.5.3", uptime=3)
+        return first
+
+    request_id = asyncio.run(scenario())
+
+    assert 0 < request_id < 2**31
+    assert len(fake_client.sent) == 3
+    assert notifier._session.dispatcher.issued_request_ids == frozenset()
+
+
+def test_v2c_notifier_send_trap_releases_request_id_on_send_failure() -> None:
+    class FailingSendClient:
+        async def send(self, data: bytes) -> None:
+            del data
+            raise OSError("send failed")
+
+        async def receive(self, timeout: float) -> bytes:
+            del timeout
+            raise AssertionError("should not receive")
+
+    notifier, _ = _build_notifier()
+    notifier._session._client = FailingSendClient()  # type: ignore[attr-defined]
+    notifier._session._dispatcher = RequestDispatcher(  # type: ignore[attr-defined]
+        notifier._session._client,
+        security=CommunityModel("public"),
+        timeout=0.2,
+        retries=0,
+    )
+
+    async def scenario() -> None:
+        await notifier.send_trap("1.3.6.1.6.3.1.1.5.3", uptime=1)
+
+    with pytest.raises(OSError, match="send failed"):
+        asyncio.run(scenario())
+
+    assert notifier._session.dispatcher.issued_request_ids == frozenset()
+
+
+def test_v2c_notifier_send_inform_releases_request_id() -> None:
+    notifier, _ = _build_notifier(replies=[_echo_inform_response])
+
+    async def scenario() -> None:
+        await notifier.send_inform("1.3.6.1.6.3.1.1.5.3", uptime=55)
+
+    asyncio.run(scenario())
+
+    assert notifier._session.dispatcher.issued_request_ids == frozenset()
+
+
 def test_encode_notification_raw_varbinds_builds_low_level_varbinds() -> None:
     raw_varbinds = encode_notification_raw_varbinds(
         (1, 3, 6, 1, 6, 3, 1, 1, 5, 3),

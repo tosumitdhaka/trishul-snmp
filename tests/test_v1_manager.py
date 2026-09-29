@@ -145,6 +145,57 @@ class _V1Agent:
         return RawVarBind(oid=oid, value=EndOfMibViewValue())
 
 
+class _NoSuchNameV1Agent:
+    """Fake SNMPv1 agent that signals end-of-MIB with a noSuchName error."""
+
+    def __init__(self, *, community: str = "public") -> None:
+        self._community = community
+        self._objects: list[tuple[tuple[int, ...], object]] = [
+            ((1, 3, 6, 1, 2, 1, 1, 3, 0), TimeTicksValue(12345)),
+            ((1, 3, 6, 1, 2, 1, 2, 2, 1, 1, 1), OctetStringValue(b"1")),
+            ((1, 3, 6, 1, 2, 1, 2, 2, 1, 1, 2), OctetStringValue(b"2")),
+            ((1, 3, 6, 1, 2, 1, 2, 2, 1, 2, 1), OctetStringValue(b"eth0")),
+            ((1, 3, 6, 1, 2, 1, 2, 2, 1, 2, 2), OctetStringValue(b"eth1")),
+        ]
+
+    def __call__(self, sent: bytes) -> bytes:
+        request = decode_message(sent)
+        if request.pdu.pdu_type is not PduType.GET_NEXT:
+            raise AssertionError(
+                f"noSuchName agent received unexpected PDU {request.pdu.pdu_type!r}"
+            )
+        for varbind in request.pdu.varbinds:
+            for known_oid, value in self._objects:
+                if known_oid > varbind.oid:
+                    return encode_message(
+                        SnmpMessage(
+                            version=0,
+                            community=self._community,
+                            pdu=Pdu(
+                                pdu_type=PduType.RESPONSE,
+                                request_id=request.pdu.request_id,
+                                error_status=0,
+                                error_index=0,
+                                varbinds=(RawVarBind(oid=known_oid, value=value),),
+                            ),
+                        )
+                    )
+            return encode_message(
+                SnmpMessage(
+                    version=0,
+                    community=self._community,
+                    pdu=Pdu(
+                        pdu_type=PduType.RESPONSE,
+                        request_id=request.pdu.request_id,
+                        error_status=2,  # noSuchName: no successor exists
+                        error_index=1,
+                        varbinds=request.pdu.varbinds,
+                    ),
+                )
+            )
+        raise AssertionError("noSuchName agent requires at least one varbind")
+
+
 def _response_bytes(
     *,
     request_id: int,
@@ -315,6 +366,50 @@ def test_v1_manager_bulkwalk_downgrades_to_getnext() -> None:
     assert all(decode_message(sent).pdu.pdu_type is PduType.GET_NEXT for sent in fake_client.sent)
 
 
+def test_v1_manager_walk_terminates_cleanly_on_no_such_name() -> None:
+    manager, fake_client = _build_manager(replies=[_NoSuchNameV1Agent()] * 10)
+
+    async def scenario() -> None:
+        async with manager:
+            walked = await manager.walk("1.3.6.1.2.1.2.2")
+
+        assert [varbind.oid for varbind in walked] == [
+            (1, 3, 6, 1, 2, 1, 2, 2, 1, 1, 1),
+            (1, 3, 6, 1, 2, 1, 2, 2, 1, 1, 2),
+            (1, 3, 6, 1, 2, 1, 2, 2, 1, 2, 1),
+            (1, 3, 6, 1, 2, 1, 2, 2, 1, 2, 2),
+        ]
+
+    asyncio.run(scenario())
+
+    assert all(decode_message(sent).pdu.pdu_type is PduType.GET_NEXT for sent in fake_client.sent)
+
+
+def test_v1_manager_get_bulk_treats_no_such_name_as_end_of_mib_walk() -> None:
+    manager, fake_client = _build_manager(replies=[_NoSuchNameV1Agent()] * 10)
+
+    async def scenario() -> None:
+        async with manager:
+            bulk = await manager.get_bulk("1.3.6.1.2.1.2.2", max_repetitions=10)
+
+        assert bulk.error_status is ErrorStatus.NO_ERROR
+        assert bulk.error_index == 0
+        slots = [
+            (varbind.oid, isinstance(varbind.value, EndOfMibViewValue)) for varbind in bulk.varbinds
+        ]
+        assert slots == [
+            ((1, 3, 6, 1, 2, 1, 2, 2, 1, 1, 1), False),
+            ((1, 3, 6, 1, 2, 1, 2, 2, 1, 1, 2), False),
+            ((1, 3, 6, 1, 2, 1, 2, 2, 1, 2, 1), False),
+            ((1, 3, 6, 1, 2, 1, 2, 2, 1, 2, 2), False),
+            ((1, 3, 6, 1, 2, 1, 2, 2, 1, 2, 2), True),  # exhausted after the final row
+        ]
+
+    asyncio.run(scenario())
+
+    assert len(fake_client.sent) == 5
+
+
 def test_v1_manager_get_bulk_downgrades_to_getnext_loop(tmp_path: Path) -> None:
     _write_json(tmp_path / "IF-MIB.json", _if_mib_payload())
     manager, fake_client = _build_manager(
@@ -422,7 +517,7 @@ def test_v1_manager_get_bulk_propagates_getnext_error() -> None:
                 pdu=Pdu(
                     pdu_type=PduType.RESPONSE,
                     request_id=request.pdu.request_id,
-                    error_status=2,
+                    error_status=5,  # genErr
                     error_index=1,
                     varbinds=request.pdu.varbinds,
                 ),
@@ -435,11 +530,100 @@ def test_v1_manager_get_bulk_propagates_getnext_error() -> None:
         async with manager:
             bulk = await manager.get_bulk("1.3.6.1.2.1.1.3.0", max_repetitions=3)
 
-        assert bulk.error_status is ErrorStatus.NO_SUCH_NAME
+        assert bulk.error_status is ErrorStatus.GEN_ERR
         assert bulk.error_index == 1
         assert bulk.varbinds == ()
 
     asyncio.run(scenario())
+
+
+def test_v1_manager_get_bulk_treats_no_such_name_as_end_of_mib() -> None:
+    def no_such_name_reply(sent: bytes) -> bytes:
+        request = decode_message(sent)
+        return encode_message(
+            SnmpMessage(
+                version=0,
+                community="public",
+                pdu=Pdu(
+                    pdu_type=PduType.RESPONSE,
+                    request_id=request.pdu.request_id,
+                    error_status=2,  # noSuchName
+                    error_index=1,
+                    varbinds=request.pdu.varbinds,
+                ),
+            )
+        )
+
+    manager, fake_client = _build_manager(replies=[no_such_name_reply])
+
+    async def scenario() -> None:
+        async with manager:
+            bulk = await manager.get_bulk("1.3.6.1.2.1.1.3.0", max_repetitions=3)
+
+        assert bulk.error_status is ErrorStatus.NO_ERROR
+        assert bulk.error_index == 0
+        slots = [
+            (varbind.oid, isinstance(varbind.value, EndOfMibViewValue)) for varbind in bulk.varbinds
+        ]
+        assert slots == [
+            ((1, 3, 6, 1, 2, 1, 1, 3, 0), True),
+        ]
+
+    asyncio.run(scenario())
+
+    assert len(fake_client.sent) == 1
+
+
+def test_v1_manager_get_bulk_interleaves_repeaters_repetition_major() -> None:
+    manager, fake_client = _build_manager(replies=[_V1Agent()] * 10)
+
+    async def scenario() -> None:
+        async with manager:
+            bulk = await manager.get_bulk(
+                "1.3.6.1.2.1.2.2.1.1.2",  # ifIndex.2
+                "1.3.6.1.2.1.2.2.1.1.1",  # ifIndex.1
+                max_repetitions=2,
+            )
+
+        assert bulk.error_status is ErrorStatus.NO_ERROR
+        assert [varbind.oid for varbind in bulk.varbinds] == [
+            (1, 3, 6, 1, 2, 1, 2, 2, 1, 2, 1),  # ifDescr.1: successor of ifIndex.2
+            (1, 3, 6, 1, 2, 1, 2, 2, 1, 1, 2),  # ifIndex.2: successor of ifIndex.1
+            (1, 3, 6, 1, 2, 1, 2, 2, 1, 2, 2),  # ifDescr.2: successor of ifDescr.1
+            (1, 3, 6, 1, 2, 1, 2, 2, 1, 2, 1),  # ifDescr.1: successor of ifIndex.2
+        ]
+
+    asyncio.run(scenario())
+
+    assert len(fake_client.sent) == 4
+    assert all(decode_message(sent).pdu.pdu_type is PduType.GET_NEXT for sent in fake_client.sent)
+
+
+def test_v1_manager_get_bulk_other_columns_continue_after_exhaustion() -> None:
+    manager, fake_client = _build_manager(replies=[_V1Agent()] * 10)
+
+    async def scenario() -> None:
+        async with manager:
+            bulk = await manager.get_bulk(
+                "1.3.6.1.2.1.2.2.1.2.2",  # ifDescr.2: exhausts at iteration 1
+                "1.3.6.1.2.1.2.2.1.1.1",  # ifIndex.1: keeps producing
+                max_repetitions=3,
+            )
+
+        assert bulk.error_status is ErrorStatus.NO_ERROR
+        slots = [
+            (varbind.oid, isinstance(varbind.value, EndOfMibViewValue)) for varbind in bulk.varbinds
+        ]
+        assert slots == [
+            ((1, 3, 6, 1, 2, 1, 2, 2, 1, 2, 2), True),  # ifDescr.2 exhausted
+            ((1, 3, 6, 1, 2, 1, 2, 2, 1, 1, 2), False),  # ifIndex.2
+            ((1, 3, 6, 1, 2, 1, 2, 2, 1, 2, 1), False),  # ifDescr.1
+            ((1, 3, 6, 1, 2, 1, 2, 2, 1, 2, 2), False),  # ifDescr.2
+        ]
+
+    asyncio.run(scenario())
+
+    assert len(fake_client.sent) == 4
 
 
 def test_v1_manager_ignores_v2c_response_and_times_out() -> None:

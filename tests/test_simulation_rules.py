@@ -4,6 +4,8 @@ import json
 import time
 from pathlib import Path
 
+import pytest
+
 from trishul_snmp import (
     Counter32Value,
     Counter64Value,
@@ -118,6 +120,39 @@ def test_counter_rule_custom_value_type() -> None:
     assert rule.get_value() == Counter64Value(100)
 
 
+# --- Wire-modulus wrap and input validation (issue #37) ---
+
+
+def test_counter_rule_wraps_at_counter32_modulus() -> None:
+    rule = CounterRule(start=2**32 - 1, increment=1)
+    assert rule.get_value() == Counter32Value(2**32 - 1)
+    assert rule.get_value() == Counter32Value(0)
+    assert rule.get_value() == Counter32Value(1)
+
+
+def test_counter_rule_wraps_at_counter64_modulus() -> None:
+    rule = CounterRule(start=2**64 - 1, increment=2, value_type=Counter64Value)
+    assert rule.get_value() == Counter64Value(2**64 - 1)
+    assert rule.get_value() == Counter64Value(1)
+
+
+def test_counter_rule_increment_larger_than_modulus_wraps() -> None:
+    rule = CounterRule(start=5, increment=2**32 + 3)
+    assert rule.get_value() == Counter32Value(5)
+    assert rule.get_value() == Counter32Value(8)
+
+
+def test_counter_rule_rejects_invalid_inputs() -> None:
+    with pytest.raises(ValueError, match="negative"):
+        CounterRule(start=-1)
+    with pytest.raises(ValueError, match="negative"):
+        CounterRule(increment=-1)
+    with pytest.raises(ValueError, match="wire modulus"):
+        CounterRule(start=2**32)
+    with pytest.raises(ValueError, match="wire modulus"):
+        CounterRule(start=2**64, value_type=Counter64Value)
+
+
 # --- RandomNumericRule ---
 
 
@@ -151,6 +186,16 @@ def test_uptime_rule_starts_near_zero() -> None:
     v = rule.get_value()
     assert isinstance(v, TimeTicksValue)
     assert v.value < 100  # < 1 second in centiseconds
+
+
+def test_uptime_rule_wraps_at_timeticks_modulus() -> None:
+    rule = UptimeRule()
+    # Pretend the process started slightly more than 2**32 centiseconds
+    # (~497 days) ago: the value must wrap instead of overflowing TimeTicks.
+    rule._start = time.monotonic() - (2**32 + 50) / 100  # type: ignore[attr-defined]
+    v = rule.get_value()
+    assert isinstance(v, TimeTicksValue)
+    assert 0 <= v.value < 100
 
 
 # --- TimestampRule ---

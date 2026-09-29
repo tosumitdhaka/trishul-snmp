@@ -130,6 +130,8 @@ def test_encode_oid_rejects_invalid_shapes() -> None:
     with pytest.raises(ProtocolError, match="Second OID arc must be < 40"):
         _encode_oid((1, 40))
     with pytest.raises(ProtocolError, match="OID arcs cannot be negative"):
+        _encode_oid((2, -1))
+    with pytest.raises(ProtocolError, match="OID arcs cannot be negative"):
         _encode_oid((1, 3, -1))
 
 
@@ -137,6 +139,7 @@ def test_decode_oid_handles_all_first_arc_ranges_and_rejects_empty_content() -> 
     assert _decode_oid(b"\x03") == (0, 3)
     assert _decode_oid(b"\x2d") == (1, 5)
     assert _decode_oid(b"\x51") == (2, 1)
+    assert _decode_oid(b"\x81\x34") == (2, 100)
     with pytest.raises(ProtocolError, match="OBJECT IDENTIFIER content cannot be empty"):
         _decode_oid(b"")
 

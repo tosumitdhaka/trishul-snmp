@@ -289,6 +289,7 @@ def decode_v3_notification_message(
     decoded: V3DecodedDatagram | bytes,
     *,
     user: UsmUser,
+    codec: UsmModel | None = None,
 ) -> V3NotificationEnvelope | None:
     """Decode an inbound SNMPv3 trap or inform for a single configured user.
 
@@ -297,6 +298,11 @@ def decode_v3_notification_message(
     wrong-user or non-notification messages. Raises :class:`ProtocolError` or
     :class:`AuthenticationError` for malformed or auth-failed messages that
     otherwise target the configured user.
+
+    ``codec`` supplies a persistent :class:`UsmModel` whose localized-key
+    caches survive across datagrams — the listener hot path passes its own
+    codec so the RFC 3414 key derivations run once per engine instead of once
+    per packet. Offline/CLI use omits it and gets a fresh one-shot model.
     """
     datagram = _as_decoded(decoded)
     view = datagram.view
@@ -306,7 +312,7 @@ def decode_v3_notification_message(
     flags = view.msg_flags[0]
     _validate_security_level(flags, user=user)
 
-    codec = _usm_codec(user=user)
+    codec = _usm_codec(user=user) if codec is None else codec
     if flags & MSG_FLAG_AUTH:
         expected_auth_len = codec._auth_tag_len()
         if len(view.usm_params.auth_params) != expected_auth_len:
@@ -398,9 +404,17 @@ def encode_discovery_report(
     decoded: V3DecodedDatagram | bytes,
     *,
     local_engine: UsmLocalEngine,
+    engine_time: int | None = None,
 ) -> bytes:
-    """Encode a minimal discovery REPORT for an empty-engineID probe."""
+    """Encode a minimal discovery REPORT for an empty-engineID probe.
+
+    ``engine_time`` overrides ``local_engine.engine_time`` — the listener
+    passes its monotonic-advanced current engine time so successive REPORTs
+    stay inside the probe sender's ±150 s acceptance window. When omitted
+    (offline use) the configured value is used verbatim.
+    """
     view, context_engine_id, context_name, probe = _decode_discovery_probe(decoded)
+    effective_engine_time = engine_time if engine_time is not None else local_engine.engine_time
     report_pdu = _encode_report_pdu(
         request_id=probe.request_id,
         error_status=0,
@@ -415,7 +429,7 @@ def encode_discovery_report(
         usm_params=UsmParams(
             engine_id=local_engine.engine_id,
             engine_boots=local_engine.engine_boots,
-            engine_time=local_engine.engine_time,
+            engine_time=effective_engine_time,
             username=b"",
             auth_params=b"",
             priv_params=b"",
@@ -429,8 +443,18 @@ def encode_inform_response(
     *,
     user: UsmUser,
     local_engine: UsmLocalEngine,
+    codec: UsmModel | None = None,
+    engine_time: int | None = None,
 ) -> bytes:
-    """Encode a USM RESPONSE that acknowledges an INFORM request."""
+    """Encode a USM RESPONSE that acknowledges an INFORM request.
+
+    ``codec`` supplies a persistent :class:`UsmModel` so the listener hot path
+    reuses its localized-key caches across informs (a fresh one-shot model is
+    built when omitted, as in offline use). ``engine_time`` overrides
+    ``local_engine.engine_time`` — the listener passes its monotonic-advanced
+    current engine time; it is used both for the message header and for the
+    privacy IV, so the receiver can decrypt the response.
+    """
     if envelope.pdu.pdu_type is not PduType.INFORM_REQUEST:
         raise ProtocolError(
             f"Inform response requires INFORM-REQUEST, found {envelope.pdu.pdu_type.name}"
@@ -452,10 +476,16 @@ def encode_inform_response(
         response_pdu,
     )
 
-    codec = _usm_codec(user=user, local_engine=local_engine)
+    codec = _usm_codec(user=user, local_engine=local_engine) if codec is None else codec
+    effective_engine_time = engine_time if engine_time is not None else local_engine.engine_time
+    outbound_engine = UsmLocalEngine(
+        engine_id=local_engine.engine_id,
+        engine_boots=local_engine.engine_boots,
+        engine_time=effective_engine_time,
+    )
     priv_params = b""
     if flags & MSG_FLAG_PRIV:
-        priv_params, msg_data = codec._encrypt_scoped_pdu(msg_data, local_engine)
+        priv_params, msg_data = codec._encrypt_scoped_pdu(msg_data, outbound_engine)
 
     auth_params = b"\x00" * codec._auth_tag_len() if flags & MSG_FLAG_AUTH else b""
     raw = encode_v3_message(
@@ -463,9 +493,9 @@ def encode_inform_response(
         msg_max_size=_MAX_MSG_SIZE,
         flags=flags & (MSG_FLAG_AUTH | MSG_FLAG_PRIV),
         usm_params=UsmParams(
-            engine_id=local_engine.engine_id,
-            engine_boots=local_engine.engine_boots,
-            engine_time=local_engine.engine_time,
+            engine_id=outbound_engine.engine_id,
+            engine_boots=outbound_engine.engine_boots,
+            engine_time=outbound_engine.engine_time,
             username=user.username.encode(),
             auth_params=auth_params,
             priv_params=priv_params,
@@ -474,7 +504,7 @@ def encode_inform_response(
     )
 
     if flags & MSG_FLAG_AUTH:
-        raw = codec._stamp_auth(raw, local_engine.engine_id)
+        raw = codec._stamp_auth(raw, outbound_engine.engine_id)
     return raw
 
 

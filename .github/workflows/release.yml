@@ -12,19 +12,14 @@ permissions:
 jobs:
 
   # ------------------------------------------------------------------ #
-  # Run the full test suite before touching PyPI
+  # Quality gates — the SAME reusable workflow main/PR CI runs (lint,
+  # typecheck, test matrix with >=95% coverage, snmpd integration).
+  # A failing gate here prevents build, wheel smoke, and publish from
+  # even starting.
   # ------------------------------------------------------------------ #
-  test:
-    name: Test before release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-      - run: pip install -e ".[dev,v3]"
-      - run: pytest --tb=short -q
+  quality:
+    name: Quality
+    uses: ./.github/workflows/quality.yml
 
   # ------------------------------------------------------------------ #
   # Build the distribution (wheel + sdist)
@@ -32,7 +27,7 @@ jobs:
   build:
     name: Build distribution
     runs-on: ubuntu-latest
-    needs: test
+    needs: quality
     steps:
       - uses: actions/checkout@v6
 
@@ -54,14 +49,69 @@ jobs:
           retention-days: 1
 
   # ------------------------------------------------------------------ #
+  # Wheel smoke — install the built wheel in a CLEAN venv, run both
+  # console entry points, and verify the installed package version
+  # MATCHES the git tag. A mismatch fails this job and blocks
+  # publishing — this closes the gap behind the v0.6.0
+  # fragment-publication incident (a wheel built from a stale tree can
+  # no longer reach PyPI under a tag it disagrees with).
+  #
+  # HARD CONSTRAINT: no repo `.venv` anywhere; the clean venv lives in
+  # /tmp and commands run by PATH name after activation.
+  # ------------------------------------------------------------------ #
+  wheel-smoke:
+    name: Wheel smoke (version vs tag)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Install wheel in a clean venv and verify entry points
+        run: |
+          python -m venv /tmp/tsnmp-wheel-smoke
+          source /tmp/tsnmp-wheel-smoke/bin/activate
+          pip install --quiet --upgrade pip
+          pip install --quiet dist/trishul_snmp-*.whl
+
+          echo "--- tsnmp version ---"
+          tsnmp version
+          echo "--- trishul-snmp version ---"
+          trishul-snmp version
+
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          TSNMP_VERSION="$(tsnmp version)"
+          TSNMP2_VERSION="$(trishul-snmp version)"
+
+          echo "git tag:         ${GITHUB_REF_NAME}"
+          echo "tag version:     ${TAG_VERSION}"
+          echo "tsnmp version:   ${TSNMP_VERSION}"
+          echo "trishul-snmp:    ${TSNMP2_VERSION}"
+
+          if [ "${TSNMP_VERSION}" != "${TAG_VERSION}" ] || [ "${TSNMP2_VERSION}" != "${TAG_VERSION}" ]; then
+            echo "::error::Wheel version (${TSNMP_VERSION}/${TSNMP2_VERSION}) does not match git tag ${GITHUB_REF_NAME}; refusing to publish."
+            exit 1
+          fi
+          echo "Wheel version matches the git tag."
+
+  # ------------------------------------------------------------------ #
   # Publish to PyPI via OIDC trusted publishing (no API token needed).
   # Requires a PyPI "trusted publisher" configured for this repo +
-  # environment name "pypi".
+  # environment name "pypi". Only starts after EVERY gate has passed:
+  # quality, build, AND wheel smoke.
   # ------------------------------------------------------------------ #
   publish-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-latest
-    needs: build
+    needs: [quality, build, wheel-smoke]
     environment: pypi
     steps:
       - uses: actions/download-artifact@v8

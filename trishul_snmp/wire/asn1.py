@@ -187,10 +187,18 @@ def _encode_oid(oid: tuple[int, ...]) -> bytes:
         raise ProtocolError("OBJECT IDENTIFIER requires at least two arcs")
     if oid[0] < 0 or oid[0] > 2:
         raise ProtocolError("First OID arc must be 0, 1, or 2")
-    if oid[1] < 0 or oid[1] >= 40:
-        raise ProtocolError("Second OID arc must be < 40 when the first arc is 0, 1, or 2")
+    if oid[1] < 0:
+        raise ProtocolError("OID arcs cannot be negative")
+    if oid[0] < 2 and oid[1] >= 40:
+        raise ProtocolError("Second OID arc must be < 40 when the first arc is 0 or 1")
+    if oid[1] > _OID_ARC_MAX:
+        raise ProtocolError(f"OID arc {oid[1]} exceeds maximum {_OID_ARC_MAX}")
 
-    content = bytearray([oid[0] * 40 + oid[1]])
+    # The first subidentifier packs arcs 0 and 1: first_arc * 40 + second_arc.
+    # For first arc 2 the combined value is 80 + second_arc and may span
+    # multiple base-128 bytes (second arcs >= 40 are valid).
+    combined = oid[0] * 40 + oid[1] if oid[0] < 2 else 80 + oid[1]
+    content = bytearray(_encode_base128(combined))
     for arc in oid[2:]:
         if arc < 0:
             raise ProtocolError("OID arcs cannot be negative")
@@ -203,16 +211,19 @@ def _encode_oid(oid: tuple[int, ...]) -> bytes:
 def _decode_oid(content: bytes) -> tuple[int, ...]:
     if not content:
         raise ProtocolError("OBJECT IDENTIFIER content cannot be empty")
-    first = content[0]
+    # The first subidentifier may span multiple base-128 bytes, so decode it
+    # like every other subidentifier and then split the combined value.
+    first, offset = _decode_base128(content, 0)
     if first < 40:
         first_arc, second_arc = 0, first
     elif first < 80:
         first_arc, second_arc = 1, first - 40
     else:
         first_arc, second_arc = 2, first - 80
+    if second_arc > _OID_ARC_MAX:
+        raise ProtocolError(f"OID subidentifier {second_arc} exceeds maximum {_OID_ARC_MAX}")
 
     arcs = [first_arc, second_arc]
-    offset = 1
     while offset < len(content):
         arc, offset = _decode_base128(content, offset)
         if arc > _OID_ARC_MAX:

@@ -51,6 +51,28 @@ class RequestDispatcher:
                 self._issued_request_ids.add(request_id)
                 return request_id
 
+    @property
+    def issued_request_ids(self) -> frozenset[int]:
+        """Snapshot of request ids reserved for in-flight requests.
+
+        A reserved id is held while a request is prepared and until it
+        completes (a matching response arrives, the retry budget is
+        exhausted, the send fails, or the operation is cancelled). Traps
+        sent fire-and-forget release their id immediately after the
+        datagram is handed to the transport.
+        """
+        return frozenset(self._issued_request_ids)
+
+    def release_request(self, request_id: int) -> None:
+        """Release a reserved request id so a later prepare may reuse it.
+
+        ``receive_response`` releases its id automatically; fire-and-forget
+        senders (traps) call this once the datagram has been handed to the
+        transport, and failure paths release via ``send_prepared_request``'s
+        completion handling.
+        """
+        self._issued_request_ids.discard(request_id)
+
     def prepare_request(
         self,
         pdu_type: PduType,
@@ -68,9 +90,16 @@ class RequestDispatcher:
             error_index=error_index,
             varbinds=varbinds,
         )
+        try:
+            encoded_message = self._security.wrap_pdu(pdu)
+        except BaseException:
+            # A wrap failure must not strand the reserved id for the lifetime
+            # of the dispatcher.
+            self._issued_request_ids.discard(request_id)
+            raise
         return PreparedRequest(
             request_id=request_id,
-            encoded_message=self._security.wrap_pdu(pdu),
+            encoded_message=encoded_message,
         )
 
     async def send_only(self, request: PreparedRequest) -> None:
@@ -88,14 +117,21 @@ class RequestDispatcher:
         """Send a prepared request and wait for a matching response."""
         attempts = self._retries + 1
         last_timeout: RequestTimeoutError | None = None
-        for _ in range(attempts):
-            await self.send_only(request)
-            try:
-                return await self.receive_response(request.request_id)
-            except RequestTimeoutError as exc:
-                last_timeout = exc
-        assert last_timeout is not None
-        raise last_timeout
+        try:
+            for _ in range(attempts):
+                await self.send_only(request)
+                try:
+                    return await self.receive_response(request.request_id)
+                except RequestTimeoutError as exc:
+                    last_timeout = exc
+            assert last_timeout is not None
+            raise last_timeout
+        finally:
+            # The retry loop reuses the same reserved id across attempts; it is
+            # released once the operation ends — success, exhausted retries, a
+            # non-timeout send error, or cancellation. `receive_response` also
+            # discards per attempt, so this is idempotent.
+            self._issued_request_ids.discard(request.request_id)
 
     async def send_pdu(
         self,

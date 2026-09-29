@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import socket
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import cast
 
 from trishul_snmp.errors import RequestTimeoutError, TransportError
 from trishul_snmp.types import SocketAddress
+
+logger = logging.getLogger(__name__)
+
+_DROP_LOG_INTERVAL_SECONDS = 5.0
+_DEFAULT_QUEUE_CAPACITY = 1024
 
 
 class UdpClient:
@@ -103,9 +111,11 @@ class _QueueingDatagramProtocol(asyncio.DatagramProtocol):
         self,
         queue: asyncio.Queue[ReceivedDatagram | _ServerClosed],
         closed: asyncio.Future[None],
+        on_drop: Callable[[], None] | None = None,
     ) -> None:
         self._queue = queue
         self._closed = closed
+        self._on_drop = on_drop
         self.transport: asyncio.DatagramTransport | None = None
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
@@ -114,15 +124,31 @@ class _QueueingDatagramProtocol(asyncio.DatagramProtocol):
     def datagram_received(self, data: bytes, addr: tuple[object, ...]) -> None:
         if not (len(addr) >= 2 and isinstance(addr[0], str) and isinstance(addr[1], int)):
             return
-        self._queue.put_nowait(
-            ReceivedDatagram(
-                data=data,
-                source_address=cast(SocketAddress, addr),
+        try:
+            self._queue.put_nowait(
+                ReceivedDatagram(
+                    data=data,
+                    source_address=cast(SocketAddress, addr),
+                )
             )
-        )
+        except asyncio.QueueFull:
+            # Overflow policy: drop the inbound datagram and surface the
+            # loss through the owner-provided hook (counter + warning log).
+            if self._on_drop is not None:
+                self._on_drop()
 
     def connection_lost(self, exc: Exception | None) -> None:
-        self._queue.put_nowait(_ServerClosed(exc))
+        # Drain the queue so the close sentinel always has room: a full
+        # queue must never prevent a pending receiver from being woken.
+        while True:
+            try:
+                self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        try:
+            self._queue.put_nowait(_ServerClosed(exc))
+        except asyncio.QueueFull:  # pragma: no cover - queue drained above
+            pass
         if not self._closed.done():
             if exc is None:
                 self._closed.set_result(None)
@@ -131,14 +157,51 @@ class _QueueingDatagramProtocol(asyncio.DatagramProtocol):
 
 
 class UdpServer:
-    """Bound UDP server transport for inbound receive and reply flows."""
+    """Bound UDP server transport for inbound receive and reply flows.
 
-    def __init__(self, host: str, port: int) -> None:
+    The receive queue is bounded at *queue_capacity* datagrams. Datagrams
+    arriving while the queue is full are dropped, counted in the public
+    ``dropped`` attribute, and reported through a rate-limited warning log
+    (at most one per ``_DROP_LOG_INTERVAL_SECONDS``). Closing the server
+    discards any queued datagrams and wakes a pending receiver even when
+    the queue is full.
+    """
+
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        *,
+        queue_capacity: int = _DEFAULT_QUEUE_CAPACITY,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if queue_capacity < 1:
+            raise ValueError("queue_capacity must be at least 1")
         self._host = host
         self._port = port
+        self._queue_capacity = queue_capacity
+        self._clock = clock
+        self._dropped = 0
+        self._last_drop_warning: float | None = None
         self._transport: asyncio.DatagramTransport | None = None
         self._queue: asyncio.Queue[ReceivedDatagram | _ServerClosed] | None = None
         self._closed: asyncio.Future[None] | None = None
+
+    @property
+    def dropped(self) -> int:
+        """Number of inbound datagrams dropped because the queue was full."""
+        return self._dropped
+
+    def _note_drop(self) -> None:
+        self._dropped += 1
+        now = self._clock()
+        last = self._last_drop_warning
+        if last is None or (now - last) >= _DROP_LOG_INTERVAL_SECONDS:
+            self._last_drop_warning = now
+            logger.warning(
+                "UDP receive queue is full (capacity %d); dropping inbound datagrams",
+                self._queue_capacity,
+            )
 
     @property
     def local_address(self) -> SocketAddress | None:
@@ -160,11 +223,13 @@ class UdpServer:
             return
 
         loop = asyncio.get_running_loop()
-        queue: asyncio.Queue[ReceivedDatagram | _ServerClosed] = asyncio.Queue()
+        queue: asyncio.Queue[ReceivedDatagram | _ServerClosed] = asyncio.Queue(
+            maxsize=self._queue_capacity
+        )
         closed = loop.create_future()
         try:
             transport, _ = await loop.create_datagram_endpoint(
-                lambda: _QueueingDatagramProtocol(queue, closed),
+                lambda: _QueueingDatagramProtocol(queue, closed, on_drop=self._note_drop),
                 local_addr=(self._host, self._port),
             )
         except OSError as exc:

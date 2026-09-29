@@ -1,0 +1,171 @@
+name: Quality
+
+# Reusable quality-gate workflow shared by CI (main/PR) and the release
+# (tag) pipeline. Keeping the gates in ONE place guarantees the tag path
+# runs exactly the same checks as main/PR CI.
+on:
+  workflow_call:
+
+jobs:
+
+  # ------------------------------------------------------------------ #
+  # Lint (ruff check + ruff format)
+  # Fast gate — runs on a single Python version; no package install needed.
+  # ------------------------------------------------------------------ #
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install ruff
+        run: pip install "ruff>=0.4"
+
+      - name: ruff check
+        run: ruff check trishul_snmp tests
+
+      - name: ruff format --check
+        run: ruff format --check trishul_snmp tests
+
+  # ------------------------------------------------------------------ #
+  # Type-check (mypy strict)
+  # ------------------------------------------------------------------ #
+  typecheck:
+    name: Type-check (mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dev deps
+        run: pip install -e ".[dev,v3]"
+
+      - name: mypy
+        run: mypy
+
+  # ------------------------------------------------------------------ #
+  # Tests — matrix across all supported Python versions
+  # ------------------------------------------------------------------ #
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dev deps
+        run: pip install -e ".[dev,v3]"
+
+      - name: pytest
+        run: |
+          pytest \
+            --tb=short \
+            --cov=trishul_snmp \
+            --cov-report=term-missing:skip-covered \
+            --cov-report=xml \
+            --cov-fail-under=95 \
+            -q
+
+      - name: Upload coverage
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 7
+
+  # ------------------------------------------------------------------ #
+  # snmpd integration — runs tests/test_snmpd_integration.py against a
+  # live net-snmp agent on 127.0.0.1:1161 (community ``public``, SNMPv1 +
+  # SNMPv2c) and 127.0.0.1:1162 (SNMPv3 users, incl. the RFC 7860 SHA-2
+  # matrix). Notification and responder fixtures spin up their own
+  # short-lived agents inside pytest (no systemd on runners; snmpd
+  # daemonizes itself so it survives the runner killing each step's
+  # process tree — do NOT use -f/& here).
+  #
+  # HARD CONSTRAINT: daemon start, wait-for-port, and test run MUST stay
+  # in this single step — GitHub Actions kills a job's background
+  # processes when the step that spawned them ends.
+  # ------------------------------------------------------------------ #
+  snmpd:
+    name: Test (snmpd)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dev deps
+        run: pip install -e ".[dev,v3]"
+
+      - name: Install snmpd
+        run: sudo apt-get update && sudo apt-get install -y snmpd snmp
+
+      - name: Start snmpd and run integration tests
+        run: |
+          # v3 users on a second agentaddress. engineID "reederinvest" pins the
+          # authoritative engine to 0x80001f8804 + ASCII text (net-snmp format 4),
+          # so the createUser -e localization and the client's discovery agree.
+          # The AES-192/256 users are the full issue-#30 matrix: every auth digest
+          # that differs from the cipher key length (extension and truncation),
+          # plus the SHA-256 control pair. net-snmp 5.9 has no 3DES privacy.
+          printf 'rocommunity public 127.0.0.1\nagentaddress 127.0.0.1:1161,127.0.0.1:1162\nengineID reederinvest\ncreateUser -e 0x80001f8804726565646572696e76657374 tsnmpuser SHA-256 "authpassword12345" AES-256 "privpassword12345"\nrouser tsnmpuser\ncreateUser -e 0x80001f8804726565646572696e76657374 user224 SHA-224 "authpassword12345" AES-256 "privpassword12345"\nrouser user224\ncreateUser -e 0x80001f8804726565646572696e76657374 user384 SHA-384 "authpassword12345" AES-192 "privpassword12345"\nrouser user384\ncreateUser -e 0x80001f8804726565646572696e76657374 user512 SHA-512 "authpassword12345" AES-256 "privpassword12345"\nrouser user512\ncreateUser -e 0x80001f8804726565646572696e76657374 userSha256Aes192 SHA-256 "authpassword12345" AES-192 "privpassword12345"\nrouser userSha256Aes192\n' > /tmp/snmpd-test.conf
+          sudo /usr/sbin/snmpd -C -f -c /tmp/snmpd-test.conf -p /tmp/snmpd-test.pid -Lf /tmp/snmpd-test.log &
+          for i in $(seq 1 50); do
+            if tsnmp get --host 127.0.0.1 --port 1161 --community public \
+                --timeout 0.5 --retries 1 1.3.6.1.2.1.1.3.0 >/dev/null 2>&1; then
+              echo "snmpd reachable (attempt $i)"
+              break
+            fi
+            if [ "$i" -eq 50 ]; then
+              echo "=== snmpd never became reachable on 127.0.0.1:1161 ==="
+              ss -lunp 2>/dev/null | grep 1161 || echo "nothing listening on 1161"
+              ps aux | grep -v grep | grep snmpd || echo "no snmpd process"
+              tail -n 30 /tmp/snmpd-test.log 2>/dev/null || true
+              exit 1
+            fi
+            sleep 0.2
+          done
+          for i in $(seq 1 20); do
+            if tsnmp get --host 127.0.0.1 --port 1162 --snmp-version 3 --username tsnmpuser \
+                --auth-protocol sha256 --auth-key "authpassword12345" \
+                --priv-protocol aes256 --priv-key "privpassword12345" \
+                --timeout 0.5 --retries 1 1.3.6.1.2.1.1.3.0 >/dev/null 2>&1; then
+              echo "snmpd v3 (SHA-256/AES-256) reachable (attempt $i)"
+              break
+            fi
+            if [ "$i" -eq 20 ]; then
+              echo "=== snmpd v3 never became reachable on 127.0.0.1:1162 ==="
+              tail -n 30 /tmp/snmpd-test.log 2>/dev/null || true
+              exit 1
+            fi
+            sleep 0.2
+          done
+          pytest -m snmpd -q
+
+      - name: Stop snmpd
+        if: always()
+        run: sudo kill "$(cat /tmp/snmpd-test.pid)" 2>/dev/null || true

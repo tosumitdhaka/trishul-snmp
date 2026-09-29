@@ -48,7 +48,10 @@ _UINT32_STRATEGY = st.integers(min_value=0, max_value=_UINT32_MAX)
 @st.composite
 def _valid_oids(draw: st.DrawFn) -> tuple[int, ...]:
     first = draw(st.integers(min_value=0, max_value=2))
-    second = draw(st.integers(min_value=0, max_value=39))
+    if first < 2:
+        second = draw(st.integers(min_value=0, max_value=39))
+    else:
+        second = draw(st.integers(min_value=0, max_value=_OID_ARC_MAX))
     tail = draw(st.lists(st.integers(min_value=0, max_value=_OID_ARC_MAX), max_size=8))
     return (first, second, *tail)
 

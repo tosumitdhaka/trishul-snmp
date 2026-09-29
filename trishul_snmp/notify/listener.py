@@ -27,7 +27,12 @@ from trishul_snmp.notify.v3 import (
     encode_inform_response,
     is_discovery_probe,
 )
-from trishul_snmp.security.usm import UsmLocalEngine, UsmUser
+from trishul_snmp.security.usm import (
+    UsmLocalEngine,
+    UsmModel,
+    UsmUser,
+    _clamp_engine_time,
+)
 from trishul_snmp.transport.udp import UdpServer
 from trishul_snmp.types import SocketAddress
 from trishul_snmp.wire.ber import decode_tlv
@@ -267,7 +272,33 @@ class V3NotificationListener(_BaseNotificationListener):
         )
         self._user = user
         self._local_engine = local_engine
-        self._replay_guard = V3ReplayGuard()
+        # The replay guard shares the listener's clock so a sender advancing
+        # engineTime with the same (possibly fake/test) clock stays inside the
+        # ±150 s acceptance window.
+        self._replay_guard = V3ReplayGuard(clock=self._clock)
+        # Persistent USM codec: its localized-key caches survive across
+        # datagrams so the RFC 3414 key derivations run once per engine
+        # instead of once per packet (decode, discovery REPORT, inform
+        # RESPONSE). Caches are bounded LRU per engine.
+        self._codec = UsmModel(user=user, local_engine=local_engine)
+        # Monotonic anchor for the local authoritative engine time; discovery
+        # REPORTs and inform RESPONSEs carry the configured time advanced by
+        # the elapsed monotonic time so they stay inside the receiver's
+        # ±150 s acceptance window.
+        self._local_engine_anchor: float = self._clock()
+
+    def _current_engine_time(self) -> int:
+        """Advance the configured local engine time with the monotonic clock.
+
+        RFC 3414 requires the authoritative engine's current time in every
+        message; anchoring the configured ``engine_time`` to the listener's
+        monotonic clock keeps discovery REPORTs and inform RESPONSEs advancing
+        in lockstep with the receiver's :class:`V3ReplayGuard` window. The
+        counter is clamped to ``2**31 - 1``; callers are responsible for
+        persisting ``engine_boots`` across restarts.
+        """
+        elapsed = int(self._clock() - self._local_engine_anchor)
+        return _clamp_engine_time(self._local_engine.engine_time + elapsed)
 
     async def receive(self) -> NotificationEvent:
         """Wait for the next matching SNMPv3 trap or inform event."""
@@ -287,6 +318,7 @@ class V3NotificationListener(_BaseNotificationListener):
                     report = encode_discovery_report(
                         decoded,
                         local_engine=self._local_engine,
+                        engine_time=self._current_engine_time(),
                     )
                 except ProtocolError:
                     self._handle_drop(
@@ -299,7 +331,11 @@ class V3NotificationListener(_BaseNotificationListener):
                 continue
 
             try:
-                envelope = decode_v3_notification_message(decoded, user=self._user)
+                envelope = decode_v3_notification_message(
+                    decoded,
+                    user=self._user,
+                    codec=self._codec,
+                )
             except AuthenticationError:
                 self._handle_drop(
                     reason=DropReason.AUTHENTICATION_FAILED,
@@ -355,6 +391,8 @@ class V3NotificationListener(_BaseNotificationListener):
             envelope,
             user=self._user,
             local_engine=self._local_engine,
+            codec=self._codec,
+            engine_time=self._current_engine_time(),
         )
         await self._server.sendto(response, addr)
 

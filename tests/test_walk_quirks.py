@@ -20,9 +20,11 @@ from typing import cast
 import pytest
 
 from trishul_snmp import RequestTimeoutError, TransportError, V2cManager
+from trishul_snmp.manager.walk import WalkError
 from trishul_snmp.types import (
     OID,
     EndOfMibViewValue,
+    ErrorStatus,
     NullValue,
     SnmpValueType,
     VarBind,
@@ -62,9 +64,11 @@ class QuirkAgent(asyncio.DatagramProtocol):
         script: dict[OID, Sequence[RawVarBind]],
         *,
         echo_requests: bool = False,
+        error_script: dict[OID, tuple[int, int]] | None = None,
     ) -> None:
         self._script = {oid: tuple(varbinds) for oid, varbinds in script.items()}
         self._echo_requests = echo_requests
+        self._error_script = dict(error_script or {})
         self.transport: asyncio.DatagramTransport | None = None
         self.requested_oids: list[OID] = []
         self.requested_pdu_types: list[PduType] = []
@@ -82,18 +86,24 @@ class QuirkAgent(asyncio.DatagramProtocol):
             self.requested_oids.append(requested_oid)
             self.requested_pdu_types.append(pdu.pdu_type)
             self.requested_max_repetitions.append(pdu.error_index)
-            if self._echo_requests:
+            error = self._error_script.get(requested_oid)
+            if error is not None:
+                error_status, error_index = error
                 response_varbinds: tuple[RawVarBind, ...] = (_vb(requested_oid),)
+            elif self._echo_requests:
+                response_varbinds = (_vb(requested_oid),)
+                error_status, error_index = 0, 0
             else:
                 response_varbinds = self._script.get(requested_oid, (_eomv(requested_oid),))
+                error_status, error_index = 0, 0
             response = SnmpMessage(
                 version=message.version,
                 community=message.community,
                 pdu=Pdu(
                     pdu_type=PduType.RESPONSE,
                     request_id=pdu.request_id,
-                    error_status=0,
-                    error_index=0,
+                    error_status=error_status,
+                    error_index=error_index,
                     varbinds=response_varbinds,
                 ),
             )
@@ -336,6 +346,39 @@ def test_walk_raises_timeout_error_against_silent_agent() -> None:
             except TransportError as exc:
                 _skip_if_udp_connect_restricted(exc)
                 raise
+        finally:
+            transport.close()
+
+    asyncio.run(scenario())
+
+
+def test_bulkwalk_raises_walk_error_on_too_big_response() -> None:
+    """A tooBig GETBULK response surfaces a WalkError instead of a partial walk."""
+
+    async def scenario() -> None:
+        agent = QuirkAgent({}, error_script={ROOT: (1, 0)})
+        transport, port = await _start_agent(agent)
+        try:
+            try:
+                async with V2cManager(
+                    host="127.0.0.1",
+                    port=port,
+                    community="public",
+                    timeout=0.2,
+                    retries=0,
+                ) as manager:
+                    with pytest.raises(WalkError) as exc_info:
+                        await asyncio.wait_for(
+                            manager.walk(ROOT, bulk=True, max_repetitions=_MAX_REPETITIONS),
+                            timeout=2.0,
+                        )
+            except TransportError as exc:
+                _skip_if_udp_connect_restricted(exc)
+                raise
+            assert exc_info.value.error_status is ErrorStatus.TOO_BIG
+            assert exc_info.value.error_index == 0
+            assert agent.requested_oids == [ROOT]
+            assert agent.last_error is None
         finally:
             transport.close()
 

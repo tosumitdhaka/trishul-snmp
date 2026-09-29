@@ -601,7 +601,7 @@ def test_localized_priv_cache_invalidated_on_boots_change() -> None:
     assert len(model._localized_priv_cache) == 1
 
     model._adopt_engine_state(_ENGINE_ID, boots=3, engine_time=600)
-    assert model._localized_priv_cache == {}
+    assert len(model._localized_priv_cache) == 0
 
     model.wrap_pdu(_get_pdu())
     assert len(model._localized_priv_cache) == 1

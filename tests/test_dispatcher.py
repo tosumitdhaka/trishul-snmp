@@ -251,6 +251,125 @@ def test_dispatcher_request_ids_are_derived_from_urandom(monkeypatch) -> None:
     assert second.request_id != first.request_id + 1  # no predictable counter sequence
 
 
+class _FailingSecurity:
+    """SecurityModel stand-in whose wrap_pdu always raises."""
+
+    def wrap_pdu(self, pdu: Pdu) -> bytes:
+        del pdu
+        raise ProtocolError("wrap failed")
+
+
+class _FailingSendClient:
+    async def send(self, data: bytes) -> None:
+        del data
+        raise OSError("send failed")
+
+    async def receive(self, timeout: float) -> bytes:
+        del timeout
+        raise AssertionError("should not receive")
+
+
+class _CancellingSendClient:
+    async def send(self, data: bytes) -> None:
+        del data
+        raise asyncio.CancelledError
+
+    async def receive(self, timeout: float) -> bytes:
+        del timeout
+        raise AssertionError("should not receive")
+
+
+def test_dispatcher_send_only_reserves_id_until_released() -> None:
+    dispatcher, client = _make_dispatcher()
+    request = _get_request(dispatcher)
+    assert dispatcher.issued_request_ids == frozenset({request.request_id})
+
+    async def scenario() -> None:
+        await dispatcher.send_only(request)
+
+    asyncio.run(scenario())
+
+    assert client.sent == [request.encoded_message]
+    # fire-and-forget senders (traps) release explicitly after the send
+    assert dispatcher.issued_request_ids == frozenset({request.request_id})
+    dispatcher.release_request(request.request_id)
+    assert dispatcher.issued_request_ids == frozenset()
+
+
+def test_dispatcher_release_request_frees_id_for_reuse(monkeypatch) -> None:
+    values = iter([b"\x00\x00\x00\x01", b"\x00\x00\x00\x01"])
+    monkeypatch.setattr(os, "urandom", lambda n: next(values))
+
+    dispatcher, _ = _make_dispatcher()
+    first = dispatcher.prepare_request(PduType.GET, _GET_VARBINDS)
+    dispatcher.release_request(first.request_id)
+
+    # the released id is immediately reusable without random collision luck
+    second = dispatcher.prepare_request(PduType.GET, _GET_VARBINDS)
+    assert second.request_id == first.request_id
+
+
+def test_dispatcher_prepare_releases_id_when_wrap_fails() -> None:
+    client = FakeUdpClient([])
+    dispatcher = RequestDispatcher(client, security=_FailingSecurity(), timeout=0.5, retries=0)
+
+    with pytest.raises(ProtocolError, match="wrap failed"):
+        dispatcher.prepare_request(PduType.GET, _GET_VARBINDS)
+
+    assert dispatcher.issued_request_ids == frozenset()
+
+
+def test_dispatcher_send_prepared_request_releases_id_on_send_failure() -> None:
+    dispatcher = RequestDispatcher(
+        _FailingSendClient(), security=CommunityModel("public"), timeout=0.5, retries=1
+    )
+    request = _get_request(dispatcher)
+
+    async def scenario() -> None:
+        await dispatcher.send_prepared_request(request)
+
+    with pytest.raises(OSError, match="send failed"):
+        asyncio.run(scenario())
+
+    assert dispatcher.issued_request_ids == frozenset()
+
+
+def test_dispatcher_send_prepared_request_releases_id_on_cancellation() -> None:
+    dispatcher = RequestDispatcher(
+        _CancellingSendClient(), security=CommunityModel("public"), timeout=0.5, retries=1
+    )
+    request = _get_request(dispatcher)
+
+    async def scenario() -> None:
+        await dispatcher.send_prepared_request(request)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(scenario())
+
+    assert dispatcher.issued_request_ids == frozenset()
+
+
+def test_dispatcher_send_prepared_request_reuses_same_id_until_completion() -> None:
+    dispatcher, client = _make_dispatcher(retries=2)
+    request = _get_request(dispatcher)
+    client.set_replies(
+        [
+            RequestTimeoutError("timed out"),
+            RequestTimeoutError("timed out"),
+            _response_bytes(request_id=request.request_id, pdu_type=PduType.RESPONSE),
+        ]
+    )
+
+    async def scenario() -> None:
+        return await dispatcher.send_prepared_request(request)
+
+    response = asyncio.run(scenario())
+
+    assert response.request_id == request.request_id
+    assert len(client.sent) == 3  # every retry reused the same prepared id
+    assert dispatcher.issued_request_ids == frozenset()
+
+
 def test_dispatcher_request_ids_never_zero(monkeypatch) -> None:
     calls = 0
 
